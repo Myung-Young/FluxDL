@@ -15,6 +15,7 @@ import { estimatePresetSize, formatSize } from "./media.js";
 import { readClipboardText } from "./clipboard.js";
 import { STRINGS } from "./strings.js";
 import { pressScale } from "./motion.js";
+import { BatchPanel } from "./BatchPanel.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 
 export interface HomeProps {
@@ -270,6 +271,8 @@ export function Home({
           </p>
         )}
       </div>
+
+      <BatchPanel engine={engine} queue={queue} settings={settings} />
 
       {info !== null && (
         <div className="grabber-card">

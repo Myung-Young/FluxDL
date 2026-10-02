@@ -516,6 +516,25 @@ select.input {
   font-variant-numeric: tabular-nums;
 }
 
+.batch-text {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.batch-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.batch-row .batch-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .advanced {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);

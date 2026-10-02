@@ -161,3 +161,36 @@ test("launch -> analyze mocked response -> queue item", async () => {
   expect(startedCount).toBe(1);
   expect(pageErrors).toEqual([]);
 });
+
+test("batch: paste 3 URLs -> analyze all -> queue 3", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Downloads" }).click();
+  const before = await page.locator(".dl-card").count();
+
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Home" }).click();
+  await page
+    .locator("#batch-input")
+    .fill("https://example.com/b1\nhttps://example.com/b2\n# comment\n\nhttps://example.com/b3");
+  await page.locator("#batch-add").click();
+  await expect(page.locator('[data-testid="batch-row"]')).toHaveCount(3);
+
+  await page.locator("#batch-analyze").click();
+  await expect(page.locator('[data-testid="batch-status"]', { hasText: "Ready" })).toHaveCount(3, {
+    timeout: 15000,
+  });
+
+  await page.locator("#batch-queue").click();
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Downloads" }).click();
+  await expect(page.locator(".dl-card")).toHaveCount(before + 3, { timeout: 15000 });
+  expect(pageErrors).toEqual([]);
+});
