@@ -2,6 +2,7 @@ import { ipcMain } from "electron";
 import { IPC_CHANNELS, normalizeUrl } from "@grabber/core";
 import type { DownloadJobInput } from "@grabber/core";
 import type { DesktopEngine } from "./desktopEngine.js";
+import { isDownloadJob } from "./persist.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -92,5 +93,34 @@ export function registerEngineIpc(engine: DesktopEngine): void {
     const p = asNonEmptyString(rawPath);
     if (p === null) throw new Error("Missing path.");
     await engine.revealInFolder(p);
+  });
+  ipcMain.handle(IPC_CHANNELS.loadSettings, async () => {
+    return engine.loadSettings();
+  });
+  ipcMain.handle(IPC_CHANNELS.saveSettings, async (_event, patch: unknown) => {
+    if (!isRecord(patch)) throw new Error("Invalid settings patch.");
+    return engine.saveSettings(patch);
+  });
+  ipcMain.handle(IPC_CHANNELS.loadQueue, async () => {
+    return engine.loadQueue();
+  });
+  ipcMain.handle(IPC_CHANNELS.saveQueue, async (_event, jobs: unknown) => {
+    if (!Array.isArray(jobs)) throw new Error("Invalid queue snapshot.");
+    await engine.saveQueue(jobs.filter(isDownloadJob));
+  });
+  ipcMain.handle(IPC_CHANNELS.appendHistory, async (_event, job: unknown) => {
+    if (!isDownloadJob(job)) throw new Error("Invalid history entry.");
+    await engine.appendHistory(job);
+  });
+  ipcMain.handle(IPC_CHANNELS.loadHistory, async () => {
+    return engine.loadHistory();
+  });
+  ipcMain.handle(IPC_CHANNELS.removeHistory, async (_event, rawId: unknown) => {
+    const id = asNonEmptyString(rawId);
+    if (id === null) throw new Error("Missing id.");
+    await engine.removeHistory(id);
+  });
+  ipcMain.handle(IPC_CHANNELS.clearHistory, async () => {
+    await engine.clearHistory();
   });
 }

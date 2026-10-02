@@ -37,3 +37,33 @@ export type { ParsedProgress } from "./progress.js";
 export { mapDownloadError } from "./errors.js";
 export type { ErrorCategory, MappedError } from "./errors.js";
 export { parseMediaInfo } from "./media.js";
+export {
+  MAX_CONCURRENCY,
+  MIN_CONCURRENCY,
+  DEFAULT_MAX_RETRIES,
+  MAX_HISTORY_ITEMS,
+  canTransition,
+  nextStatus,
+  transition,
+  applyEngineProgress,
+  computeBackoffMs,
+  clampConcurrency,
+  activeCount,
+  selectNextToStart,
+  shouldRetry,
+  makeJob,
+  isFinished,
+  searchHistory,
+  pruneHistory,
+} from "./queue.js";
+export type { QueueEvent, TransitionOptions, EngineProgressLike } from "./queue.js";
+export { QueueController } from "./queueController.js";
+export type { QueueEngine, QueueClock, QueueControllerOptions } from "./queueController.js";
+export { DEFAULT_SETTINGS, mergeSettings } from "./settings.js";
+export { createQueueStore, createSettingsStore } from "./stores.js";
+export type {
+  QueueStoreEngine,
+  QueueStoreState,
+  SettingsStoreEngine,
+  SettingsStoreState,
+} from "./stores.js";

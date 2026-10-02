@@ -1,6 +1,4 @@
-import type { DownloadJobInput, MediaInfo } from "./types.js";
-
-export type { DownloadJobInput, MediaInfo };
+import type { AppSettings, DownloadJob, DownloadJobInput, MediaInfo } from "./types.js";
 
 /** Progress event pushed by the engine. */
 export interface EngineProgress {
@@ -48,6 +46,16 @@ export interface DownloadEngine {
   pickFolder(): Promise<string | null>;
   openPath(path: string): Promise<void>;
   revealInFolder(path: string): Promise<void>;
+  /** Settings persist in main (electron-store). Renderer talks via these only. */
+  loadSettings(): Promise<AppSettings>;
+  saveSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
+  /** Queue snapshot + finished history persist in main (JSON / JSONL). */
+  loadQueue(): Promise<DownloadJob[]>;
+  saveQueue(jobs: DownloadJob[]): Promise<void>;
+  appendHistory(job: DownloadJob): Promise<void>;
+  loadHistory(): Promise<DownloadJob[]>;
+  removeHistory(id: string): Promise<void>;
+  clearHistory(): Promise<void>;
 }
 
 /**
@@ -67,6 +75,14 @@ export const IPC_CHANNELS = {
   pickFolder: "engine:pickFolder",
   openPath: "engine:openPath",
   revealInFolder: "engine:reveal",
+  loadSettings: "store:loadSettings",
+  saveSettings: "store:saveSettings",
+  loadQueue: "store:loadQueue",
+  saveQueue: "store:saveQueue",
+  appendHistory: "store:appendHistory",
+  loadHistory: "store:loadHistory",
+  removeHistory: "store:removeHistory",
+  clearHistory: "store:clearHistory",
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

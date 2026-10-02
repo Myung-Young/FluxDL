@@ -69,6 +69,10 @@ export interface DownloadJob {
   readonly stage: string | null;
   readonly error: string | null;
   readonly createdAt: number;
+  /** Consecutive engine failures; reset on success. Drives backoff. */
+  readonly attempts: number;
+  /** Earliest retry time (ms epoch) or null when no retry is scheduled. */
+  readonly nextRetryAt: number | null;
 }
 
 export type DownloadJobInput = Pick<DownloadJob, "url" | "title" | "preset" | "outputDir">;

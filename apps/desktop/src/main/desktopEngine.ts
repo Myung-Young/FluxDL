@@ -3,7 +3,9 @@ import { randomUUID } from "node:crypto";
 import { unlink } from "node:fs/promises";
 import { dialog, shell } from "electron";
 import type {
+  AppSettings,
   DownloadEngine,
+  DownloadJob,
   DownloadJobInput,
   EngineProgress,
   EngineVersions,
@@ -29,6 +31,16 @@ import {
   resolveFfmpegPath,
   resolveYtDlpPath,
 } from "./binaries.js";
+import {
+  appendHistoryToDisk,
+  clearHistoryOnDisk,
+  loadHistoryFromDisk,
+  loadQueueFromDisk,
+  loadSettingsFromDisk,
+  removeHistoryFromDisk,
+  saveQueueToDisk,
+  saveSettingsToDisk,
+} from "./persist.js";
 
 export class EngineError extends Error {
   readonly category: ErrorCategory;
@@ -443,5 +455,38 @@ export class DesktopEngine implements DownloadEngine {
     if (path.trim().length === 0) throw new Error("Empty path.");
     shell.showItemInFolder(path);
     return Promise.resolve();
+  }
+
+  loadSettings(): Promise<AppSettings> {
+    return Promise.resolve(loadSettingsFromDisk(this.deps.userDataDir));
+  }
+
+  saveSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
+    return Promise.resolve(saveSettingsToDisk(this.deps.userDataDir, patch));
+  }
+
+  async loadQueue(): Promise<DownloadJob[]> {
+    return loadQueueFromDisk(this.deps.userDataDir);
+  }
+
+  async saveQueue(jobs: DownloadJob[]): Promise<void> {
+    await saveQueueToDisk(this.deps.userDataDir, jobs);
+  }
+
+  async appendHistory(job: DownloadJob): Promise<void> {
+    await appendHistoryToDisk(this.deps.userDataDir, job);
+  }
+
+  async loadHistory(): Promise<DownloadJob[]> {
+    return loadHistoryFromDisk(this.deps.userDataDir);
+  }
+
+  async removeHistory(id: string): Promise<void> {
+    if (id.trim().length === 0) throw new Error("Missing id.");
+    await removeHistoryFromDisk(this.deps.userDataDir, id);
+  }
+
+  async clearHistory(): Promise<void> {
+    await clearHistoryOnDisk(this.deps.userDataDir);
   }
 }
