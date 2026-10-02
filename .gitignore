@@ -10,6 +10,8 @@ resources/bin/
 apps/desktop/resources/bin/
 *.exe
 coverage/
+test-results/
+apps/desktop/test-results/
 
 # electron-builder
 release/
