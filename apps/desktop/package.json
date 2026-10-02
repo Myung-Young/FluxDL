@@ -1,0 +1,31 @@
+{
+  "name": "@grabber/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint src electron.vite.config.ts --max-warnings 0",
+    "test": "vitest run --passWithNoTests",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview"
+  },
+  "dependencies": {
+    "@grabber/core": "workspace:*",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.0",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "electron": "^36.0.0",
+    "electron-vite": "^4.0.0",
+    "typescript": "~5.9.2",
+    "vite": "^6.3.0",
+    "vitest": "^3.2.4"
+  }
+}

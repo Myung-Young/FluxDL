@@ -1,0 +1,30 @@
+node_modules/
+dist/
+out/
+release/
+*.tsbuildinfo
+apps/desktop/out/
+apps/desktop/dist/
+bin/
+resources/bin/
+coverage/
+
+# electron-builder
+release/
+
+# env / secrets
+.env
+.env.*
+*.pem
+*.p12
+*.pfx
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# pnpm
+.pnpm-store/
