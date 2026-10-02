@@ -6,6 +6,15 @@ export const STRINGS = {
   appUnavailable: "This UI must run inside the desktop shell.",
   appUnavailableTitle: "Unavailable",
   navThemeGroup: "Theme",
+  skipToContent: "Skip to content",
+  toast: {
+    region: "Notifications",
+    dismiss: "Dismiss",
+    finished: "Finished",
+    failed: "Failed",
+    removed: "Removed from history.",
+    cleared: "History cleared.",
+  },
   home: {
     title: "Home",
     urlLabel: "Video URL",
@@ -15,6 +24,7 @@ export const STRINGS = {
     analyzing: "Analyzing…",
     watchClipboard: "Watch clipboard",
     dropHint: "Tip: you can also drag-drop a link here.",
+    shortcutsHint: "Shortcuts: Ctrl+V pastes and analyzes · Ctrl+, opens Settings.",
     invalidUrl: "That link does not look valid.",
     analyzeFailed: "Could not analyze this link. See Logs for details.",
     previewDuration: "Duration",
@@ -45,6 +55,7 @@ export const STRINGS = {
   library: {
     title: "Library",
     searchPlaceholder: "Search title or link…",
+    loading: "Loading…",
     empty: "No finished downloads yet.",
     emptySearch: "No matches.",
     redownload: "Download again",
@@ -54,6 +65,7 @@ export const STRINGS = {
   },
   settings: {
     title: "Settings",
+    loading: "Loading…",
     downloadDir: "Download folder",
     browse: "Browse…",
     filenameTemplate: "Filename template",

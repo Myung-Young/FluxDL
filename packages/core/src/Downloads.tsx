@@ -4,13 +4,16 @@ import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
 import type { DownloadJob } from "./types.js";
 import { STRINGS } from "./strings.js";
+import { sendNotification } from "./notify.js";
 import { pressScale, tweenProgress } from "./motion.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
+import type { ToastStoreState } from "./toast.js";
 
 export interface DownloadsProps {
   readonly engine: DownloadEngine;
   readonly queue: StoreApi<QueueStoreState>;
   readonly settings: StoreApi<SettingsStoreState>;
+  readonly toast: StoreApi<ToastStoreState>;
 }
 
 function Bar({ ratio }: { ratio: number }): React.JSX.Element {
@@ -167,7 +170,7 @@ function Card({
   );
 }
 
-export function Downloads({ engine, queue, settings }: DownloadsProps): React.JSX.Element {
+export function Downloads({ engine, queue, settings, toast }: DownloadsProps): React.JSX.Element {
   const jobs = useStore(queue, (s) => s.jobs);
   const prevIds = useRef<ReadonlySet<string>>(new Set());
 
@@ -177,21 +180,28 @@ export function Downloads({ engine, queue, settings }: DownloadsProps): React.JS
     prevIds.current = ids;
     if (vanished.length === 0) return;
     void (async () => {
-      const action = settings.getState().settings.postDownloadAction;
-      if (action === "none") return;
       const hist = await engine.loadHistory().catch(() => []);
+      const action = settings.getState().settings.postDownloadAction;
       for (const id of vanished) {
         const h = hist.find((x) => x.id === id);
-        if (h?.status === "done" && h.destination !== null) {
-          if (action === "open-file") {
-            await engine.openPath(h.destination).catch(() => undefined);
-          } else {
-            await engine.revealInFolder(h.destination).catch(() => undefined);
+        if (h?.status === "done") {
+          toast.getState().push(`${STRINGS.toast.finished}: ${h.title}`, "success");
+          sendNotification(STRINGS.toast.finished, h.title);
+          if (action !== "none" && h.destination !== null) {
+            if (action === "open-file") {
+              await engine.openPath(h.destination).catch(() => undefined);
+            } else {
+              await engine.revealInFolder(h.destination).catch(() => undefined);
+            }
           }
+        } else if (h?.status === "error") {
+          const detail = h.error !== null ? ` — ${h.error}` : "";
+          toast.getState().push(`${STRINGS.toast.failed}: ${h.title}${detail}`, "error");
+          sendNotification(STRINGS.toast.failed, h.title);
         }
       }
     })();
-  }, [jobs, engine, settings]);
+  }, [jobs, engine, settings, toast]);
 
   return (
     <section className="grabber-view" aria-label={STRINGS.downloads.title}>

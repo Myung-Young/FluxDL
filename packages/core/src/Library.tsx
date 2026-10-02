@@ -6,21 +6,30 @@ import type { DownloadJob } from "./types.js";
 import { STRINGS } from "./strings.js";
 import { pressScale } from "./motion.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
+import type { ToastStoreState } from "./toast.js";
 
 export interface LibraryProps {
   readonly engine: DownloadEngine;
   readonly queue: StoreApi<QueueStoreState>;
   readonly settings: StoreApi<SettingsStoreState>;
+  readonly toast: StoreApi<ToastStoreState>;
 }
 
-export function Library({ engine, queue, settings }: LibraryProps): React.JSX.Element {
+export function Library({ engine, queue, settings, toast }: LibraryProps): React.JSX.Element {
   const [history, setHistory] = useState<readonly DownloadJob[]>([]);
   const [query, setQuery] = useState<string>("");
   const [busy, setBusy] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
 
   const refresh = useCallback(async (): Promise<void> => {
-    const loaded = await engine.loadHistory().catch(() => []);
-    setHistory(pruneHistory(loaded, 500));
+    try {
+      const loaded = await engine.loadHistory();
+      setHistory(pruneHistory(loaded, 500));
+    } catch {
+      setHistory([]);
+    } finally {
+      setLoading(false);
+    }
   }, [engine]);
 
   useEffect(() => {
@@ -42,6 +51,7 @@ export function Library({ engine, queue, settings }: LibraryProps): React.JSX.El
     setBusy(true);
     try {
       await engine.removeHistory(id);
+      toast.getState().push(STRINGS.toast.removed, "info");
       await refresh();
     } finally {
       setBusy(false);
@@ -53,6 +63,7 @@ export function Library({ engine, queue, settings }: LibraryProps): React.JSX.El
     setBusy(true);
     try {
       await engine.clearHistory();
+      toast.getState().push(STRINGS.toast.cleared, "info");
       await refresh();
     } finally {
       setBusy(false);
@@ -73,7 +84,13 @@ export function Library({ engine, queue, settings }: LibraryProps): React.JSX.El
           }}
         />
       </div>
-      {visible.length === 0 ? (
+      {loading ? (
+        <div className="grabber-card">
+          <p className="muted" aria-busy="true">
+            {STRINGS.library.loading}
+          </p>
+        </div>
+      ) : visible.length === 0 ? (
         <div className="grabber-card">
           <p className="muted">
             {query.trim().length > 0 ? STRINGS.library.emptySearch : STRINGS.library.empty}

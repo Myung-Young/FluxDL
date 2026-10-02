@@ -35,6 +35,11 @@ export function SettingsScreen({ engine, settings }: SettingsScreenProps): React
     return (
       <section className="grabber-view" aria-label={STRINGS.settings.title}>
         <h1>{STRINGS.settings.title}</h1>
+        <div className="grabber-card">
+          <p className="muted" aria-busy="true">
+            {STRINGS.settings.loading}
+          </p>
+        </div>
       </section>
     );
   }

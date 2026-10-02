@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
 import type { AudioPreset, DownloadPreset, MediaInfo, MediaKind, VideoPreset } from "./types.js";
 import { isValidUrl } from "./url.js";
+import { readClipboardText } from "./clipboard.js";
 import { STRINGS } from "./strings.js";
 import { pressScale } from "./motion.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
@@ -12,6 +13,8 @@ export interface HomeProps {
   readonly engine: DownloadEngine;
   readonly queue: StoreApi<QueueStoreState>;
   readonly settings: StoreApi<SettingsStoreState>;
+  readonly pendingPaste: string | null;
+  readonly onPasteConsumed: () => void;
 }
 
 const VIDEO_PRESETS: readonly VideoPreset[] = ["Best", "2160", "1440", "1080", "720", "480"];
@@ -29,17 +32,13 @@ export function formatDuration(totalSeconds: number | null): string {
   return `${h > 0 ? `${String(h)}:` : ""}${mm}:${String(r).padStart(2, "0")}`;
 }
 
-function readClipboardText(): Promise<string | null> {
-  const nav = navigator as unknown as { clipboard?: { readText?: () => Promise<string> } };
-  const read = nav.clipboard?.readText;
-  if (typeof read !== "function") return Promise.resolve(null);
-  return read().then(
-    (text) => text,
-    () => null,
-  );
-}
-
-export function Home({ engine, queue, settings }: HomeProps): React.JSX.Element {
+export function Home({
+  engine,
+  queue,
+  settings,
+  pendingPaste,
+  onPasteConsumed,
+}: HomeProps): React.JSX.Element {
   const [url, setUrl] = useState<string>("");
   const [analyzing, setAnalyzing] = useState<boolean>(false);
   const [queueing, setQueueing] = useState<boolean>(false);
@@ -83,27 +82,41 @@ export function Home({ engine, queue, settings }: HomeProps): React.JSX.Element 
     });
   };
 
+  const analyzeValue = useCallback(
+    async (value: string): Promise<void> => {
+      setError(null);
+      setInfo(null);
+      setQueuedNote(null);
+      if (!isValidUrl(value)) {
+        setError(STRINGS.home.invalidUrl);
+        return;
+      }
+      setAnalyzing(true);
+      try {
+        const media = await engine.getInfo(value);
+        setInfo(media);
+        setSelected(media.entries.map((e) => e.id));
+        setRawFormat(null);
+        lastIndex.current = null;
+      } catch {
+        setError(STRINGS.home.analyzeFailed);
+      } finally {
+        setAnalyzing(false);
+      }
+    },
+    [engine],
+  );
+
   const analyze = async (): Promise<void> => {
-    setError(null);
-    setInfo(null);
-    setQueuedNote(null);
-    if (!isValidUrl(url)) {
-      setError(STRINGS.home.invalidUrl);
-      return;
-    }
-    setAnalyzing(true);
-    try {
-      const media = await engine.getInfo(url);
-      setInfo(media);
-      setSelected(media.entries.map((e) => e.id));
-      setRawFormat(null);
-      lastIndex.current = null;
-    } catch {
-      setError(STRINGS.home.analyzeFailed);
-    } finally {
-      setAnalyzing(false);
-    }
+    await analyzeValue(url);
   };
+
+  useEffect(() => {
+    if (pendingPaste === null) return;
+    setUrl(pendingPaste);
+    onPasteConsumed();
+    void analyzeValue(pendingPaste);
+  }, [pendingPaste, analyzeValue, onPasteConsumed]);
 
   const toggleEntry = (id: string, index: number, additive: boolean): void => {
     if (!info) return;
@@ -161,6 +174,7 @@ export function Home({ engine, queue, settings }: HomeProps): React.JSX.Element 
       <h1>{STRINGS.home.title}</h1>
       <div
         className="grabber-card"
+        aria-busy={analyzing}
         onDragOver={(e) => {
           e.preventDefault();
         }}
@@ -218,6 +232,7 @@ export function Home({ engine, queue, settings }: HomeProps): React.JSX.Element 
           {STRINGS.home.watchClipboard}
         </label>
         <p className="hint">{STRINGS.home.dropHint}</p>
+        <p className="hint">{STRINGS.home.shortcutsHint}</p>
         {error !== null && (
           <p className="error-text" role="alert">
             {error}

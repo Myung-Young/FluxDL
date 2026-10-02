@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import { APP_NAME } from "./branding.js";
@@ -6,12 +6,17 @@ import type { DownloadEngine } from "./engine.js";
 import type { ThemeName } from "./types.js";
 import { fadeSwap, pressScale, staggerIn } from "./motion.js";
 import { STRINGS } from "./strings.js";
+import { isValidUrl } from "./url.js";
+import { readClipboardText } from "./clipboard.js";
+import { comboFromEvent, isEditableTarget, isOpenSettings, isPasteAnalyze } from "./shortcuts.js";
 import { Home } from "./Home.js";
 import { Downloads } from "./Downloads.js";
 import { Library } from "./Library.js";
 import { SettingsScreen } from "./SettingsScreen.js";
 import { Logs } from "./Logs.js";
+import { Toasts } from "./Toasts.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
+import type { ToastStoreState } from "./toast.js";
 import "./tokens.css";
 import "./fonts.css";
 
@@ -21,6 +26,7 @@ export interface ShellProps {
   readonly engine: DownloadEngine;
   readonly queue: StoreApi<QueueStoreState>;
   readonly settings: StoreApi<SettingsStoreState>;
+  readonly toast: StoreApi<ToastStoreState>;
 }
 
 const NAV: ReadonlyArray<{ id: ShellView; label: string }> = [
@@ -43,8 +49,9 @@ const THEME_LABELS: Readonly<Record<ThemeName, string>> = {
   ember: "Ember theme",
 };
 
-export function Shell({ engine, queue, settings }: ShellProps): React.JSX.Element {
+export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX.Element {
   const [view, setView] = useState<ShellView>("home");
+  const [pendingPaste, setPendingPaste] = useState<string | null>(null);
   const theme = useStore(settings, (s) => s.settings.theme);
   const navRef = useRef<HTMLElement | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
@@ -68,13 +75,60 @@ export function Shell({ engine, queue, settings }: ShellProps): React.JSX.Elemen
     if (navRef.current !== null) staggerIn(navRef.current, "[data-nav]");
   }, []);
 
-  const switchView = (next: ShellView): void => {
-    if (next === view) return;
-    const apply = (): void => {
-      setView(next);
+  const switchView = useCallback(
+    (next: ShellView): void => {
+      if (next === view) return;
+      const apply = (): void => {
+        setView(next);
+      };
+      if (mainRef.current !== null) fadeSwap(mainRef.current, apply);
+      else apply();
+    },
+    [view],
+  );
+
+  // Move keyboard focus into the new view (SPA nav pattern).
+  useEffect(() => {
+    mainRef.current?.focus({ preventScroll: true });
+  }, [view]);
+
+  // Global shortcuts: Ctrl+, opens Settings; Ctrl+V pastes + analyzes
+  // when focus is outside editable fields.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const combo = comboFromEvent(e);
+      if (isOpenSettings(combo)) {
+        e.preventDefault();
+        switchView("settings");
+        return;
+      }
+      if (isPasteAnalyze(combo)) {
+        if (isEditableTarget(e.target)) return;
+        e.preventDefault();
+        void readClipboardText().then((text) => {
+          const first = (text ?? "")
+            .split(/\r?\n/)
+            .map((s) => s.trim())
+            .find((s) => s.length > 0);
+          if (first !== undefined && isValidUrl(first)) {
+            setPendingPaste(first);
+            switchView("home");
+          }
+        });
+      }
     };
-    if (mainRef.current !== null) fadeSwap(mainRef.current, apply);
-    else apply();
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [switchView]);
+
+  const consumePaste = useCallback((): void => {
+    setPendingPaste(null);
+  }, []);
+
+  const focusMain = (): void => {
+    mainRef.current?.focus({ preventScroll: false });
   };
 
   const switchTheme = (next: ThemeName): void => {
@@ -86,6 +140,16 @@ export function Shell({ engine, queue, settings }: ShellProps): React.JSX.Elemen
 
   return (
     <div className="grabber-app" data-testid="grabber-shell">
+      <a
+        className="skip-link"
+        href="#grabber-main"
+        onClick={(e) => {
+          e.preventDefault();
+          focusMain();
+        }}
+      >
+        {STRINGS.skipToContent}
+      </a>
       <header className="grabber-titlebar">
         <span className="grabber-mark" aria-hidden="true" />
         <span className="grabber-appname">{APP_NAME}</span>
@@ -136,14 +200,27 @@ export function Shell({ engine, queue, settings }: ShellProps): React.JSX.Elemen
             </button>
           ))}
         </nav>
-        <main ref={mainRef} className="grabber-main">
-          {view === "home" && <Home engine={engine} queue={queue} settings={settings} />}
-          {view === "downloads" && <Downloads engine={engine} queue={queue} settings={settings} />}
-          {view === "library" && <Library engine={engine} queue={queue} settings={settings} />}
+        <main ref={mainRef} id="grabber-main" className="grabber-main" tabIndex={-1}>
+          {view === "home" && (
+            <Home
+              engine={engine}
+              queue={queue}
+              settings={settings}
+              pendingPaste={pendingPaste}
+              onPasteConsumed={consumePaste}
+            />
+          )}
+          {view === "downloads" && (
+            <Downloads engine={engine} queue={queue} settings={settings} toast={toast} />
+          )}
+          {view === "library" && (
+            <Library engine={engine} queue={queue} settings={settings} toast={toast} />
+          )}
           {view === "settings" && <SettingsScreen engine={engine} settings={settings} />}
           {view === "logs" && <Logs engine={engine} queue={queue} />}
         </main>
       </div>
+      <Toasts toast={toast} />
     </div>
   );
 }

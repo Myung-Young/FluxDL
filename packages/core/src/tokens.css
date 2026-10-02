@@ -612,3 +612,74 @@ select.input {
   flex-direction: column;
   gap: var(--space-3);
 }
+
+/* ---- M5: skip link, toasts ---- */
+
+.skip-link {
+  position: absolute;
+  left: var(--space-3);
+  top: calc(-1 * var(--titlebar-h));
+  z-index: 50;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 650;
+  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  transition: top 120ms ease;
+}
+
+.skip-link:focus-visible {
+  top: var(--space-2);
+}
+
+.grabber-main:focus {
+  box-shadow: none;
+}
+
+.toasts {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  z-index: 40;
+  max-width: min(380px, 90vw);
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-md);
+  padding: 10px var(--space-3);
+  font-size: var(--text-sm);
+  box-shadow: var(--shadow-2);
+}
+
+.toast-success {
+  border-left-color: var(--success);
+}
+
+.toast-error {
+  border-left-color: var(--danger);
+}
+
+.toast-close {
+  margin-left: auto;
+  background: transparent;
+  border: 0;
+  color: var(--fg-1);
+  font-size: var(--text-lg);
+  line-height: 1;
+  cursor: pointer;
+  padding: var(--space-1);
+}
+
+.toast-close:hover {
+  color: var(--fg-0);
+}

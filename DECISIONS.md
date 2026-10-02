@@ -43,3 +43,10 @@ Log for ambiguous decisions (simplest option wins, keep going).
 - D25: `DesktopEngine.start` reads persisted settings from disk itself (template/subs/proxy/etc.) — no `DownloadJobInput` widening; empty template falls back to `%(title)s [%(id)s].%(ext)s`.
 - D26: Screen file is `SettingsScreen.tsx` (Windows is case-insensitive: `Settings.tsx` collided with `settings.ts`); main/preload keep deep core imports.
 - D27: Verified live over CDP against the built app: nav/view/theme switching plus a real YouTube analyze (preview + 54 advanced formats + preset chips).
+
+## M5
+
+- D28: Toasts are a dependency-free zustand store (cap 3, TTL auto-dismiss) rendered with `role=status/alert`; finish/fail also fires a renderer `Notification` (packaged `appUserModelId` in M7 attributes it) — no IPC needed.
+- D29: Shortcuts are pure matchers (`shortcuts.ts`): Ctrl/Cmd+, opens Settings everywhere; Ctrl/Cmd+V pastes + analyzes only outside editable fields (native paste untouched), routing through `pendingPaste` so it works from any view.
+- D30: View switches move focus to `<main>` (plus a skip link); empty/loading/error states now cover all five screens; token grays were picked against near-black grounds for contrast (spot-checked, not metered).
+- D31: Live-verified over CDP: Ctrl+, lands on Settings, skip link focuses main, Ctrl+V with empty clipboard is a safe no-op.

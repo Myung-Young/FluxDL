@@ -2,8 +2,11 @@ import { useEffect, useState } from "react";
 import { Shell } from "./Shell.js";
 import type { DownloadEngine } from "./engine.js";
 import { STRINGS } from "./strings.js";
+import { ensureNotificationPermission } from "./notify.js";
 import { createQueueStore, createSettingsStore } from "./stores.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
+import { createToastStore } from "./toast.js";
+import type { ToastStoreState } from "./toast.js";
 import type { StoreApi } from "zustand";
 
 function getEngine(): DownloadEngine | null {
@@ -20,6 +23,11 @@ export function App(): React.JSX.Element {
   const [settings] = useState<StoreApi<SettingsStoreState> | null>(() =>
     engine === null ? null : createSettingsStore(engine),
   );
+  const [toast] = useState<StoreApi<ToastStoreState>>(() => createToastStore());
+
+  useEffect(() => {
+    void ensureNotificationPermission();
+  }, []);
 
   useEffect(() => {
     if (engine === null || settings === null) return;
@@ -43,5 +51,5 @@ export function App(): React.JSX.Element {
       </main>
     );
   }
-  return <Shell engine={engine} queue={queue} settings={settings} />;
+  return <Shell engine={engine} queue={queue} settings={settings} toast={toast} />;
 }
