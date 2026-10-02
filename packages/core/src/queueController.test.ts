@@ -212,8 +212,7 @@ describe("QueueController", () => {
     ctrl.dispose();
   });
 
-  it("hydrate re-queues in-flight jobs from a snapshot", async () => {
-    const fake = makeFake();
+  it("hydrate re-queues in-flight jobs from a snapshot", async () => {    const fake = makeFake();
     const ctrl = new QueueController({ engine: fake, concurrency: 1, maxRetries: 3 });
     ctrl.hydrate([
       {
@@ -239,6 +238,57 @@ describe("QueueController", () => {
     expect(ctrl.getJobs()[0]?.status).toBe("queued");
     await ctrl.pump();
     expect(fake.started).toHaveLength(1);
+    ctrl.dispose();
+  });
+
+  it("captures engine error message + category on failure", async () => {
+    const fake = makeFake();
+    let n = 0;
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 1,
+      maxRetries: 3,
+      createId: () => `q${String((n += 1))}`,
+    });
+    await ctrl.enqueue(input);
+    fake.fire({
+      ...downloading("eng-1"),
+      stage: "error",
+      errorMessage: "Age-restricted video.",
+      errorCategory: "age-gated",
+    });
+    await vi.waitFor(() => {
+      expect(ctrl.getJobs()[0]?.status).toBe("error");
+    });
+    expect(ctrl.getJobs()[0]?.error).toBe("Age-restricted video.");
+    expect(ctrl.getJobs()[0]?.errorCategory).toBe("age-gated");
+    ctrl.dispose();
+  });
+
+  it("sets per-job cookie overrides and forwards them at start", async () => {
+    const fake = makeFake();
+    let n = 0;
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 1,
+      maxRetries: 3,
+      createId: () => `q${String((n += 1))}`,
+    });
+    await ctrl.enqueue(input);
+    await ctrl.setJobCookies("q1", "firefox");
+    expect(ctrl.getJobs()[0]?.cookiesFromBrowser).toBe("firefox");
+    // Fail, then manual retry re-starts with the stored override.
+    fake.fire({ ...downloading("eng-1"), stage: "error" });
+    await vi.waitFor(() => {
+      expect(ctrl.getJobs()[0]?.status).toBe("error");
+    });
+    await ctrl.retry("q1");
+    await vi.waitFor(() => {
+      expect(fake.started).toHaveLength(2);
+    });
+    expect(fake.started[1]?.cookiesFromBrowser).toBe("firefox");
+    await ctrl.setJobCookies("q1", null);
+    expect(ctrl.getJobs()[0]?.cookiesFromBrowser).toBeNull();
     ctrl.dispose();
   });
 });

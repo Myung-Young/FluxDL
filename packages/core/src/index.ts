@@ -19,6 +19,7 @@ export type {
   EngineProgress,
   EngineVersions,
   ProgressCallback,
+  RepairReport,
   Unsubscribe,
 } from "./engine.js";
 export { IPC_CHANNELS } from "./engine.js";
@@ -74,7 +75,7 @@ export type { SettingsScreenProps } from "./SettingsScreen.js";
 export { Logs } from "./Logs.js";
 export type { LogsProps } from "./Logs.js";
 export { createToastStore } from "./toast.js";
-export type { Toast, ToastKind, ToastStoreState } from "./toast.js";
+export type { Toast, ToastAction, ToastKind, ToastStoreState } from "./toast.js";
 export { Toasts } from "./Toasts.js";
 export { ensureNotificationPermission, sendNotification } from "./notify.js";
 export { comboFromEvent, isEditableTarget, isOpenSettings, isPasteAnalyze } from "./shortcuts.js";
@@ -92,8 +93,10 @@ export {
 export type { DownloadArgsInput } from "./args.js";
 export { parseProgressLine, PROGRESS_TEMPLATE } from "./progress.js";
 export type { ParsedProgress } from "./progress.js";
-export { mapDownloadError } from "./errors.js";
-export type { ErrorCategory, MappedError } from "./errors.js";
+export { mapDownloadError, actionsFor } from "./errors.js";
+export type { ErrorAction, ErrorActionId, ErrorCategory, MappedError } from "./errors.js";
+export { ErrorActionButtons } from "./ErrorActions.js";
+export type { ErrorActionButtonsProps, ErrorNavigate } from "./ErrorActions.js";
 export { parseMediaInfo, estimatePresetSize, formatSize } from "./media.js";
 export type { SizeEstimate } from "./media.js";
 export {

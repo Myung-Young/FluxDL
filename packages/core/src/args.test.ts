@@ -24,6 +24,7 @@ function base(over: Partial<DownloadArgsInput> = {}): DownloadArgsInput {
     speedLimit: null,
     proxy: null,
     cookiesFromBrowser: null,
+    cookiesFile: null,
     codecPreference: "auto",
     archivePath: null,
     noPlaylist: true,
@@ -164,5 +165,15 @@ describe("arg builder", () => {
     const i = archived.indexOf("--download-archive");
     expect(i).toBeGreaterThan(-1);
     expect(archived[i + 1]).toBe("C:\\Data\\archive.txt");
+  });
+
+  it("passes --cookies file before --cookies-from-browser", () => {
+    const args = buildDownloadArgs(
+      base({ cookiesFile: "C:\\me\\cookies.txt", cookiesFromBrowser: "firefox" }),
+    );
+    const i = args.indexOf("--cookies");
+    expect(i).toBeGreaterThan(-1);
+    expect(args[i + 1]).toBe("C:\\me\\cookies.txt");
+    expect(args.indexOf("--cookies")).toBeLessThan(args.indexOf("--cookies-from-browser"));
   });
 });

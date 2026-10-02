@@ -1,4 +1,5 @@
 import type { DownloadJob, DownloadJobInput, JobStatus } from "./types.js";
+import type { ErrorCategory } from "./errors.js";
 
 /**
  * Queue state machine (pure, no I/O). The orchestrator (`queueController.ts`)
@@ -121,6 +122,8 @@ export interface EngineProgressLike {
   readonly totalBytes: number | null;
   readonly stage: string;
   readonly destination: string | null;
+  readonly errorMessage?: string;
+  readonly errorCategory?: ErrorCategory;
 }
 
 /** Fold an engine progress event into queue state (pure). */
@@ -273,6 +276,9 @@ export function makeJob(id: string, input: DownloadJobInput, createdAt: number):
       : {}),
     ...(typeof input.videoId === "string" && input.videoId.length > 0
       ? { videoId: input.videoId }
+      : {}),
+    ...(typeof input.cookiesFromBrowser === "string" && input.cookiesFromBrowser.length > 0
+      ? { cookiesFromBrowser: input.cookiesFromBrowser }
       : {}),
   };
 }

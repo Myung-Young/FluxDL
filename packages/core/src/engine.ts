@@ -1,4 +1,5 @@
 import type { AppSettings, DownloadJob, DownloadJobInput, MediaInfo } from "./types.js";
+import type { ErrorCategory } from "./errors.js";
 
 /** Progress event pushed by the engine. */
 export interface EngineProgress {
@@ -11,6 +12,9 @@ export interface EngineProgress {
   readonly stage: string;
   /** Last known output file reported by the engine, if any. */
   readonly destination: string | null;
+  /** Human failure message for "error" stages (mapped main-side). */
+  readonly errorMessage?: string;
+  readonly errorCategory?: ErrorCategory;
 }
 
 /** Unsubscribe function. */
@@ -22,6 +26,14 @@ export interface EngineVersions {
   readonly ytdlp: string;
   readonly ffmpeg: string | null;
   readonly app: string;
+}
+
+/** Result of repairEngine(): which binaries were restored vs still broken. */
+export interface RepairReport {
+  readonly ok: boolean;
+  readonly repaired: readonly string[];
+  readonly failed: readonly string[];
+  readonly versions: EngineVersions | null;
 }
 
 /**
@@ -44,6 +56,8 @@ export interface DownloadEngine {
   onProgress(cb: ProgressCallback): Unsubscribe;
   getEngineVersion(): Promise<EngineVersions>;
   updateEngine(): Promise<EngineVersions>;
+  /** Re-copy bundled binaries, verify hashes, re-check versions. */
+  repairEngine(): Promise<RepairReport>;
   pickFolder(): Promise<string | null>;
   openPath(path: string): Promise<void>;
   revealInFolder(path: string): Promise<void>;
@@ -79,6 +93,7 @@ export const IPC_CHANNELS = {
   onProgress: "engine:onProgress",
   getEngineVersion: "engine:getVersion",
   updateEngine: "engine:update",
+  repairEngine: "engine:repair",
   pickFolder: "engine:pickFolder",
   openPath: "engine:openPath",
   revealInFolder: "engine:reveal",

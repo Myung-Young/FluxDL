@@ -2,15 +2,21 @@ import { create, type StoreApi } from "zustand";
 
 export type ToastKind = "info" | "success" | "error";
 
+export interface ToastAction {
+  readonly label: string;
+  run(): void;
+}
+
 export interface Toast {
   readonly id: string;
   readonly kind: ToastKind;
   readonly message: string;
+  readonly action?: ToastAction;
 }
 
 export interface ToastStoreState {
   readonly toasts: readonly Toast[];
-  push(message: string, kind?: ToastKind): string;
+  push(message: string, kind?: ToastKind, action?: ToastAction): string;
   dismiss(id: string): void;
   clear(): void;
 }
@@ -29,10 +35,11 @@ function nextId(): string {
 export function createToastStore(ttlMs = 4000): StoreApi<ToastStoreState> {
   return create<ToastStoreState>()((set, get) => ({
     toasts: [],
-    push: (message, kind = "info") => {
+    push: (message, kind = "info", action) => {
       const id = nextId();
       const trimmed = get().toasts.slice(-2);
-      set({ toasts: [...trimmed, { id, kind, message }] });
+      const toast: Toast = action === undefined ? { id, kind, message } : { id, kind, message, action };
+      set({ toasts: [...trimmed, toast] });
       setTimeout(() => {
         get().dismiss(id);
       }, ttlMs);

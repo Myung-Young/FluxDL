@@ -8,7 +8,7 @@ describe("core M0", () => {
   });
 
   it("exposes a fixed single IPC channel map", () => {
-    expect(Object.keys(IPC_CHANNELS)).toHaveLength(22);
-    expect(new Set(Object.values(IPC_CHANNELS)).size).toBe(22);
+    expect(Object.keys(IPC_CHANNELS)).toHaveLength(23);
+    expect(new Set(Object.values(IPC_CHANNELS)).size).toBe(23);
   });
 });

@@ -34,4 +34,24 @@ describe("toast store", () => {
       vi.useRealTimers();
     }
   });
+
+  it("carries an optional action", () => {
+    vi.useFakeTimers();
+    try {
+      const store = createToastStore(10_000);
+      let ran = 0;
+      store.getState().push("failed", "error", {
+        label: "Retry",
+        run: () => {
+          ran += 1;
+        },
+      });
+      const action = store.getState().toasts[0]?.action;
+      expect(action?.label).toBe("Retry");
+      action?.run();
+      expect(ran).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

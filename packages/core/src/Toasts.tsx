@@ -18,6 +18,18 @@ export function Toasts({ toast }: { toast: StoreApi<ToastStoreState> }): React.J
           role={t.kind === "error" ? "alert" : "status"}
         >
           <span>{t.message}</span>
+          {t.action !== undefined && (
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => {
+                t.action?.run();
+                dismiss(t.id);
+              }}
+            >
+              {t.action.label}
+            </button>
+          )}
           <button
             type="button"
             className="toast-close"

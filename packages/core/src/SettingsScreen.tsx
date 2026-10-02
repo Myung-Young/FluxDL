@@ -102,7 +102,7 @@ export function SettingsScreen({ engine, settings }: SettingsScreenProps): React
       )}
 
       <div className="grabber-card settings-grid">
-        <label className="field-label" htmlFor="set-dir">
+        <label className="field-label" htmlFor="set-dir" id="settings-section-folder">
           {STRINGS.settings.downloadDir}
         </label>
         <div className="url-row">
@@ -187,7 +187,7 @@ export function SettingsScreen({ engine, settings }: SettingsScreenProps): React
           }}
         />
 
-        <label className="field-label" htmlFor="set-proxy">
+        <label className="field-label" htmlFor="set-proxy" id="settings-section-proxy">
           {STRINGS.settings.proxy}
         </label>
         <input
@@ -201,7 +201,7 @@ export function SettingsScreen({ engine, settings }: SettingsScreenProps): React
           }}
         />
 
-        <label className="field-label" htmlFor="set-cookies">
+        <label className="field-label" htmlFor="set-cookies" id="settings-section-cookies">
           {STRINGS.settings.cookies}
         </label>
         <input
@@ -213,6 +213,21 @@ export function SettingsScreen({ engine, settings }: SettingsScreenProps): React
           spellCheck={false}
           onBlur={(e) => {
             commitText(e, (v) => ({ cookiesFromBrowser: v }));
+          }}
+        />
+
+        <label className="field-label" htmlFor="set-cookies-file">
+          {STRINGS.settings.cookiesFile}
+        </label>
+        <input
+          id="set-cookies-file"
+          key={saved.cookiesFile ?? ""}
+          className="input"
+          defaultValue={saved.cookiesFile ?? ""}
+          placeholder="C:\Users\me\cookies.txt"
+          spellCheck={false}
+          onBlur={(e) => {
+            commitText(e, (v) => ({ cookiesFile: v }));
           }}
         />
 

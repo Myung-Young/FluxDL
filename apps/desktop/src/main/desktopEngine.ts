@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { rm, stat, unlink } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { dialog, shell } from "electron";
@@ -9,9 +10,11 @@ import type {
   EngineProgress,
   EngineVersions,
   ProgressCallback,
+  RepairReport,
   Unsubscribe,
 } from "@grabber/core/engine.js";
 import type { ErrorCategory, MappedError } from "@grabber/core/errors.js";
+import { STRINGS } from "@grabber/core/strings.js";
 import {
   buildDownloadArgs,
   buildFfmpegVersionArgs,
@@ -25,6 +28,7 @@ import { parseMediaInfo } from "@grabber/core/media.js";
 import { parseProgressLine } from "@grabber/core/progress.js";
 import {
   ensureUserDataBinary,
+  repairBinaries,
   resolveFfmpegDir,
   resolveFfmpegPath,
   resolveYtDlpPath,
@@ -238,11 +242,19 @@ export class DesktopEngine implements DownloadEngine {
       preset: job.preset,
       outputDir,
       ...(job.useArchive === true ? { useArchive: true as const } : {}),
+      ...(typeof job.cookiesFromBrowser === "string" && job.cookiesFromBrowser.length > 0
+        ? { cookiesFromBrowser: job.cookiesFromBrowser }
+        : {}),
     };
     const id = randomUUID();
     // User settings live on disk (main side) so every download honors them
     // without widening the DownloadJobInput interface.
     const s = loadSettingsFromDisk(this.deps.userDataDir);
+    // cookies.txt is validated (must exist) and never copied or logged.
+    const cookiesFile =
+      s.cookiesFile !== null && s.cookiesFile.trim().length > 0 && existsSync(s.cookiesFile)
+        ? s.cookiesFile
+        : null;
     const args = buildDownloadArgs({
       url: normalizedUrl,
       preset: input.preset,
@@ -259,7 +271,8 @@ export class DesktopEngine implements DownloadEngine {
       sponsorBlock: s.sponsorBlock,
       speedLimit: s.speedLimit,
       proxy: s.proxy,
-      cookiesFromBrowser: s.cookiesFromBrowser,
+      cookiesFromBrowser: input.cookiesFromBrowser ?? s.cookiesFromBrowser,
+      cookiesFile,
       codecPreference: s.codecPreference,
       archivePath:
         s.skipArchived && input.useArchive === true
@@ -409,6 +422,8 @@ export class DesktopEngine implements DownloadEngine {
       totalBytes: null,
       stage: "error",
       destination: job?.destination ?? null,
+      errorMessage: mapped.message,
+      errorCategory: mapped.category,
     });
   }
 
@@ -494,6 +509,10 @@ export class DesktopEngine implements DownloadEngine {
   }
 
   async updateEngine(): Promise<EngineVersions> {
+    // Never run -U while downloads are active (kill first would corrupt).
+    if (this.jobs.size > 0) {
+      throw new Error(STRINGS.errors.updateBlockedBusy);
+    }
     const target = await ensureUserDataBinary(this.deps.userDataDir, this.deps.bundledBinDir);
     let out: { stdout: string; stderr: string; code: number | null };
     try {
@@ -505,6 +524,20 @@ export class DesktopEngine implements DownloadEngine {
       throw new EngineError(mapDownloadError(`${out.stdout}\n${out.stderr}`));
     }
     return this.getEngineVersion();
+  }
+
+  async repairEngine(): Promise<RepairReport> {
+    const { repaired, failed } = await repairBinaries(
+      this.deps.userDataDir,
+      this.deps.bundledBinDir,
+    );
+    const versions = await this.getEngineVersion().catch(() => null);
+    const ok =
+      failed.length === 0 &&
+      versions !== null &&
+      versions.ytdlp !== "unknown" &&
+      versions.ffmpeg !== null;
+    return { ok, repaired, failed, versions };
   }
 
   async pickFolder(): Promise<string | null> {

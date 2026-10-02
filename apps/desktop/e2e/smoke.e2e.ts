@@ -87,9 +87,13 @@ async function installMock(page: Page): Promise<void> {
       },
       getEngineVersion: (): Promise<unknown> => Promise.resolve({ ...versions }),
       updateEngine: (): Promise<unknown> => Promise.resolve({ ...versions }),
+      repairEngine: (): Promise<unknown> =>
+        Promise.resolve({ ok: true, repaired: ["yt-dlp.exe"], failed: [], versions }),
       pickFolder: (): Promise<null> => Promise.resolve(null),
       openPath: (): Promise<void> => Promise.resolve(),
       revealInFolder: (): Promise<void> => Promise.resolve(),
+      fileExists: (): Promise<boolean> => Promise.resolve(false),
+      clearArchive: (): Promise<void> => Promise.resolve(),
       loadSettings: (): Promise<unknown> => Promise.resolve({ ...settings }),
       saveSettings: (patch: unknown): Promise<unknown> => {
         if (typeof patch === "object" && patch !== null) {
@@ -221,5 +225,25 @@ test("duplicate guard: re-queueing a queued URL offers Skip", async () => {
 
   await page.locator(".grabber-nav-btn").filter({ hasText: "Downloads" }).click();
   await expect(page.locator(".dl-card")).toHaveCount(before);
+  expect(pageErrors).toEqual([]);
+});
+
+test("logs: repair engine reports verified", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Logs" }).click();
+  await page.locator('[data-testid="logs-repair"]').click();
+  await expect(page.locator(".grabber-view").getByText("Engine verified.")).toBeVisible({
+    timeout: 15000,
+  });
   expect(pageErrors).toEqual([]);
 });

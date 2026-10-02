@@ -6,6 +6,7 @@ import type {
   EngineProgress,
   EngineVersions,
   ProgressCallback,
+  RepairReport,
   Unsubscribe,
 } from "@grabber/core/engine.js";
 
@@ -22,6 +23,7 @@ export interface GrabberApi {
   onProgress(cb: ProgressCallback): Unsubscribe;
   getEngineVersion(): Promise<EngineVersions>;
   updateEngine(): Promise<EngineVersions>;
+  repairEngine(): Promise<RepairReport>;
   pickFolder(): Promise<string | null>;
   openPath(path: string): Promise<void>;
   revealInFolder(path: string): Promise<void>;
@@ -57,6 +59,7 @@ const api: GrabberApi = {
   getEngineVersion: () =>
     ipcRenderer.invoke(IPC_CHANNELS.getEngineVersion) as Promise<EngineVersions>,
   updateEngine: () => ipcRenderer.invoke(IPC_CHANNELS.updateEngine) as Promise<EngineVersions>,
+  repairEngine: () => ipcRenderer.invoke(IPC_CHANNELS.repairEngine) as Promise<RepairReport>,
   pickFolder: () => ipcRenderer.invoke(IPC_CHANNELS.pickFolder) as Promise<string | null>,
   openPath: (path) => ipcRenderer.invoke(IPC_CHANNELS.openPath, path) as Promise<void>,
   revealInFolder: (path) => ipcRenderer.invoke(IPC_CHANNELS.revealInFolder, path) as Promise<void>,

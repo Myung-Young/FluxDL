@@ -25,6 +25,7 @@ export interface QueueStoreState {
   resume(id: string): Promise<void>;
   cancel(id: string): Promise<void>;
   retry(id: string): Promise<void>;
+  setJobCookies(id: string, browser: string | null): Promise<void>;
 }
 
 export function createQueueStore(
@@ -65,6 +66,9 @@ export function createQueueStore(
     },
     retry: async (id) => {
       await getController(set).retry(id);
+    },
+    setJobCookies: async (id, browser) => {
+      await getController(set).setJobCookies(id, browser);
     },
   }));
 }

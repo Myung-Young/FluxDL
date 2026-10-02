@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { resolveFfmpegDir, resolveYtDlpPath, ensureUserDataBinary } from "./binaries.js";
+import {
+  repairBinaries,
+  resolveFfmpegDir,
+  resolveYtDlpPath,
+  ensureUserDataBinary,
+} from "./binaries.js";
 
 function freshDirs(): { userData: string; bundled: string } {
   const base = mkdtempSync(join(tmpdir(), "grabber-bin-"));
@@ -42,5 +48,33 @@ describe("binaries", () => {
     mkdirSync(bundled, { recursive: true });
     writeFileSync(join(bundled, "ffmpeg.exe"), "x");
     expect(resolveFfmpegDir(bundled)).toBe(bundled);
+  });
+
+  it("repairs a deliberately corrupted userData binary from the bundle", async () => {
+    const { userData, bundled } = freshDirs();
+    mkdirSync(bundled, { recursive: true });
+    mkdirSync(userData, { recursive: true });
+    const pristine = Buffer.from("pristine-binary-bytes");
+    writeFileSync(join(bundled, "yt-dlp.exe"), pristine);
+    writeFileSync(join(bundled, "ffmpeg.exe"), "ffmpeg");
+    writeFileSync(join(bundled, "ffprobe.exe"), "ffprobe");
+    const sha = createHash("sha256").update(pristine).digest("hex");
+    writeFileSync(
+      join(bundled, "versions.json"),
+      JSON.stringify({ ytdlpSha256: sha, ffmpegSha256: "ziphash" }),
+    );
+    // Corrupt the userData copy, then repair.
+    writeFileSync(join(userData, "yt-dlp.exe"), "corrupted!!");
+    const result = await repairBinaries(userData, bundled);
+    expect(result.failed).toEqual([]);
+    expect(result.repaired).toEqual(["yt-dlp.exe"]);
+    expect(readFileSync(join(userData, "yt-dlp.exe"))).toEqual(pristine);
+  });
+
+  it("reports failure when the bundle itself is missing", async () => {
+    const { userData } = freshDirs();
+    const result = await repairBinaries(userData, join(userData, "no-bundle"));
+    expect(result.repaired).toEqual([]);
+    expect(result.failed).toContain("yt-dlp.exe");
   });
 });

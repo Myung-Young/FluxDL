@@ -52,6 +52,7 @@ const THEME_LABELS: Readonly<Record<ThemeName, string>> = {
 export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX.Element {
   const [view, setView] = useState<ShellView>("home");
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
+  const [pendingSection, setPendingSection] = useState<string | null>(null);
   const theme = useStore(settings, (s) => s.settings.theme);
   const navRef = useRef<HTMLElement | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
@@ -91,6 +92,20 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   useEffect(() => {
     mainRef.current?.focus({ preventScroll: true });
   }, [view]);
+
+  // Error-action deep links (settings section anchors).
+  useEffect(() => {
+    if (view !== "settings" || pendingSection === null) return;
+    document
+      .getElementById(`settings-section-${pendingSection}`)
+      ?.scrollIntoView({ block: "nearest" });
+    setPendingSection(null);
+  }, [view, pendingSection]);
+
+  const navigate = useCallback((next: "settings" | "logs", section?: string): void => {
+    if (section !== undefined) setPendingSection(section);
+    switchView(next);
+  }, [switchView]);
 
   // Global shortcuts: Ctrl+, opens Settings; Ctrl+V pastes + analyzes
   // when focus is outside editable fields.
@@ -211,7 +226,13 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
             />
           )}
           {view === "downloads" && (
-            <Downloads engine={engine} queue={queue} settings={settings} toast={toast} />
+            <Downloads
+              engine={engine}
+              queue={queue}
+              settings={settings}
+              toast={toast}
+              navigate={navigate}
+            />
           )}
           {view === "library" && (
             <Library engine={engine} queue={queue} settings={settings} toast={toast} />

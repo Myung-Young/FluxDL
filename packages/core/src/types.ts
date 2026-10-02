@@ -2,6 +2,7 @@
  * Core domain types. No Electron/Node imports allowed in this file.
  * Everything UI + state talks to the `DownloadEngine` interface only.
  */
+import type { ErrorCategory } from "./errors.js";
 
 export type JobStatus =
   "queued" | "analyzing" | "downloading" | "processing" | "paused" | "done" | "error" | "cancelled";
@@ -92,11 +93,15 @@ export interface DownloadJob {
   /** Extractor key + video id when known at enqueue (duplicate guard). */
   readonly extractor?: string | null;
   readonly videoId?: string | null;
+  /** Per-job cookie browser override (this download only). */
+  readonly cookiesFromBrowser?: string | null;
+  /** Stored failure category for actionable error cards (optional). */
+  readonly errorCategory?: ErrorCategory | null;
 }
 
 export interface DownloadJobInput extends Pick<
   DownloadJob,
-  "url" | "title" | "preset" | "outputDir" | "extractor" | "videoId"
+  "url" | "title" | "preset" | "outputDir" | "extractor" | "videoId" | "cookiesFromBrowser"
 > {
   readonly useArchive?: boolean;
 }
@@ -110,6 +115,8 @@ export interface AppSettings {
   readonly speedLimit: string | null;
   readonly proxy: string | null;
   readonly cookiesFromBrowser: string | null;
+  /** Netscape cookies.txt file (validated main-side; never copied/logged). */
+  readonly cookiesFile: string | null;
   readonly embedThumbnail: boolean;
   readonly embedMetadata: boolean;
   readonly subtitles: boolean;

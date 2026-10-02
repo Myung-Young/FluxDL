@@ -54,6 +54,9 @@ function parseJobInput(raw: unknown): DownloadJobInput {
     ...(typeof raw["videoId"] === "string" && raw["videoId"].length > 0
       ? { videoId: raw["videoId"] }
       : {}),
+    ...(typeof raw["cookiesFromBrowser"] === "string" && raw["cookiesFromBrowser"].length > 0
+      ? { cookiesFromBrowser: raw["cookiesFromBrowser"] }
+      : {}),
   };
 }
 
@@ -87,6 +90,9 @@ export function registerEngineIpc(engine: DesktopEngine): void {
   });
   ipcMain.handle(IPC_CHANNELS.updateEngine, async () => {
     return engine.updateEngine();
+  });
+  ipcMain.handle(IPC_CHANNELS.repairEngine, async () => {
+    return engine.repairEngine();
   });
   ipcMain.handle(IPC_CHANNELS.pickFolder, async () => {
     return engine.pickFolder();

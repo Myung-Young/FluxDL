@@ -144,6 +144,18 @@ export class QueueController {
     await this.finish(cancelled);
   }
 
+  /** Per-job cookie browser override ("use cookies for this download"). */
+  async setJobCookies(queueId: string, browser: string | null): Promise<void> {
+    const job = this.require(queueId);
+    const next: DownloadJob =
+      browser !== null && browser.length > 0
+        ? { ...job, cookiesFromBrowser: browser }
+        : { ...job, cookiesFromBrowser: null };
+    this.jobs.set(queueId, next);
+    this.emit();
+    await this.persist();
+  }
+
   /** Manual retry: fresh attempts, immediate re-queue. */
   async retry(queueId: string): Promise<void> {
     const job = this.require(queueId);
@@ -180,6 +192,9 @@ export class QueueController {
           preset: next.preset,
           outputDir: next.outputDir,
           ...(next.useArchive === true ? { useArchive: true as const } : {}),
+          ...(typeof next.cookiesFromBrowser === "string" && next.cookiesFromBrowser.length > 0
+            ? { cookiesFromBrowser: next.cookiesFromBrowser }
+            : {}),
         });
         const current = this.jobs.get(next.id);
         if (current === undefined) {
@@ -216,13 +231,15 @@ export class QueueController {
     if (job === undefined) return;
     if (p.stage === "error") {
       const failed = transition(job, "fail", {
-        error: job.error ?? "Download failed.",
+        error: p.errorMessage ?? job.error ?? "Download failed.",
         now: this.clock.now(),
       });
-      if (failed.attempts > this.maxRetries) {
-        await this.finish(failed);
+      const categorized: DownloadJob =
+        p.errorCategory !== undefined ? { ...failed, errorCategory: p.errorCategory } : failed;
+      if (categorized.attempts > this.maxRetries) {
+        await this.finish(categorized);
       } else {
-        this.jobs.set(queueId, failed);
+        this.jobs.set(queueId, categorized);
         this.emit();
         await this.persist();
       }

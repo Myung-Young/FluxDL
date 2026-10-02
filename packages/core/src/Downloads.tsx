@@ -8,12 +8,14 @@ import { sendNotification } from "./notify.js";
 import { pressScale, tweenProgress } from "./motion.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 import type { ToastStoreState } from "./toast.js";
+import { ErrorActionButtons, type ErrorNavigate } from "./ErrorActions.js";
 
 export interface DownloadsProps {
   readonly engine: DownloadEngine;
   readonly queue: StoreApi<QueueStoreState>;
   readonly settings: StoreApi<SettingsStoreState>;
   readonly toast: StoreApi<ToastStoreState>;
+  readonly navigate: ErrorNavigate;
 }
 
 function Bar({ ratio }: { ratio: number }): React.JSX.Element {
@@ -46,10 +48,16 @@ function Card({
   job,
   engine,
   queue,
+  settings,
+  toast,
+  navigate,
 }: {
   job: DownloadJob;
   engine: DownloadEngine;
   queue: StoreApi<QueueStoreState>;
+  settings: StoreApi<SettingsStoreState>;
+  toast: StoreApi<ToastStoreState>;
+  navigate: ErrorNavigate;
 }): React.JSX.Element {
   const actions = queue.getState();
   const run = (fn: () => Promise<void>): void => {
@@ -64,6 +72,16 @@ function Card({
         <p className="error-text" role="alert">
           {job.error}
         </p>
+      )}
+      {job.status === "error" && (
+        <ErrorActionButtons
+          job={job}
+          engine={engine}
+          queue={queue}
+          settings={settings}
+          toast={toast}
+          navigate={navigate}
+        />
       )}
       <div className="chip-row">
         {(job.status === "downloading" || job.status === "processing") && (
@@ -170,7 +188,13 @@ function Card({
   );
 }
 
-export function Downloads({ engine, queue, settings, toast }: DownloadsProps): React.JSX.Element {
+export function Downloads({
+  engine,
+  queue,
+  settings,
+  toast,
+  navigate,
+}: DownloadsProps): React.JSX.Element {
   const jobs = useStore(queue, (s) => s.jobs);
   const prevIds = useRef<ReadonlySet<string>>(new Set());
 
@@ -196,12 +220,27 @@ export function Downloads({ engine, queue, settings, toast }: DownloadsProps): R
           }
         } else if (h?.status === "error") {
           const detail = h.error !== null ? ` — ${h.error}` : "";
-          toast.getState().push(`${STRINGS.toast.failed}: ${h.title}${detail}`, "error");
+          toast
+            .getState()
+            .push(`${STRINGS.toast.failed}: ${h.title}${detail}`, "error", {
+              label: STRINGS.errors.actionRetry,
+              run: () => {
+                void queue
+                  .getState()
+                  .enqueue({
+                    url: h.url,
+                    title: h.title,
+                    preset: h.preset,
+                    outputDir: settings.getState().settings.downloadDir,
+                  })
+                  .catch(() => undefined);
+              },
+            });
           sendNotification(STRINGS.toast.failed, h.title);
         }
       }
     })();
-  }, [jobs, engine, settings, toast]);
+  }, [jobs, engine, queue, settings, toast]);
 
   return (
     <section className="grabber-view" aria-label={STRINGS.downloads.title}>
@@ -213,7 +252,15 @@ export function Downloads({ engine, queue, settings, toast }: DownloadsProps): R
       ) : (
         <div className="dl-list">
           {jobs.map((j) => (
-            <Card key={j.id} job={j} engine={engine} queue={queue} />
+            <Card
+              key={j.id}
+              job={j}
+              engine={engine}
+              queue={queue}
+              settings={settings}
+              toast={toast}
+              navigate={navigate}
+            />
           ))}
         </div>
       )}

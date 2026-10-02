@@ -20,6 +20,8 @@ export function Logs({ engine, queue }: LogsProps): React.JSX.Element {
   const [logText, setLogText] = useState<string | null>(null);
   const [updating, setUpdating] = useState<boolean>(false);
   const [updateNote, setUpdateNote] = useState<string | null>(null);
+  const [repairing, setRepairing] = useState<boolean>(false);
+  const [repairNote, setRepairNote] = useState<string | null>(null);
 
   const refreshVersions = useCallback(async (): Promise<void> => {
     const v = await engine.getEngineVersion().catch(() => null);
@@ -47,6 +49,20 @@ export function Logs({ engine, queue }: LogsProps): React.JSX.Element {
       setUpdateNote(STRINGS.logs.updateFailed);
     } finally {
       setUpdating(false);
+    }
+  };
+
+  const repair = async (): Promise<void> => {
+    setRepairing(true);
+    setRepairNote(null);
+    try {
+      const report = await engine.repairEngine();
+      setRepairNote(report.ok ? STRINGS.logs.repaired : STRINGS.logs.repairFailed);
+      if (report.versions !== null) setVersions(report.versions);
+    } catch {
+      setRepairNote(STRINGS.logs.repairFailed);
+    } finally {
+      setRepairing(false);
     }
   };
 
@@ -80,9 +96,28 @@ export function Logs({ engine, queue }: LogsProps): React.JSX.Element {
         >
           {updating ? STRINGS.logs.updating : STRINGS.logs.checkUpdate}
         </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={repairing}
+          data-testid="logs-repair"
+          onPointerDown={(e) => {
+            pressScale(e.currentTarget);
+          }}
+          onClick={() => {
+            void repair();
+          }}
+        >
+          {repairing ? STRINGS.logs.repairing : STRINGS.logs.repairEngine}
+        </button>
         {updateNote !== null && (
           <p className="note" role="status">
             {updateNote}
+          </p>
+        )}
+        {repairNote !== null && (
+          <p className="note" role="status">
+            {repairNote}
           </p>
         )}
       </div>

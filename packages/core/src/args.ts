@@ -8,7 +8,7 @@ import { normalizeUrl } from "./url.js";
  * -J/--dump-single-json, --flat-playlist, --newline, --progress-template,
  * -c/--continue, -o/--output, -f/--format, -S/--format-sort, -x/--extract-audio,
  * --merge-output-format, --ffmpeg-location, --embed-*, --write-subs,
- * --sponsorblock-*, --limit-rate, --proxy, --cookies-from-browser,
+ * --sponsorblock-*, --limit-rate, --proxy, --cookies-from-browser, --cookies,
  * --download-archive, -U/--update.
  */
 
@@ -28,6 +28,7 @@ export interface DownloadArgsInput {
   readonly speedLimit: string | null;
   readonly proxy: string | null;
   readonly cookiesFromBrowser: string | null;
+  readonly cookiesFile: string | null;
   readonly codecPreference: CodecPreference;
   /** yt-dlp --download-archive path, or null to not use one. */
   readonly archivePath: string | null;
@@ -162,6 +163,9 @@ export function buildDownloadArgs(input: DownloadArgsInput): string[] {
   }
   if (input.proxy !== null && input.proxy.trim().length > 0) {
     args.push("--proxy", input.proxy.trim());
+  }
+  if (input.cookiesFile !== null && input.cookiesFile.trim().length > 0) {
+    args.push("--cookies", input.cookiesFile.trim());
   }
   if (input.cookiesFromBrowser !== null && input.cookiesFromBrowser.trim().length > 0) {
     args.push("--cookies-from-browser", input.cookiesFromBrowser.trim());

@@ -9,6 +9,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   speedLimit: null,
   proxy: null,
   cookiesFromBrowser: null,
+  cookiesFile: null,
   embedThumbnail: false,
   embedMetadata: false,
   subtitles: false,
@@ -62,6 +63,8 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
       patch.cookiesFromBrowser === undefined
         ? base.cookiesFromBrowser
         : cleanNullableString(patch.cookiesFromBrowser),
+    cookiesFile:
+      patch.cookiesFile === undefined ? base.cookiesFile : cleanNullableString(patch.cookiesFile),
     embedThumbnail: cleanBool(patch.embedThumbnail, base.embedThumbnail),
     embedMetadata: cleanBool(patch.embedMetadata, base.embedMetadata),
     subtitles: cleanBool(patch.subtitles, base.subtitles),

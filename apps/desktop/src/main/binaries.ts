@@ -1,5 +1,7 @@
 import { existsSync } from "node:fs";
 import { copyFile, mkdir } from "node:fs/promises";
+import { createReadStream, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 
 /**
@@ -71,4 +73,82 @@ export async function ensureUserDataBinary(
   await mkdir(userDataDir, { recursive: true });
   await copyFile(source, target);
   return target;
+}
+
+/** SHA256 of a file (streamed; binaries are tens of MB). */
+export function sha256File(path: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(path);
+    stream.on("data", (chunk: Buffer | string) => {
+      hash.update(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+    });
+    stream.on("error", (err: Error) => {
+      reject(err);
+    });
+    stream.on("end", () => {
+      resolve(hash.digest("hex"));
+    });
+  });
+}
+
+export interface PinnedVersions {
+  readonly ytdlpSha256: string | null;
+  readonly ffmpegSha256: string | null;
+}
+
+/** Pinned hashes from fetch-binaries (absent in some dev checkouts). */
+export function readPinnedVersions(bundledBinDir: string): PinnedVersions {
+  try {
+    const raw = JSON.parse(
+      readFileSync(join(bundledBinDir, "versions.json"), "utf8"),
+    ) as unknown;
+    if (typeof raw !== "object" || raw === null) return { ytdlpSha256: null, ffmpegSha256: null };
+    const rec = raw as Record<string, unknown>;
+    return {
+      ytdlpSha256: typeof rec["ytdlpSha256"] === "string" ? rec["ytdlpSha256"] : null,
+      ffmpegSha256: typeof rec["ffmpegSha256"] === "string" ? rec["ffmpegSha256"] : null,
+    };
+  } catch {
+    return { ytdlpSha256: null, ffmpegSha256: null };
+  }
+}
+
+export interface RepairResult {
+  readonly repaired: string[];
+  readonly failed: string[];
+}
+
+/**
+ * Repair (M1.4): force re-copy yt-dlp.exe from the bundle into userData and
+ * verify it against the pinned hash; confirm ffmpeg/ffprobe resolve.
+ * Note: versions.json pins the ffmpeg ZIP hash, not extracted files, so the
+ * ffmpeg gate is existence + a version run (done by repairEngine), not a hash.
+ */
+export async function repairBinaries(
+  userDataDir: string,
+  bundledBinDir: string,
+): Promise<RepairResult> {
+  const repaired: string[] = [];
+  const failed: string[] = [];
+  const pinned = readPinnedVersions(bundledBinDir);
+  const source = bundledYtDlpPath(bundledBinDir);
+  if (!existsSync(source)) {
+    failed.push(YTDLP_EXE);
+  } else {
+    await mkdir(userDataDir, { recursive: true });
+    await copyFile(source, userDataYtDlpPath(userDataDir));
+    if (pinned.ytdlpSha256 !== null) {
+      const actual = await sha256File(userDataYtDlpPath(userDataDir));
+      if (actual === pinned.ytdlpSha256.toLowerCase()) repaired.push(YTDLP_EXE);
+      else failed.push(YTDLP_EXE);
+    } else {
+      repaired.push(YTDLP_EXE);
+    }
+  }
+  for (const exe of [FFMPEG_EXE, FFPROBE_EXE]) {
+    // Presence-checked only (see docstring): missing entries fail the repair.
+    if (!existsSync(join(bundledBinDir, exe))) failed.push(exe);
+  }
+  return { repaired, failed };
 }

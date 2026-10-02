@@ -175,6 +175,7 @@ describe.skipIf(!HAS_YTDLP)("desktop engine live (real yt-dlp)", () => {
       speedLimit: null,
       proxy: null,
       cookiesFromBrowser: null,
+      cookiesFile: null,
       codecPreference: "auto",
       archivePath: null,
       noPlaylist: true,
