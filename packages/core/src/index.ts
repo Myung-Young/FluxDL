@@ -23,3 +23,17 @@ export type {
 export { IPC_CHANNELS } from "./engine.js";
 export type { IpcChannel } from "./engine.js";
 export { App } from "./App.js";
+export { normalizeUrl, isValidUrl, UrlValidationError } from "./url.js";
+export {
+  buildDownloadArgs,
+  buildFfmpegVersionArgs,
+  buildInfoArgs,
+  buildUpdateArgs,
+  buildVersionArgs,
+} from "./args.js";
+export type { DownloadArgsInput } from "./args.js";
+export { parseProgressLine, PROGRESS_TEMPLATE } from "./progress.js";
+export type { ParsedProgress } from "./progress.js";
+export { mapDownloadError } from "./errors.js";
+export type { ErrorCategory, MappedError } from "./errors.js";
+export { parseMediaInfo } from "./media.js";

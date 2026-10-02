@@ -7,6 +7,8 @@ apps/desktop/out/
 apps/desktop/dist/
 bin/
 resources/bin/
+apps/desktop/resources/bin/
+*.exe
 coverage/
 
 # electron-builder
