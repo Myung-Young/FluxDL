@@ -94,5 +94,6 @@
 - Vitest needs its own alias config for deep core imports (`vitest.config.ts`).
 - `window.grabber` cannot be overwritten (frozen bridge) — e2e uses
   `__grabberOverride`, read once by `App.getEngine()`.
-- Do NOT create `apps/mobile`, Capacitor, Kotlin, or Android files until the
-  user types `GO PHASE 2`. See `PHASE2_NOTES.md` for the mobile contract.
+- Mobile/Android is out of scope (cancelled permanently; the old
+  Phase 2 contract is archived under `docs/archive/` for reference only).
+  Never create `apps/mobile`, Capacitor, Kotlin, or Android files.

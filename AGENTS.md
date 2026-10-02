@@ -6,7 +6,8 @@ Working name is `FluxDL`. It lives in exactly ONE constant: `APP_NAME` in
 ## Scope
 
 - PHASE 1 only: `packages/core` + `apps/desktop` (Electron, Windows .exe).
-- Do NOT create `apps/mobile`, Capacitor, Kotlin, or Android files until user types `GO PHASE 2`.
+- Mobile/Android is out of scope (cancelled permanently). Never create
+  `apps/mobile`, Capacitor, Kotlin, or Android files.
 - Future edits must be surgical: touch minimum files, no unrelated rewrites.
 
 ## Non-negotiables

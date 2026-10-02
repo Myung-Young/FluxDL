@@ -27,7 +27,6 @@ export interface EngineVersions {
 /**
  * Single abstraction every platform engine must implement.
  * - Desktop: child_process wrapping yt-dlp binary (apps/desktop/DesktopEngine).
- * - Mobile (Phase 2): Kotlin plugin over youtubedl-android (see PHASE2_NOTES.md).
  *
  * Rules:
  * - All methods are async except listener registration.

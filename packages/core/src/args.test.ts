@@ -94,4 +94,11 @@ describe("arg builder", () => {
     expect(buildVersionArgs()).toEqual(["--version"]);
     expect(buildUpdateArgs()).toEqual(["--update"]);
   });
+
+  it("passes --ignore-config on every spawn (user yt-dlp configs must not leak in)", () => {
+    expect(buildInfoArgs("https://www.youtube.com/watch?v=aqz-KE-bpKQ")).toContain(
+      "--ignore-config",
+    );
+    expect(buildDownloadArgs(base())).toContain("--ignore-config");
+  });
 });

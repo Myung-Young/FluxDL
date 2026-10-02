@@ -66,3 +66,12 @@ Log for ambiguous decisions (simplest option wins, keep going).
 - D39: `fetch-binaries.mjs` needed two Windows fixes: relative tar args (bsdtar parses `C:` as a host) and `System32\\tar.exe` explicitly (PATH tar is GNU tar, no zip support).
 - D40: NSIS is per-user wizard (`perMachine:false`, install dir changeable); portable is a single exe; both verified from `/release` (198MB each, binaries + icon inside).
 - D41: Portable verified from a spaces path end to end: launch → analyze → real 1MB mp4 download → completed file on disk, then traces removed.
+
+## R0 (v1.1 baseline)
+
+- D42: `package.json` says `0.1.0` but that IS the shipped v1.0. Version stays until the M1.9 release commit, which bumps straight to `1.1.0` and tags `v1.1.0` (no retroactive `v1.0.0` tag; the M7 commit is the de-facto v1.0).
+- D43: Baseline gates all green: `typecheck` ✓, `lint` (0 warnings) ✓, `test` 76 passed (core 62 incl. live-capable unit, desktop 14 incl. 3 live-binary), `build` ✓. Pinned binaries: yt-dlp `2026.08.19` (matches `versions.json` + D8/D12), ffmpeg `N-125875-g5d4d3bdc61-20260731`, PATH yt-dlp present so live tests RAN (not skipped).
+- D44: Mobile/Android cancelled permanently: `PHASE2_NOTES.md` → `docs/archive/PHASE2_NOTES.md` (`git mv`, history kept); mobile gotchas in `CLAUDE.md` + `AGENTS.md` replaced with "out of scope"; stale `PHASE2_NOTES.md` pointer in `engine.ts` removed.
+- D45: `--ignore-config` was ALREADY in both `buildInfoArgs` and `buildDownloadArgs` — R0 added a regression test only (`args.test.ts`), no engine change.
+- D46: Back-compat contract: `fixtures/v1.0/{settings.json,queue.json,history.jsonl}` are real-shaped v1.0 samples; `backcompat.test.ts` (main side) loads them through the real disk loaders. It lives in `apps/desktop` because the eslint `no-restricted-imports` rule has NO test exemption — core tests cannot `node:fs`-read fixture files.
+- D47: Flag pre-verification vs pinned binary for v1.1–v1.4: `-S/--format-sort`, `--download-archive`, `--cookies`, `--download-sections`, `--force-keyframes-at-cuts`, `--split-chapters`, `--live-from-start`, `--wait-for-video` ALL present. Empirically: default select on BBB (`aqz-KE-bpKQ`) = `av01+opus/webm`; `-S vcodec:h264` → `avc1`; `-S vcodec:h264,acodec:aac` + `--merge-output-format mp4` → `avc1+mp4a/mp4`; `-S vcodec:vp9` → `vp9`. Codec preference via `-S` sort is viable (M1.1).
