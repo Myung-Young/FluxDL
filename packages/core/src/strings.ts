@@ -15,6 +15,10 @@ export const STRINGS = {
     removed: "Removed from history.",
     cleared: "History cleared.",
   },
+  status: {
+    active: "active",
+    ready: "Ready",
+  },
   home: {
     title: "Home",
     urlLabel: "Video URL",

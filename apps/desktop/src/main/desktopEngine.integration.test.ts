@@ -40,6 +40,7 @@ function makeEngine(plain = false) {
     appVersion: "0.0.0-m6",
     defaultOutputDir: outputDir,
     broadcast: () => undefined,
+    onAggregate: () => undefined,
   });
   return { engine, events, outputDir, userData, base };
 }

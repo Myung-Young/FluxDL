@@ -3,6 +3,7 @@ import type { IpcRendererEvent } from "electron";
 import { IPC_CHANNELS } from "@grabber/core/engine.js";
 import type { AppSettings, DownloadJob, DownloadJobInput, MediaInfo } from "@grabber/core/types.js";
 import type {
+  AggregateProgressState,
   EngineProgress,
   EngineVersions,
   ProgressCallback,
@@ -24,6 +25,7 @@ export interface GrabberApi {
   getEngineVersion(): Promise<EngineVersions>;
   updateEngine(): Promise<EngineVersions>;
   repairEngine(): Promise<RepairReport>;
+  setAggregateProgress(state: AggregateProgressState): Promise<void>;
   pickFolder(): Promise<string | null>;
   openPath(path: string): Promise<void>;
   revealInFolder(path: string): Promise<void>;
@@ -60,6 +62,8 @@ const api: GrabberApi = {
     ipcRenderer.invoke(IPC_CHANNELS.getEngineVersion) as Promise<EngineVersions>,
   updateEngine: () => ipcRenderer.invoke(IPC_CHANNELS.updateEngine) as Promise<EngineVersions>,
   repairEngine: () => ipcRenderer.invoke(IPC_CHANNELS.repairEngine) as Promise<RepairReport>,
+  setAggregateProgress: (state: AggregateProgressState) =>
+    ipcRenderer.invoke(IPC_CHANNELS.setAggregateProgress, state) as Promise<void>,
   pickFolder: () => ipcRenderer.invoke(IPC_CHANNELS.pickFolder) as Promise<string | null>,
   openPath: (path) => ipcRenderer.invoke(IPC_CHANNELS.openPath, path) as Promise<void>,
   revealInFolder: (path) => ipcRenderer.invoke(IPC_CHANNELS.revealInFolder, path) as Promise<void>,

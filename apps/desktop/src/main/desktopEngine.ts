@@ -4,8 +4,10 @@ import { existsSync } from "node:fs";
 import { rm, stat, unlink } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { dialog, shell } from "electron";
+import { APP_NAME } from "@grabber/core/branding.js";
 import type { AppSettings, DownloadJob, DownloadJobInput, MediaInfo } from "@grabber/core/types.js";
 import type {
+  AggregateProgressState,
   DownloadEngine,
   EngineProgress,
   EngineVersions,
@@ -63,6 +65,7 @@ export interface DesktopEngineDeps {
   readonly appVersion: string;
   readonly defaultOutputDir: string;
   readonly broadcast: (event: EngineProgress) => void;
+  readonly onAggregate: (state: AggregateProgressState) => void;
 }
 
 type JobState = "running" | "pausing" | "cancelling" | "paused";
@@ -526,8 +529,7 @@ export class DesktopEngine implements DownloadEngine {
     return this.getEngineVersion();
   }
 
-  async repairEngine(): Promise<RepairReport> {
-    const { repaired, failed } = await repairBinaries(
+  async repairEngine(): Promise<RepairReport> {    const { repaired, failed } = await repairBinaries(
       this.deps.userDataDir,
       this.deps.bundledBinDir,
     );
@@ -538,6 +540,17 @@ export class DesktopEngine implements DownloadEngine {
       versions.ytdlp !== "unknown" &&
       versions.ffmpeg !== null;
     return { ok, repaired, failed, versions };
+  }
+
+  setAggregateProgress(state: AggregateProgressState): Promise<void> {
+    const active = Number.isFinite(state.active) ? Math.max(0, Math.floor(state.active)) : 0;
+    const percent =
+      state.percent === null || !Number.isFinite(state.percent)
+        ? null
+        : Math.min(100, Math.max(0, state.percent));
+    const tooltip = typeof state.tooltip === "string" ? state.tooltip.slice(0, 200) : APP_NAME;
+    this.deps.onAggregate({ active, percent, tooltip });
+    return Promise.resolve();
   }
 
   async pickFolder(): Promise<string | null> {

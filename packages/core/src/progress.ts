@@ -119,3 +119,33 @@ export function parseProgressLine(line: string): ParsedProgress | null {
 
   return null;
 }
+
+const SPEED_RE = /^\s*([\d.]+)\s*([KMGTPE]?)(i?)(B?)\s*\/s\s*$/i;
+
+/**
+ * Parse a yt-dlp speed string ("3.35MiB/s", "512KiB/s", "1M/s") to bytes/s.
+ * Returns null for missing/unparseable values ("NA", "Unknown").
+ */
+export function parseSpeedBps(raw: string | null): number | null {
+  if (raw === null) return null;
+  const m = SPEED_RE.exec(raw);
+  if (m === null) return null;
+  const value = Number(m[1]);
+  if (!Number.isFinite(value) || value < 0) return null;
+  const prefix = (m[2] ?? "").toUpperCase();
+  const mult =
+    prefix === "K"
+      ? 1024
+      : prefix === "M"
+        ? 1024 ** 2
+        : prefix === "G"
+          ? 1024 ** 3
+          : prefix === "T"
+            ? 1024 ** 4
+            : prefix === "P"
+              ? 1024 ** 5
+              : prefix === "E"
+                ? 1024 ** 6
+                : 1;
+  return value * mult;
+}

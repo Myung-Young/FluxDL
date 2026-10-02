@@ -2,14 +2,52 @@ import { app, BrowserWindow, Menu, Tray, nativeImage, session } from "electron";
 import { join } from "node:path";
 import { APP_NAME } from "@grabber/core/branding.js";
 import { IPC_CHANNELS } from "@grabber/core/engine.js";
+import type { AggregateProgressState } from "@grabber/core/engine.js";
 import { ensureUserDataBinary } from "./binaries.js";
 import { DesktopEngine } from "./desktopEngine.js";
 import { registerEngineIpc } from "./ipc.js";
+import { resolveTaskbarCommand } from "./taskbar.js";
 
 let mainWindow: BrowserWindow | null = null;
 let engine: DesktopEngine | null = null;
 let tray: Tray | null = null;
 let quitting = false;
+
+// Taskbar progress + tray tooltip (M1.5): renderer sends a throttled
+// aggregate; error/overlay flags are window-local and clear on show/focus.
+let aggState = { active: 0, percent: null as number | null };
+let aggTooltip: string = APP_NAME;
+let taskError = false;
+let finishedHidden = false;
+let overlayDot: Electron.NativeImage | null = null;
+
+function overlayIconPath(): string {
+  if (app.isPackaged) return join(process.resourcesPath, "icons", "overlay-dot.png");
+  return join(__dirname, "../../resources/icons/overlay-dot.png");
+}
+
+function refreshTaskbar(): void {
+  if (mainWindow === null) return;
+  const cmd = resolveTaskbarCommand(
+    aggState,
+    { error: taskError, finishedHidden },
+    aggTooltip,
+  );
+  mainWindow.setProgressBar(cmd.value, { mode: cmd.mode });
+  if (cmd.overlay) {
+    if (overlayDot === null) overlayDot = nativeImage.createFromPath(overlayIconPath());
+    mainWindow.setOverlayIcon(overlayDot.isEmpty() ? null : overlayDot, "Downloads finished");
+  } else {
+    mainWindow.setOverlayIcon(null, "");
+  }
+  tray?.setToolTip(cmd.tooltip);
+}
+
+function clearTaskbarFlags(): void {
+  taskError = false;
+  finishedHidden = false;
+  refreshTaskbar();
+}
 
 function bundledBinDir(): string {
   // Packaged: <resources>/bin (asarUnpack). Dev: apps/desktop/resources/bin.
@@ -67,6 +105,13 @@ async function createWindow(): Promise<void> {
       win.hide();
     }
   });
+  // Error/overlay flags clear when the window is shown again.
+  win.on("show", () => {
+    clearTaskbarFlags();
+  });
+  win.on("focus", () => {
+    clearTaskbarFlags();
+  });
 
   if (process.env["ELECTRON_RENDERER_URL"] !== undefined) {
     await win.loadURL(process.env["ELECTRON_RENDERER_URL"]);
@@ -118,6 +163,16 @@ function getEngine(): DesktopEngine {
       defaultOutputDir: app.getPath("downloads"),
       broadcast: (event) => {
         mainWindow?.webContents.send(IPC_CHANNELS.onProgress, event);
+        if (event.stage === "error") taskError = true;
+        if (event.stage === "done" && (mainWindow === null || !mainWindow.isVisible())) {
+          finishedHidden = true;
+        }
+        refreshTaskbar();
+      },
+      onAggregate: (state: AggregateProgressState) => {
+        aggState = { active: state.active, percent: state.percent };
+        aggTooltip = state.tooltip;
+        refreshTaskbar();
       },
     });
     registerEngineIpc(engine);

@@ -36,6 +36,13 @@ export interface RepairReport {
   readonly versions: EngineVersions | null;
 }
 
+/** Throttled aggregate for taskbar progress + tray tooltip. */
+export interface AggregateProgressState {
+  readonly active: number;
+  readonly percent: number | null;
+  readonly tooltip: string;
+}
+
 /**
  * Single abstraction every platform engine must implement.
  * - Desktop: child_process wrapping yt-dlp binary (apps/desktop/DesktopEngine).
@@ -58,6 +65,8 @@ export interface DownloadEngine {
   updateEngine(): Promise<EngineVersions>;
   /** Re-copy bundled binaries, verify hashes, re-check versions. */
   repairEngine(): Promise<RepairReport>;
+  /** Throttled aggregate state (taskbar progress bar + tray tooltip). */
+  setAggregateProgress(state: AggregateProgressState): Promise<void>;
   pickFolder(): Promise<string | null>;
   openPath(path: string): Promise<void>;
   revealInFolder(path: string): Promise<void>;
@@ -94,6 +103,7 @@ export const IPC_CHANNELS = {
   getEngineVersion: "engine:getVersion",
   updateEngine: "engine:update",
   repairEngine: "engine:repair",
+  setAggregateProgress: "engine:aggregate",
   pickFolder: "engine:pickFolder",
   openPath: "engine:openPath",
   revealInFolder: "engine:reveal",

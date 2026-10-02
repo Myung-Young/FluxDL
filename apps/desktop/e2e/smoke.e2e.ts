@@ -94,6 +94,7 @@ async function installMock(page: Page): Promise<void> {
       revealInFolder: (): Promise<void> => Promise.resolve(),
       fileExists: (): Promise<boolean> => Promise.resolve(false),
       clearArchive: (): Promise<void> => Promise.resolve(),
+      setAggregateProgress: (): Promise<void> => Promise.resolve(),
       loadSettings: (): Promise<unknown> => Promise.resolve({ ...settings }),
       saveSettings: (patch: unknown): Promise<unknown> => {
         if (typeof patch === "object" && patch !== null) {
@@ -151,6 +152,9 @@ test("launch -> analyze mocked response -> queue item", async () => {
   await expect(page.locator(".dl-card")).toHaveCount(1);
   await expect(page.locator(".dl-card")).toContainText("Mock Video");
   await expect(page.locator(".dl-track")).toHaveAttribute("aria-valuenow", "42", {
+    timeout: 15000,
+  });
+  await expect(page.locator('[data-testid="aggregate"]')).toContainText("1 active", {
     timeout: 15000,
   });
 

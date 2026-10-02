@@ -15,6 +15,12 @@ import { Library } from "./Library.js";
 import { SettingsScreen } from "./SettingsScreen.js";
 import { Logs } from "./Logs.js";
 import { Toasts } from "./Toasts.js";
+import {
+  AGGREGATE_SEND_MS,
+  aggregateStatus,
+  formatSpeedBps,
+  shouldSendAggregate,
+} from "./aggregate.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 import type { ToastStoreState } from "./toast.js";
 import "./tokens.css";
@@ -53,6 +59,10 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   const [view, setView] = useState<ShellView>("home");
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
   const [pendingSection, setPendingSection] = useState<string | null>(null);
+  const [aggregateText, setAggregateText] = useState<string>(STRINGS.status.ready);
+  const lastAggSent = useRef<number | null>(null);
+  const aggTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const jobs = useStore(queue, (s) => s.jobs);
   const theme = useStore(settings, (s) => s.settings.theme);
   const navRef = useRef<HTMLElement | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
@@ -92,6 +102,30 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   useEffect(() => {
     mainRef.current?.focus({ preventScroll: true });
   }, [view]);
+
+  // Aggregate status: sidebar footer + throttled taskbar/tray updates.
+  useEffect(() => {
+    const agg = aggregateStatus(jobs);
+    const speed = agg.speedBps > 0 ? ` · ${formatSpeedBps(agg.speedBps)}` : "";
+    const text =
+      agg.active > 0 ? `${String(agg.active)} ${STRINGS.status.active}${speed}` : STRINGS.status.ready;
+    setAggregateText(text);
+    const send = (): void => {
+      lastAggSent.current = Date.now();
+      engine
+        .setAggregateProgress({ active: agg.active, percent: agg.percent, tooltip: text })
+        .catch(() => undefined);
+    };
+    if (shouldSendAggregate(lastAggSent.current, Date.now())) {
+      send();
+    } else {
+      if (aggTimer.current !== null) clearTimeout(aggTimer.current);
+      aggTimer.current = setTimeout(send, AGGREGATE_SEND_MS);
+    }
+    return () => {
+      if (aggTimer.current !== null) clearTimeout(aggTimer.current);
+    };
+  }, [jobs, engine]);
 
   // Error-action deep links (settings section anchors).
   useEffect(() => {
@@ -214,6 +248,9 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
               {item.label}
             </button>
           ))}
+          <div className="grabber-nav-foot" data-testid="aggregate" role="status">
+            {aggregateText}
+          </div>
         </nav>
         <main ref={mainRef} id="grabber-main" className="grabber-main" tabIndex={-1}>
           {view === "home" && (

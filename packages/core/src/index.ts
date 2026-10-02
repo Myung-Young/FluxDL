@@ -18,10 +18,18 @@ export type {
   DownloadEngine,
   EngineProgress,
   EngineVersions,
+  AggregateProgressState,
   ProgressCallback,
   RepairReport,
   Unsubscribe,
 } from "./engine.js";
+export {
+  aggregateStatus,
+  formatSpeedBps,
+  shouldSendAggregate,
+  AGGREGATE_SEND_MS,
+} from "./aggregate.js";
+export type { AggregateStatus } from "./aggregate.js";
 export { IPC_CHANNELS } from "./engine.js";
 export type { IpcChannel } from "./engine.js";
 export { App } from "./App.js";
@@ -91,7 +99,7 @@ export {
   codecSortOf,
 } from "./args.js";
 export type { DownloadArgsInput } from "./args.js";
-export { parseProgressLine, PROGRESS_TEMPLATE } from "./progress.js";
+export { parseProgressLine, PROGRESS_TEMPLATE, parseSpeedBps } from "./progress.js";
 export type { ParsedProgress } from "./progress.js";
 export { mapDownloadError, actionsFor } from "./errors.js";
 export type { ErrorAction, ErrorActionId, ErrorCategory, MappedError } from "./errors.js";

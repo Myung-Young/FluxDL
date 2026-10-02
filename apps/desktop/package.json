@@ -50,6 +50,10 @@
       {
         "from": "resources/icons/tray.png",
         "to": "icons/tray.png"
+      },
+      {
+        "from": "resources/icons/overlay-dot.png",
+        "to": "icons/overlay-dot.png"
       }
     ],
     "win": {

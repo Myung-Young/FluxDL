@@ -94,6 +94,14 @@ export function registerEngineIpc(engine: DesktopEngine): void {
   ipcMain.handle(IPC_CHANNELS.repairEngine, async () => {
     return engine.repairEngine();
   });
+  ipcMain.handle(IPC_CHANNELS.setAggregateProgress, async (_event, raw: unknown) => {
+    if (!isRecord(raw)) throw new Error("Invalid aggregate state.");
+    const active = typeof raw["active"] === "number" ? raw["active"] : 0;
+    const percentRaw = raw["percent"];
+    const percent = percentRaw === null || typeof percentRaw === "number" ? percentRaw : null;
+    const tooltip = typeof raw["tooltip"] === "string" ? raw["tooltip"] : "";
+    await engine.setAggregateProgress({ active, percent, tooltip });
+  });
   ipcMain.handle(IPC_CHANNELS.pickFolder, async () => {
     return engine.pickFolder();
   });
