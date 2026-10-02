@@ -1,16 +1,13 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { IpcRendererEvent } from "electron";
-import { IPC_CHANNELS } from "@grabber/core";
+import { IPC_CHANNELS } from "@grabber/core/engine.js";
+import type { AppSettings, DownloadJob, DownloadJobInput, MediaInfo } from "@grabber/core/types.js";
 import type {
-  AppSettings,
-  DownloadJob,
-  DownloadJobInput,
   EngineProgress,
   EngineVersions,
-  MediaInfo,
   ProgressCallback,
   Unsubscribe,
-} from "@grabber/core";
+} from "@grabber/core/engine.js";
 
 /**
  * Typed preload bridge. Single channel map lives in core (IPC_CHANNELS).

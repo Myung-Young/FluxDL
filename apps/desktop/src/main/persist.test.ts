@@ -13,7 +13,7 @@ import {
   saveQueueToDisk,
   saveSettingsToDisk,
 } from "./persist.js";
-import type { DownloadJob } from "@grabber/core";
+import type { DownloadJob } from "@grabber/core/types.js";
 
 function dir(suffix: string): string {
   const base = mkdtempSync(join(tmpdir(), `grabber-persist-${suffix}-`));

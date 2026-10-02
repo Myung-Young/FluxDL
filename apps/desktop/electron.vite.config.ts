@@ -4,13 +4,23 @@ import { resolve } from "node:path";
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin({ exclude: ["@grabber/core"] })],
+    resolve: {
+      alias: {
+        "@grabber/core": resolve(__dirname, "../../packages/core/src"),
+      },
+    },
     build: {
       outDir: "out/main",
     },
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin({ exclude: ["@grabber/core"] })],
+    resolve: {
+      alias: {
+        "@grabber/core": resolve(__dirname, "../../packages/core/src"),
+      },
+    },
     build: {
       outDir: "out/preload",
     },
@@ -20,7 +30,7 @@ export default defineConfig({
     plugins: [react()],
     resolve: {
       alias: {
-        "@grabber/core": resolve(__dirname, "../../packages/core/src/index.ts"),
+        "@grabber/core": resolve(__dirname, "../../packages/core/src"),
       },
     },
     build: {

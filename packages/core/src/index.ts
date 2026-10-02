@@ -23,6 +23,9 @@ export type {
 export { IPC_CHANNELS } from "./engine.js";
 export type { IpcChannel } from "./engine.js";
 export { App } from "./App.js";
+export { Shell } from "./Shell.js";
+export type { ShellView } from "./Shell.js";
+export { prefersReducedMotion, staggerIn, fadeSwap, pressScale, tweenProgress } from "./motion.js";
 export { normalizeUrl, isValidUrl, UrlValidationError } from "./url.js";
 export {
   buildDownloadArgs,

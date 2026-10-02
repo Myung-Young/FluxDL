@@ -1,6 +1,7 @@
 import { ipcMain } from "electron";
-import { IPC_CHANNELS, normalizeUrl } from "@grabber/core";
-import type { DownloadJobInput } from "@grabber/core";
+import { IPC_CHANNELS } from "@grabber/core/engine.js";
+import { normalizeUrl } from "@grabber/core/url.js";
+import type { DownloadJobInput } from "@grabber/core/types.js";
 import type { DesktopEngine } from "./desktopEngine.js";
 import { isDownloadJob } from "./persist.js";
 

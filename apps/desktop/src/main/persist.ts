@@ -2,8 +2,8 @@ import { existsSync } from "node:fs";
 import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import Store from "electron-store";
-import type { AppSettings, DownloadJob, JobStatus } from "@grabber/core";
-import { DEFAULT_SETTINGS, mergeSettings } from "@grabber/core";
+import type { AppSettings, DownloadJob, JobStatus } from "@grabber/core/types.js";
+import { DEFAULT_SETTINGS, mergeSettings } from "@grabber/core/settings.js";
 
 /**
  * File persistence (main process only).

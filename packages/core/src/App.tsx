@@ -1,29 +1,22 @@
 import { useState } from "react";
-import { APP_NAME } from "./branding.js";
-import "./tokens.css";
+import { Shell } from "./Shell.js";
+import type { DownloadEngine } from "./engine.js";
+
+function getEngine(): DownloadEngine | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as { grabber?: DownloadEngine };
+  return w.grabber ?? null;
+}
 
 export function App(): React.JSX.Element {
-  const [url, setUrl] = useState<string>("");
-  return (
-    <main className="grabber-shell" data-testid="grabber-shell">
-      <section className="grabber-card">
-        <h1>{APP_NAME}</h1>
-        <p>M0 hello window. Engine + queue + screens land in M1–M4.</p>
-        <label htmlFor="grabber-url">Video URL</label>
-        <input
-          id="grabber-url"
-          className="grabber-input"
-          placeholder="Paste a link…"
-          value={url}
-          onChange={(e) => {
-            setUrl(e.target.value);
-          }}
-        />
-        <p aria-live="polite">{url.length > 0 ? url : "Waiting for a link…"}</p>
-        <button className="grabber-button" type="button">
-          Analyze
-        </button>
-      </section>
-    </main>
-  );
+  const [engine] = useState<DownloadEngine | null>(getEngine);
+  if (engine === null) {
+    return (
+      <main style={{ padding: 32 }}>
+        <h1>Unavailable</h1>
+        <p>This UI must run inside the desktop shell.</p>
+      </main>
+    );
+  }
+  return <Shell engine={engine} />;
 }

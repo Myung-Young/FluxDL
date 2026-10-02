@@ -2,29 +2,26 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { unlink } from "node:fs/promises";
 import { dialog, shell } from "electron";
+import type { AppSettings, DownloadJob, DownloadJobInput, MediaInfo } from "@grabber/core/types.js";
 import type {
-  AppSettings,
   DownloadEngine,
-  DownloadJob,
-  DownloadJobInput,
   EngineProgress,
   EngineVersions,
-  MediaInfo,
   ProgressCallback,
   Unsubscribe,
-} from "@grabber/core";
-import type { ErrorCategory, MappedError } from "@grabber/core";
+} from "@grabber/core/engine.js";
+import type { ErrorCategory, MappedError } from "@grabber/core/errors.js";
 import {
   buildDownloadArgs,
   buildFfmpegVersionArgs,
   buildInfoArgs,
   buildUpdateArgs,
   buildVersionArgs,
-  mapDownloadError,
-  normalizeUrl,
-  parseMediaInfo,
-  parseProgressLine,
-} from "@grabber/core";
+} from "@grabber/core/args.js";
+import { mapDownloadError } from "@grabber/core/errors.js";
+import { normalizeUrl } from "@grabber/core/url.js";
+import { parseMediaInfo } from "@grabber/core/media.js";
+import { parseProgressLine } from "@grabber/core/progress.js";
 import {
   ensureUserDataBinary,
   resolveFfmpegDir,
