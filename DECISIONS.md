@@ -58,3 +58,11 @@ Log for ambiguous decisions (simplest option wins, keep going).
 - D34: Error mapper hardened with a real captured proxy-failure stderr (`Unable to connect to proxy`/`NewConnectionError` → network); true ENOSPC fill is not simulated — write-failure surfacing (bad-path rejection) plus the disk-full message mapping is what's tested.
 - D35: Kill/resume is a live integration test (`desktopEngine.integration.test.ts`, skipped without a PATH yt-dlp): real 1MB download into a spaces/unicode dir, pause (kill, keep .part) mid-stream, resume to a complete `.mp4` with destination reported.
 - D36: Playwright smoke (`e2e/smoke.e2e.ts`, `*.e2e.ts` so vitest ignores it) launches Electron, injects a mock engine via a `__grabberOverride` seam (preload `contextBridge` props are read-only, so overwrite is impossible), then analyzes + queues + asserts progress with zero page errors.
+
+## M7
+
+- D37: `productName`/`appId` live in the electron-builder config (static JSON cannot import `APP_NAME`; the single source remains `branding.ts` for everything the app itself displays).
+- D38: Binaries ship via `extraResources` (unpacked `resources/bin` + tray icon) rather than `asarUnpack` — same guarantee (spawnable outside the asar) matched to how the engine resolves paths.
+- D39: `fetch-binaries.mjs` needed two Windows fixes: relative tar args (bsdtar parses `C:` as a host) and `System32\\tar.exe` explicitly (PATH tar is GNU tar, no zip support).
+- D40: NSIS is per-user wizard (`perMachine:false`, install dir changeable); portable is a single exe; both verified from `/release` (198MB each, binaries + icon inside).
+- D41: Portable verified from a spaces path end to end: launch → analyze → real 1MB mp4 download → completed file on disk, then traces removed.

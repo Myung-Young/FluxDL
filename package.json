@@ -18,7 +18,8 @@
     "build": "pnpm -r build",
     "build:desktop": "pnpm --filter @grabber/desktop build",
     "fetch:binaries": "node scripts/fetch-binaries.mjs",
-    "make:icon": "node scripts/make-tray-icon.mjs"
+    "make:icon": "node scripts/make-tray-icon.mjs && node scripts/make-app-icon.mjs",
+    "dist": "pnpm --filter @grabber/desktop dist"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",

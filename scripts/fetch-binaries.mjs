@@ -67,10 +67,18 @@ function parseSums(text, name) {
   throw new Error(`checksum entry missing for ${name}`);
 }
 
+function tarBinary() {
+  // PATH tar is often GNU tar (no zip); Windows ships bsdtar that reads zips.
+  if (process.platform === "win32") {
+    return "C:\\Windows\\System32\\tar.exe";
+  }
+  return "tar";
+}
+
 function runTar(args, cwd) {
   return new Promise((resolve, reject) => {
-    // No shell:true — args array only. tar ships with Windows 10+.
-    const p = spawn("tar", args, { cwd, stdio: "inherit", shell: false, windowsHide: true });
+    // No shell:true — args array only.
+    const p = spawn(tarBinary(), args, { cwd, stdio: "inherit", shell: false, windowsHide: true });
     p.on("error", reject);
     p.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`tar exit ${code}`))));
   });
@@ -110,7 +118,8 @@ async function main() {
     if (gotZip !== wantZip) throw new Error("ffmpeg zip SHA256 mismatch");
     const extDir = join(tmp, "ff");
     await mkdir(extDir, { recursive: true });
-    await runTar(["-xf", zipTmp, "-C", extDir], tmp);
+    // Relative names only: bsdtar parses `C:` as a remote host otherwise.
+    await runTar(["-xf", "ffmpeg.zip", "-C", "ff"], tmp);
     const found = await findFiles(extDir, new Set(["ffmpeg.exe", "ffprobe.exe"]));
     for (const name of ["ffmpeg.exe", "ffprobe.exe"]) {
       const src = found.find((p) => p.toLowerCase().endsWith(name));
