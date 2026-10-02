@@ -39,6 +39,10 @@ export interface MediaInfo {
   readonly duration: number | null;
   readonly thumbnail: string | null;
   readonly isPlaylist: boolean;
+  /** Extractor key (e.g. "youtube") when the dump provides one. */
+  readonly extractor: string | null;
+  /** Top-level video id when the dump provides one (absent for playlists). */
+  readonly videoId: string | null;
   readonly entries: readonly PlaylistEntry[];
   readonly formats: readonly FormatOption[];
 }
@@ -80,9 +84,22 @@ export interface DownloadJob {
   readonly nextRetryAt: number | null;
   /** Last known output file reported by the engine, if any. */
   readonly destination: string | null;
+  /**
+   * Pass --download-archive for this job (playlist targets when the
+   * skipArchived setting is on). Optional: older records omit it (= false).
+   */
+  readonly useArchive?: boolean;
+  /** Extractor key + video id when known at enqueue (duplicate guard). */
+  readonly extractor?: string | null;
+  readonly videoId?: string | null;
 }
 
-export type DownloadJobInput = Pick<DownloadJob, "url" | "title" | "preset" | "outputDir">;
+export interface DownloadJobInput extends Pick<
+  DownloadJob,
+  "url" | "title" | "preset" | "outputDir" | "extractor" | "videoId"
+> {
+  readonly useArchive?: boolean;
+}
 
 export type ThemeName = "obsidian" | "midnight" | "ember";
 
@@ -101,6 +118,8 @@ export interface AppSettings {
   readonly mergeContainer: string;
   readonly sponsorBlock: boolean;
   readonly codecPreference: CodecPreference;
+  /** Playlist jobs pass --download-archive (default ON). */
+  readonly skipArchived: boolean;
   readonly theme: ThemeName;
   readonly postDownloadAction: "none" | "open-file" | "reveal";
   readonly autoCheckUpdate: boolean;

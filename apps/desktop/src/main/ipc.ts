@@ -20,8 +20,7 @@ function parseJobInput(raw: unknown): DownloadJobInput {
   const outputDirRaw = typeof raw["outputDir"] === "string" ? raw["outputDir"] : "";
   if (urlRaw === null) throw new Error("Job is missing a URL.");
   const url = normalizeUrl(urlRaw);
-  if (!isRecord(raw["preset"])) throw new Error("Job is missing a preset.");
-  const presetRaw = raw["preset"];
+  if (!isRecord(raw["preset"])) throw new Error("Job is missing a preset.");  const presetRaw = raw["preset"];
   const kind = presetRaw["kind"];
   const videoPreset = presetRaw["videoPreset"];
   const audioPreset = presetRaw["audioPreset"];
@@ -48,6 +47,13 @@ function parseJobInput(raw: unknown): DownloadJobInput {
       rawFormat,
     },
     outputDir: outputDirRaw,
+    ...(raw["useArchive"] === true ? { useArchive: true as const } : {}),
+    ...(typeof raw["extractor"] === "string" && raw["extractor"].length > 0
+      ? { extractor: raw["extractor"] }
+      : {}),
+    ...(typeof raw["videoId"] === "string" && raw["videoId"].length > 0
+      ? { videoId: raw["videoId"] }
+      : {}),
   };
 }
 
@@ -94,6 +100,14 @@ export function registerEngineIpc(engine: DesktopEngine): void {
     const p = asNonEmptyString(rawPath);
     if (p === null) throw new Error("Missing path.");
     await engine.revealInFolder(p);
+  });
+  ipcMain.handle(IPC_CHANNELS.fileExists, async (_event, rawPath: unknown) => {
+    const p = asNonEmptyString(rawPath);
+    if (p === null) throw new Error("Missing path.");
+    return engine.fileExists(p);
+  });
+  ipcMain.handle(IPC_CHANNELS.clearArchive, async () => {
+    await engine.clearArchive();
   });
   ipcMain.handle(IPC_CHANNELS.loadSettings, async () => {
     return engine.loadSettings();

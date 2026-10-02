@@ -24,6 +24,17 @@ describe("mergeSettings", () => {
     expect(m.proxy).toBeNull();
     expect(m.embedThumbnail).toBe(false);
   });
+  it("defaults codec/archived preferences and sanitizes them", () => {
+    expect(DEFAULT_SETTINGS.codecPreference).toBe("auto");
+    expect(DEFAULT_SETTINGS.skipArchived).toBe(true);
+    const m = mergeSettings(DEFAULT_SETTINGS, {
+      codecPreference: "vorbis" as never,
+      skipArchived: "yes" as never,
+    });
+    expect(m.codecPreference).toBe("auto");
+    expect(m.skipArchived).toBe(true);
+    expect(mergeSettings(DEFAULT_SETTINGS, { skipArchived: false }).skipArchived).toBe(false);
+  });
 
   it("preserves untouched fields and downloadDir verbatim", () => {
     const m = mergeSettings(DEFAULT_SETTINGS, {

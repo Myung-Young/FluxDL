@@ -673,6 +673,22 @@ select.input {
   max-width: min(380px, 90vw);
 }
 
+.grabber-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 0.6);
+  z-index: 50;
+  padding: var(--space-4);
+}
+
+.grabber-modal .grabber-card {
+  max-width: min(480px, 92vw);
+  margin: 0;
+}
+
 .toast {
   display: flex;
   align-items: center;

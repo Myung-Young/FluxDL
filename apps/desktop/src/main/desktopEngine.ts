@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { unlink } from "node:fs/promises";
+import { rm, stat, unlink } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { dialog, shell } from "electron";
 import type { AppSettings, DownloadJob, DownloadJobInput, MediaInfo } from "@grabber/core/types.js";
 import type {
@@ -76,6 +77,53 @@ const DESTINATION_RE = /\[download\] Destination: (.+)/;
 const MERGER_RE = /\[Merger\] Merging formats into "(.+)"/;
 const EXTRACT_AUDIO_RE = /\[ExtractAudio\] Destination: (.+)/;
 const MAX_LOG_CHARS = 500_000;
+
+/** yt-dlp download-archive tracking already-fetched videos (M1.3). */
+export const ARCHIVE_FILE = "archive.txt";
+
+export function archivePathFor(userDataDir: string): string {
+  return join(userDataDir, ARCHIVE_FILE);
+}
+
+function isInsideDir(root: string, candidate: string): boolean {
+  // Case-insensitive string math (Windows); absolute `rel` = other drive.
+  const rel = relative(root.toLowerCase(), candidate.toLowerCase());
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
+
+/**
+ * Trust boundary (rule 4): the renderer is untrusted, so any path it sends
+ * (open/reveal/exists) must resolve inside the download roots or equal a
+ * known job/history destination. Everything else is rejected.
+ */
+export async function isAllowedPath(
+  userDataDir: string,
+  defaultOutputDir: string,
+  activeDestinations: readonly (string | null)[],
+  rawPath: string,
+): Promise<boolean> {
+  if (rawPath.trim().length === 0) return false;
+  const candidate = resolve(rawPath);
+  const settings = loadSettingsFromDisk(userDataDir);
+  const roots: string[] = [];
+  if (settings.downloadDir.trim().length > 0) roots.push(resolve(settings.downloadDir));
+  if (defaultOutputDir.trim().length > 0) roots.push(resolve(defaultOutputDir));
+  for (const root of roots) {
+    if (isInsideDir(root, candidate)) return true;
+  }
+  const known = new Set<string>();
+  for (const d of activeDestinations) {
+    if (d !== null && d.length > 0) known.add(resolve(d));
+  }
+  try {
+    for (const h of await loadHistoryFromDisk(userDataDir)) {
+      if (h.destination !== null && h.destination.length > 0) known.add(resolve(h.destination));
+    }
+  } catch {
+    // History read failure just narrows the allow-list.
+  }
+  return known.has(candidate);
+}
 
 function appendLog(log: string, chunk: string): string {
   const next = log + chunk;
@@ -189,6 +237,7 @@ export class DesktopEngine implements DownloadEngine {
       title: job.title,
       preset: job.preset,
       outputDir,
+      ...(job.useArchive === true ? { useArchive: true as const } : {}),
     };
     const id = randomUUID();
     // User settings live on disk (main side) so every download honors them
@@ -212,6 +261,10 @@ export class DesktopEngine implements DownloadEngine {
       proxy: s.proxy,
       cookiesFromBrowser: s.cookiesFromBrowser,
       codecPreference: s.codecPreference,
+      archivePath:
+        s.skipArchived && input.useArchive === true
+          ? archivePathFor(this.deps.userDataDir)
+          : null,
       noPlaylist: true,
     });
     this.jobs.set(id, {
@@ -461,15 +514,48 @@ export class DesktopEngine implements DownloadEngine {
   }
 
   async openPath(path: string): Promise<void> {
-    if (path.trim().length === 0) throw new Error("Empty path.");
+    await this.assertAllowed(path);
     const err = await shell.openPath(path);
     if (err.length > 0) throw new Error(err);
   }
 
-  revealInFolder(path: string): Promise<void> {
-    if (path.trim().length === 0) throw new Error("Empty path.");
+  async revealInFolder(path: string): Promise<void> {
+    await this.assertAllowed(path);
     shell.showItemInFolder(path);
-    return Promise.resolve();
+  }
+
+  async fileExists(path: string): Promise<boolean> {
+    if (!(await this.isAllowed(path))) return false;
+    try {
+      await stat(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async clearArchive(): Promise<void> {
+    await rm(archivePathFor(this.deps.userDataDir), { force: true });
+  }
+
+  private activeDestinations(): (string | null)[] {
+    return [...this.jobs.values()].map((j) => j.destination);
+  }
+
+  private async isAllowed(path: string): Promise<boolean> {
+    return isAllowedPath(
+      this.deps.userDataDir,
+      this.deps.defaultOutputDir,
+      this.activeDestinations(),
+      path,
+    );
+  }
+
+  private async assertAllowed(path: string): Promise<void> {
+    if (path.trim().length === 0) throw new Error("Empty path.");
+    if (!(await this.isAllowed(path))) {
+      throw new Error("Path is outside the download folder.");
+    }
   }
 
   loadSettings(): Promise<AppSettings> {

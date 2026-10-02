@@ -25,6 +25,8 @@ export interface GrabberApi {
   pickFolder(): Promise<string | null>;
   openPath(path: string): Promise<void>;
   revealInFolder(path: string): Promise<void>;
+  fileExists(path: string): Promise<boolean>;
+  clearArchive(): Promise<void>;
   loadSettings(): Promise<AppSettings>;
   saveSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
   loadQueue(): Promise<DownloadJob[]>;
@@ -58,6 +60,9 @@ const api: GrabberApi = {
   pickFolder: () => ipcRenderer.invoke(IPC_CHANNELS.pickFolder) as Promise<string | null>,
   openPath: (path) => ipcRenderer.invoke(IPC_CHANNELS.openPath, path) as Promise<void>,
   revealInFolder: (path) => ipcRenderer.invoke(IPC_CHANNELS.revealInFolder, path) as Promise<void>,
+  fileExists: (path) =>
+    ipcRenderer.invoke(IPC_CHANNELS.fileExists, path) as Promise<boolean>,
+  clearArchive: () => ipcRenderer.invoke(IPC_CHANNELS.clearArchive) as Promise<void>,
   loadSettings: () => ipcRenderer.invoke(IPC_CHANNELS.loadSettings) as Promise<AppSettings>,
   saveSettings: (patch) =>
     ipcRenderer.invoke(IPC_CHANNELS.saveSettings, patch) as Promise<AppSettings>,

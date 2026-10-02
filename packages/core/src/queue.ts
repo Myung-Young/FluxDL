@@ -267,6 +267,13 @@ export function makeJob(id: string, input: DownloadJobInput, createdAt: number):
     attempts: 0,
     nextRetryAt: null,
     destination: null,
+    ...(input.useArchive === true ? { useArchive: true as const } : {}),
+    ...(typeof input.extractor === "string" && input.extractor.length > 0
+      ? { extractor: input.extractor }
+      : {}),
+    ...(typeof input.videoId === "string" && input.videoId.length > 0
+      ? { videoId: input.videoId }
+      : {}),
   };
 }
 

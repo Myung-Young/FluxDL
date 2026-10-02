@@ -2,10 +2,18 @@ import { useRef, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
-import type { AudioPreset, DownloadPreset, MediaKind, VideoPreset } from "./types.js";
+import type {
+  AudioPreset,
+  DownloadJob,
+  DownloadPreset,
+  MediaKind,
+  VideoPreset,
+} from "./types.js";
 import { STRINGS } from "./strings.js";
 import { pressScale } from "./motion.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
+import { useDuplicateGuard } from "./DuplicatePrompt.js";
+import type { GuardInput } from "./identity.js";
 import {
   MAX_BATCH_BYTES,
   addBatchEntries,
@@ -19,7 +27,7 @@ import {
 } from "./batch.js";
 
 export interface BatchPanelProps {
-  readonly engine: Pick<DownloadEngine, "getInfo">;
+  readonly engine: Pick<DownloadEngine, "getInfo" | "loadHistory" | "fileExists" | "openPath">;
   readonly queue: StoreApi<QueueStoreState>;
   readonly settings: StoreApi<SettingsStoreState>;
 }
@@ -82,6 +90,7 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
   const entriesRef = useRef<readonly BatchEntry[]>([]);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const settingsState = useStore(settings, (s) => s.settings);
+  const { guard, dialog: duplicateDialog } = useDuplicateGuard();
 
   const setEntries = (next: readonly BatchEntry[]): void => {
     entriesRef.current = next;
@@ -160,20 +169,57 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
     setQueueing(true);
     try {
       const outputDir = settingsState.downloadDir;
-      let count = 0;
+      const byUrl = new Map<string, BatchEntry>();
+      const inputs: GuardInput[] = [];
       for (const e of ready) {
-        const info = e.info;
-        if (info === null) continue;
-        const preset = e.preset ?? globalPreset;
-        const targets =
-          info.isPlaylist && info.entries.length > 0
-            ? info.entries.map((en) => ({ url: en.url, title: en.title }))
-            : [{ url: e.url, title: info.title }];
+        if (e.info === null) continue;
+        const playlist = e.info.isPlaylist && e.info.entries.length > 0;
+        byUrl.set(e.url, e);
+        inputs.push({
+          url: e.url,
+          title: e.info.title,
+          extractor: playlist ? null : e.info.extractor,
+          videoId: playlist ? null : e.info.videoId,
+          fromPlaylist: playlist || e.fromPlaylist === true,
+        });
+      }
+      let history: DownloadJob[] = [];
+      try {
+        history = await engine.loadHistory();
+      } catch {
+        history = [];
+      }
+      const guarded = await guard(inputs, {
+        queueJobs: queue.getState().jobs,
+        historyJobs: history,
+        fileExists: (p) => engine.fileExists(p),
+        onOpen: (p) => engine.openPath(p),
+      });
+      let count = 0;
+      for (const g of guarded) {
+        const row = byUrl.get(g.url);
+        const info = row?.info;
+        if (row === undefined || info === null || info === undefined) continue;
+        const preset = row.preset ?? globalPreset;
+        const playlist = info.isPlaylist && info.entries.length > 0;
+        const targets = playlist
+          ? info.entries.map((en) => ({ url: en.url, title: en.title }))
+          : [{ url: row.url, title: info.title }];
         for (const t of targets) {
-          await queue.getState().enqueue({ url: t.url, title: t.title, preset, outputDir });
+          await queue.getState().enqueue({
+            url: t.url,
+            title: t.title,
+            preset,
+            outputDir,
+            extractor: playlist ? null : info.extractor,
+            videoId: playlist ? null : info.videoId,
+            ...(g.fromPlaylist && settingsState.skipArchived && !g.forceFresh
+              ? { useArchive: true as const }
+              : {}),
+          });
           count += 1;
         }
-        setEntries(removeBatchEntry(entriesRef.current, e.key));
+        setEntries(removeBatchEntry(entriesRef.current, row.key));
       }
       setNote(`${STRINGS.batch.queuedToast} (${String(count)})`);
     } finally {
@@ -405,6 +451,7 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
           {note}
         </p>
       )}
+      {duplicateDialog}
     </div>
   );
 }

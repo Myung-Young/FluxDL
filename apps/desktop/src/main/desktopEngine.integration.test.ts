@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -41,7 +41,7 @@ function makeEngine(plain = false) {
     defaultOutputDir: outputDir,
     broadcast: () => undefined,
   });
-  return { engine, events, outputDir, base };
+  return { engine, events, outputDir, userData, base };
 }
 
 async function waitFor(
@@ -176,6 +176,7 @@ describe.skipIf(!HAS_YTDLP)("desktop engine live (real yt-dlp)", () => {
       proxy: null,
       cookiesFromBrowser: null,
       codecPreference: "auto",
+      archivePath: null,
       noPlaylist: true,
     });
     const target = full[full.length - 1] ?? "";
@@ -189,4 +190,36 @@ describe.skipIf(!HAS_YTDLP)("desktop engine live (real yt-dlp)", () => {
     expect(picked.startsWith("avc1")).toBe(true);
     expect(picked).toContain("mp4a");
   }, 120_000);
+
+  it("second run with --download-archive skips the fetched video", async () => {
+    const { engine, events, outputDir, userData, base } = makeEngine(true);
+    const unsub = engine.onProgress((e) => {
+      events.push(e);
+    });
+    try {
+      const input = {
+        url: "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+        title: "M1.3 archive probe",
+        preset: { kind: "video", videoPreset: "Compatible", audioPreset: "MP3", rawFormat: null },
+        outputDir,
+        useArchive: true,
+      } as const;
+      const first = await engine.start({ ...input });
+      await waitFor(events, (e) => e.id === first && e.stage === "done", 120_000, "first done");
+      const archiveFile = join(userData, "archive.txt");
+      expect(existsSync(archiveFile)).toBe(true);
+      expect(readFileSync(archiveFile, "utf8")).toContain("jNQXAC9IVRw");
+
+      const second = await engine.start({ ...input });
+      await waitFor(events, (e) => e.id === second && e.stage === "done", 120_000, "second done");
+      const log = await engine.getRawLog(second);
+      expect(log ?? "").toMatch(/already been (downloaded|recorded)/);
+
+      await engine.clearArchive();
+      expect(existsSync(archiveFile)).toBe(false);
+    } finally {
+      unsub();
+      rmSync(base, { recursive: true, force: true });
+    }
+  }, 240_000);
 });

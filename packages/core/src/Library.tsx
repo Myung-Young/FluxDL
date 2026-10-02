@@ -39,11 +39,15 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
   const visible = useMemo(() => searchHistory(history, query), [history, query]);
 
   const redownload = async (h: DownloadJob): Promise<void> => {
+    // Explicit re-download: bypasses the duplicate guard (user said so) and
+    // skips the archive for this job.
     await queue.getState().enqueue({
       url: h.url,
       title: h.title,
       preset: h.preset,
       outputDir: settings.getState().settings.downloadDir,
+      extractor: h.extractor ?? null,
+      videoId: h.videoId ?? null,
     });
   };
 

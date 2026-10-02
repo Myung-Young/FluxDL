@@ -179,6 +179,7 @@ export class QueueController {
           title: next.title,
           preset: next.preset,
           outputDir: next.outputDir,
+          ...(next.useArchive === true ? { useArchive: true as const } : {}),
         });
         const current = this.jobs.get(next.id);
         if (current === undefined) {

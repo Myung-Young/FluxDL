@@ -31,8 +31,6 @@ export { STRINGS } from "./strings.js";
 export type { Strings } from "./strings.js";
 export { Home, formatDuration } from "./Home.js";
 export type { HomeProps } from "./Home.js";
-export { BatchPanel } from "./BatchPanel.js";
-export type { BatchPanelProps } from "./BatchPanel.js";
 export {
   MAX_BATCH_BYTES,
   MAX_BATCH_LINES,
@@ -43,7 +41,30 @@ export {
   retryBatchEntries,
   updateBatchEntry,
 } from "./batch.js";
-export type { BatchEntry, BatchEntryPatch, BatchInvalid, BatchParsed, BatchParseResult, BatchStatus } from "./batch.js";
+export { BatchPanel } from "./BatchPanel.js";
+export type { BatchPanelProps } from "./BatchPanel.js";
+export { useDuplicateGuard } from "./DuplicatePrompt.js";
+export {
+  filterDuplicates,
+  findDuplicate,
+  identityKey,
+} from "./identity.js";
+export type {
+  BatchEntry,
+  BatchEntryPatch,
+  BatchInvalid,
+  BatchParsed,
+  BatchParseResult,
+  BatchStatus,
+} from "./batch.js";
+export type {
+  DuplicateChoice,
+  DuplicateHit,
+  DuplicateScope,
+  DuplicateTarget,
+  GuardedTarget,
+  GuardInput,
+} from "./identity.js";
 export { Downloads } from "./Downloads.js";
 export type { DownloadsProps } from "./Downloads.js";
 export { Library } from "./Library.js";

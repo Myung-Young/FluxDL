@@ -25,6 +25,7 @@ function base(over: Partial<DownloadArgsInput> = {}): DownloadArgsInput {
     proxy: null,
     cookiesFromBrowser: null,
     codecPreference: "auto",
+    archivePath: null,
     noPlaylist: true,
     ...over,
   };
@@ -154,5 +155,14 @@ describe("arg builder", () => {
       }),
     );
     expect(raw).not.toContain("--format-sort");
+  });
+
+  it("passes --download-archive only when an archive path is set", () => {
+    const plain = buildDownloadArgs(base());
+    expect(plain).not.toContain("--download-archive");
+    const archived = buildDownloadArgs(base({ archivePath: "C:\\Data\\archive.txt" }));
+    const i = archived.indexOf("--download-archive");
+    expect(i).toBeGreaterThan(-1);
+    expect(archived[i + 1]).toBe("C:\\Data\\archive.txt");
   });
 });

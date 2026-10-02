@@ -194,3 +194,32 @@ test("batch: paste 3 URLs -> analyze all -> queue 3", async () => {
   await expect(page.locator(".dl-card")).toHaveCount(before + 3, { timeout: 15000 });
   expect(pageErrors).toEqual([]);
 });
+
+test("duplicate guard: re-queueing a queued URL offers Skip", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Downloads" }).click();
+  const before = await page.locator(".dl-card").count();
+
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Home" }).click();
+  await page.locator("#home-url").fill("https://example.com/b1");
+  await page.locator(".url-row .btn").filter({ hasText: "Analyze" }).click();
+  await expect(page.locator(".preview-title")).toHaveText("Mock Video");
+  await page.locator(".grabber-view .btn-primary").filter({ hasText: "Download" }).click();
+  await expect(page.locator('[data-testid="dup-dialog"]')).toBeVisible({ timeout: 15000 });
+  await page.locator('[data-testid="dup-skip"]').click();
+  await expect(page.locator('[data-testid="dup-dialog"]')).toHaveCount(0);
+
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Downloads" }).click();
+  await expect(page.locator(".dl-card")).toHaveCount(before);
+  expect(pageErrors).toEqual([]);
+});

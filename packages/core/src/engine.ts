@@ -47,6 +47,10 @@ export interface DownloadEngine {
   pickFolder(): Promise<string | null>;
   openPath(path: string): Promise<void>;
   revealInFolder(path: string): Promise<void>;
+  /** True when a job/history destination still exists on disk (guard-checked). */
+  fileExists(path: string): Promise<boolean>;
+  /** Delete the yt-dlp download-archive file (re-allow archived entries). */
+  clearArchive(): Promise<void>;
   /** Raw console of a job for the Logs screen (kept by the engine). */
   getRawLog(id: string): Promise<string | null>;
   /** Settings persist in main (electron-store). Renderer talks via these only. */
@@ -78,6 +82,8 @@ export const IPC_CHANNELS = {
   pickFolder: "engine:pickFolder",
   openPath: "engine:openPath",
   revealInFolder: "engine:reveal",
+  fileExists: "engine:fileExists",
+  clearArchive: "engine:clearArchive",
   loadSettings: "store:loadSettings",
   saveSettings: "store:saveSettings",
   loadQueue: "store:loadQueue",

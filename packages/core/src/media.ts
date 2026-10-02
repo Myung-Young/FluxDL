@@ -116,6 +116,8 @@ export function parseMediaInfo(sourceUrl: string, data: unknown): MediaInfo {
     duration: asNumber(data["duration"]),
     thumbnail: asString(data["thumbnail"]),
     isPlaylist: isPlaylist || entries.length > 0,
+    extractor: pickFirstString([data["extractor_key"], data["extractor"]]),
+    videoId: asString(data["id"]),
     entries,
     formats,
   };

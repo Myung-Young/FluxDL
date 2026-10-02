@@ -77,6 +77,8 @@ export interface BatchEntry {
   readonly info: MediaInfo | null;
   /** Per-row preset override; null = use the global preset. */
   readonly preset: DownloadPreset | null;
+  /** True for rows expanded from a playlist (archive-eligible). */
+  readonly fromPlaylist?: boolean;
 }
 
 /** Append parsed lines, skipping URLs already present. */
@@ -159,6 +161,7 @@ export function expandPlaylistEntry(
         error: null,
         info: null,
         preset: e.preset,
+        fromPlaylist: true,
       });
     }
   }

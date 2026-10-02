@@ -92,6 +92,8 @@ describe("batch state machine", () => {
       duration: null,
       thumbnail: null,
       isPlaylist: true,
+      extractor: null,
+      videoId: null,
       entries: [
         {
           id: "a",

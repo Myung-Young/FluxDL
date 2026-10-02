@@ -23,7 +23,28 @@ export function SettingsScreen({ engine, settings }: SettingsScreenProps): React
   const saved = useStore(settings, (s) => s.settings);
   const ready = useStore(settings, (s) => s.ready);
   const [flash, setFlash] = useState<boolean>(false);
+  const [archiveNote, setArchiveNote] = useState<boolean>(false);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flashSaved = (): void => {
+    setFlash(true);
+    setArchiveNote(false);
+    if (flashTimer.current !== null) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => {
+      setFlash(false);
+      setArchiveNote(false);
+    }, 2000);
+  };
+
+  const flashArchive = (): void => {
+    setFlash(false);
+    setArchiveNote(true);
+    if (flashTimer.current !== null) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => {
+      setFlash(false);
+      setArchiveNote(false);
+    }, 2000);
+  };
 
   useEffect(() => {
     return () => {
@@ -49,11 +70,7 @@ export function SettingsScreen({ engine, settings }: SettingsScreenProps): React
       .getState()
       .save(patch)
       .then(() => {
-        setFlash(true);
-        if (flashTimer.current !== null) clearTimeout(flashTimer.current);
-        flashTimer.current = setTimeout(() => {
-          setFlash(false);
-        }, 2000);
+        flashSaved();
       })
       .catch(() => undefined);
   };
@@ -76,6 +93,11 @@ export function SettingsScreen({ engine, settings }: SettingsScreenProps): React
       {flash && (
         <p className="note" role="status">
           {STRINGS.settings.saved}
+        </p>
+      )}
+      {archiveNote && (
+        <p className="note" role="status">
+          {STRINGS.settings.archiveCleared}
         </p>
       )}
 
@@ -202,6 +224,7 @@ export function SettingsScreen({ engine, settings }: SettingsScreenProps): React
               ["subtitles", STRINGS.settings.subtitles],
               ["embedSubs", STRINGS.settings.embedSubs],
               ["sponsorBlock", STRINGS.settings.sponsorBlock],
+              ["skipArchived", STRINGS.settings.skipArchived],
               ["autoCheckUpdate", STRINGS.settings.autoCheckUpdate],
             ] as const
           ).map(([key, label]) => (
@@ -294,8 +317,7 @@ export function SettingsScreen({ engine, settings }: SettingsScreenProps): React
 
         <label className="field-label" htmlFor="set-post">
           {STRINGS.settings.postAction}
-        </label>
-        <select
+        </label>        <select
           id="set-post"
           className="input"
           value={saved.postDownloadAction}
@@ -310,6 +332,25 @@ export function SettingsScreen({ engine, settings }: SettingsScreenProps): React
           <option value="open-file">{STRINGS.settings.postOpen}</option>
           <option value="reveal">{STRINGS.settings.postReveal}</option>
         </select>
+
+        <div>
+          <button
+            type="button"
+            className="btn"
+            aria-label={STRINGS.settings.clearArchive}
+            onClick={() => {
+              if (!window.confirm(STRINGS.settings.archiveConfirm)) return;
+              void engine
+                .clearArchive()
+                .then(() => {
+                  flashArchive();
+                })
+                .catch(() => undefined);
+            }}
+          >
+            {STRINGS.settings.clearArchive}
+          </button>
+        </div>
       </div>
     </section>
   );

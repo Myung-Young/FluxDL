@@ -5,6 +5,7 @@ import type { DownloadEngine } from "./engine.js";
 import type {
   AudioPreset,
   CodecPreference,
+  DownloadJob,
   DownloadPreset,
   MediaInfo,
   MediaKind,
@@ -16,6 +17,8 @@ import { readClipboardText } from "./clipboard.js";
 import { STRINGS } from "./strings.js";
 import { pressScale } from "./motion.js";
 import { BatchPanel } from "./BatchPanel.js";
+import { useDuplicateGuard } from "./DuplicatePrompt.js";
+import type { GuardInput } from "./identity.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 
 export interface HomeProps {
@@ -83,6 +86,7 @@ export function Home({
   const [selected, setSelected] = useState<readonly string[]>([]);
   const [watchClipboard, setWatchClipboard] = useState<boolean>(false);
   const [queuedNote, setQueuedNote] = useState<string | null>(null);
+  const { guard, dialog: duplicateDialog } = useDuplicateGuard();
   const lastIndex = useRef<number | null>(null);
   const urlRef = useRef<string>(url);
   urlRef.current = url;
@@ -171,14 +175,48 @@ export function Home({
     try {
       const preset: DownloadPreset = { kind, videoPreset, audioPreset, rawFormat };
       const outputDir = settingsState.downloadDir;
-      const targets =
-        info.isPlaylist && info.entries.length > 0
-          ? info.entries.filter((e) => selected.includes(e.id))
+      const playlist = info.isPlaylist && info.entries.length > 0;
+      const rawTargets =
+        playlist
+          ? info.entries
+              .filter((e) => selected.includes(e.id))
+              .map((e) => ({ url: e.url, title: e.title }))
           : [{ url: info.url, title: info.title }];
-      for (const t of targets) {
-        await queue.getState().enqueue({ url: t.url, title: t.title, preset, outputDir });
+      const inputs: GuardInput[] = rawTargets.map((t) => ({
+        url: t.url,
+        title: t.title,
+        extractor: playlist ? null : info.extractor,
+        videoId: playlist ? null : info.videoId,
+        fromPlaylist: playlist,
+      }));
+      let history: DownloadJob[] = [];
+      try {
+        history = await engine.loadHistory();
+      } catch {
+        history = [];
       }
-      setQueuedNote(`${STRINGS.home.queuedToast} (${String(targets.length)})`);
+      const guarded = await guard(inputs, {
+        queueJobs: queue.getState().jobs,
+        historyJobs: history,
+        fileExists: (p) => engine.fileExists(p),
+        onOpen: (p) => engine.openPath(p),
+      });
+      let count = 0;
+      for (const t of guarded) {
+        await queue.getState().enqueue({
+          url: t.url,
+          title: t.title,
+          preset,
+          outputDir,
+          extractor: t.extractor,
+          videoId: t.videoId,
+          ...(t.fromPlaylist && settingsState.skipArchived && !t.forceFresh
+            ? { useArchive: true as const }
+            : {}),
+        });
+        count += 1;
+      }
+      setQueuedNote(`${STRINGS.home.queuedToast} (${String(count)})`);
     } catch {
       setError(STRINGS.home.analyzeFailed);
     } finally {
@@ -450,6 +488,7 @@ export function Home({
           )}
         </div>
       )}
+      {duplicateDialog}
     </section>
   );
 }
