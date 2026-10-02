@@ -139,6 +139,21 @@ export async function removeHistoryFromDisk(userDataDir: string, id: string): Pr
   );
 }
 
+/** Replace one history record (matched by id; appended when absent). */
+export async function updateHistoryOnDisk(userDataDir: string, job: DownloadJob): Promise<void> {
+  if (!isDownloadJob(job)) throw new Error("Invalid history entry.");
+  const loaded = await loadHistoryFromDisk(userDataDir);
+  const next = loaded.some((h) => h.id === job.id)
+    ? loaded.map((h) => (h.id === job.id ? job : h))
+    : [...loaded, job];
+  await mkdir(userDataDir, { recursive: true });
+  await writeFile(
+    join(userDataDir, HISTORY_FILE),
+    next.map((h) => JSON.stringify(h)).join("\n") + (next.length > 0 ? "\n" : ""),
+    "utf8",
+  );
+}
+
 export async function clearHistoryOnDisk(userDataDir: string): Promise<void> {
   await mkdir(userDataDir, { recursive: true });
   await writeFile(join(userDataDir, HISTORY_FILE), "", "utf8");

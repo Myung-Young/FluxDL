@@ -291,4 +291,29 @@ describe("QueueController", () => {
     expect(ctrl.getJobs()[0]?.cookiesFromBrowser).toBeNull();
     ctrl.dispose();
   });
+
+  it("removes idle jobs without history and swaps presets on failed jobs", async () => {
+    const fake = makeFake();
+    let n = 0;
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 1,
+      maxRetries: 3,
+      createId: () => `q${String((n += 1))}`,
+    });
+    await ctrl.enqueue(input);
+    await expect(ctrl.setJobPreset("q1", input.preset)).rejects.toThrow();
+    fake.fire({ ...downloading("eng-1"), stage: "error" });
+    await vi.waitFor(() => {
+      expect(ctrl.getJobs()[0]?.status).toBe("error");
+    });
+    const compat = { kind: "video", videoPreset: "Compatible", audioPreset: "MP3", rawFormat: null } as const;
+    await ctrl.setJobPreset("q1", compat);
+    expect(ctrl.getJobs()[0]?.preset.videoPreset).toBe("Compatible");
+    await ctrl.remove("q1");
+    expect(ctrl.getJobs()).toHaveLength(0);
+    expect(fake.history).toHaveLength(0);
+    await expect(ctrl.remove("missing")).rejects.toThrow();
+    ctrl.dispose();
+  });
 });

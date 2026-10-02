@@ -162,8 +162,7 @@ export const STRINGS = {
     copyrightNote:
       "You are responsible for respecting copyright and each site's terms. Only download content you own or are allowed to keep.",
   },
-  errors: {
-    actionRetry: "Retry",
+  errors: {    actionRetry: "Retry",
     actionUpdateRetry: "Update engine & retry",
     actionCookiesOnce: "Use once",
     actionCookiesAlways: "Always use",
@@ -187,6 +186,18 @@ export const STRINGS = {
     opera: "Opera",
     vivaldi: "Vivaldi",
     whale: "Whale",
+  },
+  menu: {
+    label: "Download actions",
+    copyUrl: "Copy URL",
+    copyPath: "Copy file path",
+    retryPreset: "Retry with another preset…",
+    remove: "Remove from list",
+    deleteFile: "Delete file",
+    deleteConfirm: "Move this file to the Recycle Bin? The history entry is kept.",
+    deletedToast: "Moved to the Recycle Bin.",
+    fileDeleted: "File deleted",
+    copyFailed: "Copy failed.",
   },
 } as const;
 

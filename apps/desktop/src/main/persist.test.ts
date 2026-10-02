@@ -12,6 +12,7 @@ import {
   removeHistoryFromDisk,
   saveQueueToDisk,
   saveSettingsToDisk,
+  updateHistoryOnDisk,
 } from "./persist.js";
 import type { DownloadJob } from "@grabber/core/types.js";
 
@@ -90,8 +91,18 @@ describe("persist", () => {
     expect(await loadHistoryFromDisk(d)).toEqual([]);
   });
 
-  it("surfaces disk/IO failures instead of silently dropping data", async () => {
-    await expect(saveQueueToDisk("C:\\bad\0path", [job("a")])).rejects.toThrow();
+  it("replaces one history record in place (file-deleted marks)", async () => {
+    const d = dir("histupd");
+    await appendHistoryToDisk(d, job("a"));
+    await appendHistoryToDisk(d, job("b"));
+    await updateHistoryOnDisk(d, { ...job("a"), fileDeleted: true });
+    const loaded = await loadHistoryFromDisk(d);
+    expect(loaded.map((j) => j.id)).toEqual(["a", "b"]);
+    expect(loaded[0]?.fileDeleted).toBe(true);
+    expect(loaded[1]?.fileDeleted).toBeUndefined();
+  });
+
+  it("surfaces disk/IO failures instead of silently dropping data", async () => {    await expect(saveQueueToDisk("C:\\bad\0path", [job("a")])).rejects.toThrow();
     await expect(appendHistoryToDisk("C:\\bad\0path", job("a"))).rejects.toThrow();
   });
 

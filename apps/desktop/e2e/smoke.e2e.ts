@@ -93,6 +93,8 @@ async function installMock(page: Page): Promise<void> {
       openPath: (): Promise<void> => Promise.resolve(),
       revealInFolder: (): Promise<void> => Promise.resolve(),
       fileExists: (): Promise<boolean> => Promise.resolve(false),
+      trashFile: (): Promise<void> => Promise.resolve(),
+      updateHistory: (): Promise<void> => Promise.resolve(),
       clearArchive: (): Promise<void> => Promise.resolve(),
       setAggregateProgress: (): Promise<void> => Promise.resolve(),
       loadSettings: (): Promise<unknown> => Promise.resolve({ ...settings }),
@@ -249,5 +251,26 @@ test("logs: repair engine reports verified", async () => {
   await expect(page.locator(".grabber-view").getByText("Engine verified.")).toBeVisible({
     timeout: 15000,
   });
+  expect(pageErrors).toEqual([]);
+});
+
+test("card context menu opens and closes with Esc", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Downloads" }).click();
+  await page.locator(".dl-card").first().click({ button: "right" });
+  await expect(page.locator('[data-testid="card-menu"]')).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('[data-testid="card-menu"]')).toContainText("Copy URL");
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[data-testid="card-menu"]')).toHaveCount(0);
   expect(pageErrors).toEqual([]);
 });

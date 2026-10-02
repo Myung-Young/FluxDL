@@ -72,6 +72,10 @@ export interface DownloadEngine {
   revealInFolder(path: string): Promise<void>;
   /** True when a job/history destination still exists on disk (guard-checked). */
   fileExists(path: string): Promise<boolean>;
+  /** Move a finished file to the Recycle Bin (guard-checked, never unlink). */
+  trashFile(path: string): Promise<void>;
+  /** Replace one history record (e.g. mark "file deleted"). */
+  updateHistory(job: DownloadJob): Promise<void>;
   /** Delete the yt-dlp download-archive file (re-allow archived entries). */
   clearArchive(): Promise<void>;
   /** Raw console of a job for the Logs screen (kept by the engine). */
@@ -108,6 +112,8 @@ export const IPC_CHANNELS = {
   openPath: "engine:openPath",
   revealInFolder: "engine:reveal",
   fileExists: "engine:fileExists",
+  trashFile: "engine:trashFile",
+  updateHistory: "store:updateHistory",
   clearArchive: "engine:clearArchive",
   loadSettings: "store:loadSettings",
   saveSettings: "store:saveSettings",

@@ -97,6 +97,8 @@ export interface DownloadJob {
   readonly cookiesFromBrowser?: string | null;
   /** Stored failure category for actionable error cards (optional). */
   readonly errorCategory?: ErrorCategory | null;
+  /** Set when the output file was trashed (history keeps the record). */
+  readonly fileDeleted?: boolean;
 }
 
 export interface DownloadJobInput extends Pick<

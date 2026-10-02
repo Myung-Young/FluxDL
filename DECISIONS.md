@@ -91,3 +91,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M1.5
 
 - D51: Taskbar progress. Renderer sends throttled aggregate (250ms gate, pure `shouldSendAggregate`); main owns window-local flags (error until show/focus, finished-while-hidden overlay dot) via a pure `resolveTaskbarCommand` (modes none/normal/indeterminate/error). Percent = mean of downloading jobs; null when only analyzing/processing (indeterminate) or idle (cleared). Speed strings parsed to Bps (`parseSpeedBps`: MiB/KiB/M variants) and summed. Overlay dot is a deterministic 16px PNG from `scripts/make-overlay-dot.mjs` (committed, shipped via extraResources). Engine 23 → 24 methods/channels.
+
+## M1.6
+
+- D52: Card context menu is core-rendered (role=menu, arrows/Home/End, Right-expand/Left-collapse one level, Esc, outside-click close, focus restore; opens on right-click and Shift+F10/Menu key from any focused control in the card — cards stay out of the tab order). Retry-with-preset is an inline-expanding parent (no nested windows). `remove` drops queue entries without history (new controller.remove; active downloads must Cancel first) and `delete` trashes only non-writing outputs (downloading/processing excluded — never pull a file from under the engine). Delete confirms, uses shell.trashItem (never unlink), and marks history via a new updateHistory engine method; `fileDeleted` shows in Library. Engine 24 → 26 methods/channels. Delete shows whenever a destination is known (no async pre-check); missing files surface the engine error via toast.

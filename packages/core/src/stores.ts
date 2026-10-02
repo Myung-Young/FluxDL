@@ -26,6 +26,8 @@ export interface QueueStoreState {
   cancel(id: string): Promise<void>;
   retry(id: string): Promise<void>;
   setJobCookies(id: string, browser: string | null): Promise<void>;
+  setJobPreset(id: string, preset: DownloadJob["preset"]): Promise<void>;
+  remove(id: string): Promise<void>;
 }
 
 export function createQueueStore(
@@ -69,6 +71,12 @@ export function createQueueStore(
     },
     setJobCookies: async (id, browser) => {
       await getController(set).setJobCookies(id, browser);
+    },
+    setJobPreset: async (id, preset) => {
+      await getController(set).setJobPreset(id, preset);
+    },
+    remove: async (id) => {
+      await getController(set).remove(id);
     },
   }));
 }

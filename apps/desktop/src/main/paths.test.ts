@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { archivePathFor, isAllowedPath } from "./desktopEngine.js";
+import { DesktopEngine, archivePathFor, isAllowedPath } from "./desktopEngine.js";
 import { appendHistoryToDisk, saveSettingsToDisk } from "./persist.js";
 import type { DownloadJob } from "@grabber/core/types.js";
 
@@ -65,5 +65,19 @@ describe("isAllowedPath (renderer trust boundary)", () => {
 
   it("archive path lives in userData", () => {
     expect(archivePathFor("C:\\Data")).toBe(join("C:\\Data", "archive.txt"));
+  });
+
+  it("trashFile rejects paths outside the allowed roots (never reaches shell)", async () => {
+    const d = dir("trash");
+    const engine = new DesktopEngine({
+      userDataDir: d,
+      bundledBinDir: join(d, "bundled-missing"),
+      appVersion: "0.0.0-test",
+      defaultOutputDir: join(d, "dl"),
+      broadcast: () => undefined,
+      onAggregate: () => undefined,
+    });
+    await expect(engine.trashFile(join(d, "..", "evil.mp4"))).rejects.toThrow(/outside/);
+    await expect(engine.trashFile("")).rejects.toThrow();
   });
 });

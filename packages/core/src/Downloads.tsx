@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
@@ -9,6 +9,9 @@ import { pressScale, tweenProgress } from "./motion.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 import type { ToastStoreState } from "./toast.js";
 import { ErrorActionButtons, type ErrorNavigate } from "./ErrorActions.js";
+import { ContextMenu, type MenuItemDef } from "./ContextMenu.js";
+import { buildJobMenu } from "./JobMenu.js";
+import { writeClipboardText } from "./clipboard.js";
 
 export interface DownloadsProps {
   readonly engine: DownloadEngine;
@@ -51,6 +54,7 @@ function Card({
   settings,
   toast,
   navigate,
+  onMenu,
 }: {
   job: DownloadJob;
   engine: DownloadEngine;
@@ -58,13 +62,31 @@ function Card({
   settings: StoreApi<SettingsStoreState>;
   toast: StoreApi<ToastStoreState>;
   navigate: ErrorNavigate;
+  onMenu: (job: DownloadJob, x: number, y: number) => void;
 }): React.JSX.Element {
   const actions = queue.getState();
   const run = (fn: () => Promise<void>): void => {
     fn().catch(() => undefined);
   };
+  const openMenuAt = (x: number, y: number): void => {
+    onMenu(job, x, y);
+  };
   return (
-    <article className="grabber-card dl-card" aria-label={job.title}>
+    <article
+      className="grabber-card dl-card"
+      aria-label={job.title}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        openMenuAt(e.clientX, e.clientY);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+          e.preventDefault();
+          const r = e.currentTarget.getBoundingClientRect();
+          openMenuAt(r.left + 24, r.top + 24);
+        }
+      }}
+    >
       <h2 className="dl-title">{job.title}</h2>
       <p className="muted">{statusLine(job)}</p>
       <Bar ratio={job.progress / 100} />
@@ -197,6 +219,58 @@ export function Downloads({
 }: DownloadsProps): React.JSX.Element {
   const jobs = useStore(queue, (s) => s.jobs);
   const prevIds = useRef<ReadonlySet<string>>(new Set());
+  const [menu, setMenu] = useState<{ job: DownloadJob; x: number; y: number } | null>(null);
+
+  const copyText = (text: string): void => {
+    void writeClipboardText(text).then((ok) => {
+      if (!ok) toast.getState().push(STRINGS.menu.copyFailed, "error");
+    });
+  };
+
+  const menuItems = (job: DownloadJob): MenuItemDef[] => {
+    const fail = (err: unknown): void => {
+      toast.getState().push(err instanceof Error ? err.message : STRINGS.menu.copyFailed, "error");
+    };
+    return buildJobMenu(job, {
+      copyUrl: (text) => {
+        copyText(text);
+      },
+      copyPath: (text) => {
+        copyText(text);
+      },
+      openFile: () => {
+        if (job.destination !== null) {
+          engine.openPath(job.destination).catch(fail);
+        }
+      },
+      reveal: () => {
+        if (job.destination !== null) {
+          engine.revealInFolder(job.destination).catch(fail);
+        }
+      },
+      retryWithPreset: (preset) => {
+        queue
+          .getState()
+          .setJobPreset(job.id, preset)
+          .then(() => queue.getState().retry(job.id))
+          .catch(fail);
+      },
+      remove: () => {
+        queue.getState().remove(job.id).catch(fail);
+      },
+      deleteFile: () => {
+        const dest = job.destination;
+        if (dest === null) return;
+        if (!window.confirm(STRINGS.menu.deleteConfirm)) return;
+        engine
+          .trashFile(dest)
+          .then(() => {
+            toast.getState().push(STRINGS.menu.deletedToast, "success");
+          })
+          .catch(fail);
+      },
+    });
+  };
 
   useEffect(() => {
     const ids = new Set(jobs.map((j) => j.id));
@@ -260,9 +334,23 @@ export function Downloads({
               settings={settings}
               toast={toast}
               navigate={navigate}
+              onMenu={(target, x, y) => {
+                setMenu({ job: target, x, y });
+              }}
             />
           ))}
         </div>
+      )}
+      {menu !== null && (
+        <ContextMenu
+          label={STRINGS.menu.label}
+          items={menuItems(menu.job)}
+          x={menu.x}
+          y={menu.y}
+          onClose={() => {
+            setMenu(null);
+          }}
+        />
       )}
     </section>
   );

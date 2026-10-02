@@ -88,7 +88,13 @@ export { Toasts } from "./Toasts.js";
 export { ensureNotificationPermission, sendNotification } from "./notify.js";
 export { comboFromEvent, isEditableTarget, isOpenSettings, isPasteAnalyze } from "./shortcuts.js";
 export type { KeyCombo } from "./shortcuts.js";
-export { readClipboardText } from "./clipboard.js";
+export { readClipboardText, writeClipboardText } from "./clipboard.js";
+export { menuItemsFor, presetForMenu, MENU_AUDIO_PRESETS, MENU_VIDEO_PRESETS } from "./menu.js";
+export type { CardMenuId } from "./menu.js";
+export { ContextMenu } from "./ContextMenu.js";
+export type { ContextMenuProps, MenuItemDef } from "./ContextMenu.js";
+export { buildJobMenu } from "./JobMenu.js";
+export type { JobMenuHandlers } from "./JobMenu.js";
 export { normalizeUrl, isValidUrl, UrlValidationError } from "./url.js";
 export {
   buildDownloadArgs,

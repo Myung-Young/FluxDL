@@ -2,6 +2,7 @@ import type { DownloadEngine, EngineProgress } from "./engine.js";
 import type { DownloadJob, DownloadJobInput } from "./types.js";
 import {
   applyEngineProgress,
+  canTransition,
   clampConcurrency,
   makeJob,
   selectNextToStart,
@@ -152,6 +153,34 @@ export class QueueController {
         ? { ...job, cookiesFromBrowser: browser }
         : { ...job, cookiesFromBrowser: null };
     this.jobs.set(queueId, next);
+    this.emit();
+    await this.persist();
+  }
+
+  /** Swap the preset of a failed job (retry-with-another-preset). */
+  async setJobPreset(queueId: string, preset: DownloadJob["preset"]): Promise<void> {
+    const job = this.require(queueId);
+    if (!canTransition(job.status, "retry")) {
+      throw new Error(`Cannot change the preset of a ${job.status} job.`);
+    }
+    this.jobs.set(queueId, { ...job, preset });
+    this.emit();
+    await this.persist();
+  }
+
+  /** Drop a job from the list without recording history. */
+  async remove(queueId: string): Promise<void> {
+    const job = this.require(queueId);
+    if (!canTransition(job.status, "cancel")) {
+      throw new Error(`Cannot remove an active download: ${job.status}`);
+    }
+    const engineId = this.engineIds.get(queueId);
+    if (engineId !== undefined) {
+      await this.engine.cancel(engineId).catch(() => undefined);
+      this.engineIds.delete(queueId);
+      this.revEngineIds.delete(engineId);
+    }
+    this.jobs.delete(queueId);
     this.emit();
     await this.persist();
   }

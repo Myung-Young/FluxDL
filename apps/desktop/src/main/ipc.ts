@@ -120,6 +120,15 @@ export function registerEngineIpc(engine: DesktopEngine): void {
     if (p === null) throw new Error("Missing path.");
     return engine.fileExists(p);
   });
+  ipcMain.handle(IPC_CHANNELS.trashFile, async (_event, rawPath: unknown) => {
+    const p = asNonEmptyString(rawPath);
+    if (p === null) throw new Error("Missing path.");
+    await engine.trashFile(p);
+  });
+  ipcMain.handle(IPC_CHANNELS.updateHistory, async (_event, job: unknown) => {
+    if (!isDownloadJob(job)) throw new Error("Invalid history entry.");
+    await engine.updateHistory(job);
+  });
   ipcMain.handle(IPC_CHANNELS.clearArchive, async () => {
     await engine.clearArchive();
   });

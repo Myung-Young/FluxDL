@@ -38,12 +38,14 @@ import {
 import {
   appendHistoryToDisk,
   clearHistoryOnDisk,
+  isDownloadJob,
   loadHistoryFromDisk,
   loadQueueFromDisk,
   loadSettingsFromDisk,
   removeHistoryFromDisk,
   saveQueueToDisk,
   saveSettingsToDisk,
+  updateHistoryOnDisk,
 } from "./persist.js";
 
 export class EngineError extends Error {
@@ -578,6 +580,16 @@ export class DesktopEngine implements DownloadEngine {
     } catch {
       return false;
     }
+  }
+
+  async trashFile(path: string): Promise<void> {
+    await this.assertAllowed(path);
+    await shell.trashItem(path);
+  }
+
+  async updateHistory(job: DownloadJob): Promise<void> {
+    if (!isDownloadJob(job)) throw new Error("Invalid history entry.");
+    await updateHistoryOnDisk(this.deps.userDataDir, job);
   }
 
   async clearArchive(): Promise<void> {
