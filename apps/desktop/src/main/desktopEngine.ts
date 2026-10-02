@@ -143,8 +143,8 @@ export class DesktopEngine implements DownloadEngine {
   }
 
   /** Raw console access for the Logs screen (M4 wires it to IPC). */
-  getRawLog(id: string): string | null {
-    return this.jobs.get(id)?.rawLog ?? this.finishedLogs.get(id) ?? null;
+  getRawLog(id: string): Promise<string | null> {
+    return Promise.resolve(this.jobs.get(id)?.rawLog ?? this.finishedLogs.get(id) ?? null);
   }
 
   async getInfo(url: string): Promise<MediaInfo> {
@@ -189,22 +189,26 @@ export class DesktopEngine implements DownloadEngine {
       outputDir,
     };
     const id = randomUUID();
+    // User settings live on disk (main side) so every download honors them
+    // without widening the DownloadJobInput interface.
+    const s = loadSettingsFromDisk(this.deps.userDataDir);
     const args = buildDownloadArgs({
       url: normalizedUrl,
       preset: input.preset,
       outputDir,
-      filenameTemplate: "%(title)s [%(id)s].%(ext)s",
+      filenameTemplate:
+        s.filenameTemplate.trim().length > 0 ? s.filenameTemplate : "%(title)s [%(id)s].%(ext)s",
       ffmpegDir: resolveFfmpegDir(this.deps.bundledBinDir),
-      mergeContainer: "mp4",
-      embedThumbnail: false,
-      embedMetadata: false,
-      writeSubs: false,
-      subLangs: "en",
-      embedSubs: false,
-      sponsorBlock: false,
-      speedLimit: null,
-      proxy: null,
-      cookiesFromBrowser: null,
+      mergeContainer: s.mergeContainer,
+      embedThumbnail: s.embedThumbnail,
+      embedMetadata: s.embedMetadata,
+      writeSubs: s.subtitles,
+      subLangs: s.subtitleLangs,
+      embedSubs: s.embedSubs,
+      sponsorBlock: s.sponsorBlock,
+      speedLimit: s.speedLimit,
+      proxy: s.proxy,
+      cookiesFromBrowser: s.cookiesFromBrowser,
       noPlaylist: true,
     });
     this.jobs.set(id, {
@@ -249,6 +253,7 @@ export class DesktopEngine implements DownloadEngine {
         downloadedBytes: parsed.downloadedBytes,
         totalBytes: parsed.totalBytes,
         stage: parsed.stage,
+        destination: job.destination,
       });
     };
 
@@ -287,6 +292,7 @@ export class DesktopEngine implements DownloadEngine {
           downloadedBytes: null,
           totalBytes: null,
           stage: "paused",
+          destination: current.destination,
         });
         return;
       }
@@ -301,6 +307,7 @@ export class DesktopEngine implements DownloadEngine {
             downloadedBytes: null,
             totalBytes: null,
             stage: "cancelled",
+            destination: current.destination,
           });
         });
         return;
@@ -316,6 +323,7 @@ export class DesktopEngine implements DownloadEngine {
           downloadedBytes: null,
           totalBytes: null,
           stage: "done",
+          destination: current.destination,
         });
         return;
       }
@@ -339,6 +347,7 @@ export class DesktopEngine implements DownloadEngine {
       downloadedBytes: null,
       totalBytes: null,
       stage: "error",
+      destination: job?.destination ?? null,
     });
   }
 
@@ -385,6 +394,7 @@ export class DesktopEngine implements DownloadEngine {
         downloadedBytes: null,
         totalBytes: null,
         stage: "cancelled",
+        destination: job.destination,
       });
       return;
     }

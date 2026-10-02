@@ -95,6 +95,7 @@ describe("stores", () => {
       downloadedBytes: 42,
       totalBytes: 100,
       stage: "downloading",
+      destination: null,
     });
     await vi.waitFor(() => {
       expect(store.getState().jobs[0]?.progress).toBe(42);

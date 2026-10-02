@@ -9,6 +9,8 @@ export interface EngineProgress {
   readonly downloadedBytes: number | null;
   readonly totalBytes: number | null;
   readonly stage: string;
+  /** Last known output file reported by the engine, if any. */
+  readonly destination: string | null;
 }
 
 /** Unsubscribe function. */
@@ -46,6 +48,8 @@ export interface DownloadEngine {
   pickFolder(): Promise<string | null>;
   openPath(path: string): Promise<void>;
   revealInFolder(path: string): Promise<void>;
+  /** Raw console of a job for the Logs screen (kept by the engine). */
+  getRawLog(id: string): Promise<string | null>;
   /** Settings persist in main (electron-store). Renderer talks via these only. */
   loadSettings(): Promise<AppSettings>;
   saveSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
@@ -83,6 +87,7 @@ export const IPC_CHANNELS = {
   loadHistory: "store:loadHistory",
   removeHistory: "store:removeHistory",
   clearHistory: "store:clearHistory",
+  getRawLog: "engine:getLog",
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

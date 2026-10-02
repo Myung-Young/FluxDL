@@ -24,8 +24,20 @@ export { IPC_CHANNELS } from "./engine.js";
 export type { IpcChannel } from "./engine.js";
 export { App } from "./App.js";
 export { Shell } from "./Shell.js";
-export type { ShellView } from "./Shell.js";
+export type { ShellView, ShellProps } from "./Shell.js";
 export { prefersReducedMotion, staggerIn, fadeSwap, pressScale, tweenProgress } from "./motion.js";
+export { STRINGS } from "./strings.js";
+export type { Strings } from "./strings.js";
+export { Home, formatDuration } from "./Home.js";
+export type { HomeProps } from "./Home.js";
+export { Downloads } from "./Downloads.js";
+export type { DownloadsProps } from "./Downloads.js";
+export { Library } from "./Library.js";
+export type { LibraryProps } from "./Library.js";
+export { SettingsScreen } from "./SettingsScreen.js";
+export type { SettingsScreenProps } from "./SettingsScreen.js";
+export { Logs } from "./Logs.js";
+export type { LogsProps } from "./Logs.js";
 export { normalizeUrl, isValidUrl, UrlValidationError } from "./url.js";
 export {
   buildDownloadArgs,

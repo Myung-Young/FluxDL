@@ -124,4 +124,9 @@ export function registerEngineIpc(engine: DesktopEngine): void {
   ipcMain.handle(IPC_CHANNELS.clearHistory, async () => {
     await engine.clearHistory();
   });
+  ipcMain.handle(IPC_CHANNELS.getRawLog, (_event, rawId: unknown) => {
+    const id = asNonEmptyString(rawId);
+    if (id === null) throw new Error("Missing id.");
+    return engine.getRawLog(id);
+  });
 }

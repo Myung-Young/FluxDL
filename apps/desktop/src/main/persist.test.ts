@@ -38,6 +38,7 @@ function job(id: string): DownloadJob {
     createdAt: 1,
     attempts: 0,
     nextRetryAt: null,
+    destination: null,
   };
 }
 

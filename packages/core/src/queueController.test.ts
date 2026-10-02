@@ -83,6 +83,7 @@ function downloading(id: string, percent = 10): EngineProgress {
     downloadedBytes: 10,
     totalBytes: 100,
     stage: "downloading",
+    destination: null,
   };
 }
 
@@ -95,6 +96,7 @@ function done(id: string): EngineProgress {
     downloadedBytes: 100,
     totalBytes: 100,
     stage: "done",
+    destination: "C:\\Vids\\done.mp4",
   };
 }
 
@@ -231,6 +233,7 @@ describe("QueueController", () => {
         createdAt: 1,
         attempts: 0,
         nextRetryAt: null,
+        destination: null,
       },
     ]);
     expect(ctrl.getJobs()[0]?.status).toBe("queued");

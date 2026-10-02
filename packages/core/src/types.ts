@@ -73,6 +73,8 @@ export interface DownloadJob {
   readonly attempts: number;
   /** Earliest retry time (ms epoch) or null when no retry is scheduled. */
   readonly nextRetryAt: number | null;
+  /** Last known output file reported by the engine, if any. */
+  readonly destination: string | null;
 }
 
 export type DownloadJobInput = Pick<DownloadJob, "url" | "title" | "preset" | "outputDir">;
@@ -90,6 +92,7 @@ export interface AppSettings {
   readonly embedMetadata: boolean;
   readonly subtitles: boolean;
   readonly subtitleLangs: string;
+  readonly embedSubs: boolean;
   readonly mergeContainer: string;
   readonly sponsorBlock: boolean;
   readonly theme: ThemeName;

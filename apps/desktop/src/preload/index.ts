@@ -33,6 +33,7 @@ export interface GrabberApi {
   loadHistory(): Promise<DownloadJob[]>;
   removeHistory(id: string): Promise<void>;
   clearHistory(): Promise<void>;
+  getRawLog(id: string): Promise<string | null>;
 }
 
 const api: GrabberApi = {
@@ -66,6 +67,7 @@ const api: GrabberApi = {
   loadHistory: () => ipcRenderer.invoke(IPC_CHANNELS.loadHistory) as Promise<DownloadJob[]>,
   removeHistory: (id) => ipcRenderer.invoke(IPC_CHANNELS.removeHistory, id) as Promise<void>,
   clearHistory: () => ipcRenderer.invoke(IPC_CHANNELS.clearHistory) as Promise<void>,
+  getRawLog: (id) => ipcRenderer.invoke(IPC_CHANNELS.getRawLog, id) as Promise<string | null>,
 };
 contextBridge.exposeInMainWorld("grabber", api);
 

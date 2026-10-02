@@ -76,6 +76,7 @@ describe("queue state machine", () => {
       downloadedBytes: 10,
       totalBytes: 100,
       stage: "downloading",
+      destination: null,
     });
     expect(j.progress).toBe(12.5);
     j = applyEngineProgress(j, {
@@ -85,8 +86,10 @@ describe("queue state machine", () => {
       downloadedBytes: 100,
       totalBytes: 100,
       stage: "processing",
+      destination: "C:\\Vids\\a.mp4",
     });
     expect(j.status).toBe("processing");
+    expect(j.destination).toBe("C:\\Vids\\a.mp4");
     j = applyEngineProgress(j, {
       percent: 100,
       speed: null,
@@ -94,8 +97,10 @@ describe("queue state machine", () => {
       downloadedBytes: 100,
       totalBytes: 100,
       stage: "done",
+      destination: null,
     });
     expect(j.status).toBe("done");
+    expect(j.destination).toBe("C:\\Vids\\a.mp4");
   });
 
   it("enforces FIFO with concurrency 1-5 and backoff gating", () => {

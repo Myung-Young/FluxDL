@@ -120,6 +120,7 @@ export interface EngineProgressLike {
   readonly downloadedBytes: number | null;
   readonly totalBytes: number | null;
   readonly stage: string;
+  readonly destination: string | null;
 }
 
 /** Fold an engine progress event into queue state (pure). */
@@ -136,6 +137,7 @@ export function applyEngineProgress(job: DownloadJob, p: EngineProgressLike): Do
         downloadedBytes: p.downloadedBytes,
         totalBytes: p.totalBytes,
         stage: p.stage,
+        destination: p.destination ?? job.destination,
       };
     case "done":
       if (!canTransition(job.status, "done")) return job;
@@ -150,15 +152,30 @@ export function applyEngineProgress(job: DownloadJob, p: EngineProgressLike): Do
         stage: p.stage,
         error: null,
         nextRetryAt: null,
+        destination: p.destination ?? job.destination,
       };
     case "error":
       return transition(job, "fail", { error: job.error ?? "Download failed." });
     case "paused":
       if (!canTransition(job.status, "pause")) return job;
-      return { ...job, status: "paused", speed: null, eta: null, stage: p.stage };
+      return {
+        ...job,
+        status: "paused",
+        speed: null,
+        eta: null,
+        stage: p.stage,
+        destination: p.destination ?? job.destination,
+      };
     case "cancelled":
       if (!canTransition(job.status, "cancel")) return job;
-      return { ...job, status: "cancelled", speed: null, eta: null, stage: p.stage };
+      return {
+        ...job,
+        status: "cancelled",
+        speed: null,
+        eta: null,
+        stage: p.stage,
+        destination: p.destination ?? job.destination,
+      };
     default:
       if (!canTransition(job.status, "progress") && job.status !== "downloading") return job;
       return {
@@ -170,6 +187,7 @@ export function applyEngineProgress(job: DownloadJob, p: EngineProgressLike): Do
         downloadedBytes: p.downloadedBytes,
         totalBytes: p.totalBytes,
         stage: p.stage,
+        destination: p.destination ?? job.destination,
       };
   }
 }
@@ -248,6 +266,7 @@ export function makeJob(id: string, input: DownloadJobInput, createdAt: number):
     createdAt,
     attempts: 0,
     nextRetryAt: null,
+    destination: null,
   };
 }
 

@@ -1,53 +1,64 @@
 import { useEffect, useRef, useState } from "react";
+import { useStore } from "zustand";
+import type { StoreApi } from "zustand";
 import { APP_NAME } from "./branding.js";
 import type { DownloadEngine } from "./engine.js";
 import type { ThemeName } from "./types.js";
 import { fadeSwap, pressScale, staggerIn } from "./motion.js";
+import { STRINGS } from "./strings.js";
+import { Home } from "./Home.js";
+import { Downloads } from "./Downloads.js";
+import { Library } from "./Library.js";
+import { SettingsScreen } from "./SettingsScreen.js";
+import { Logs } from "./Logs.js";
+import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 import "./tokens.css";
 import "./fonts.css";
 
 export type ShellView = "home" | "downloads" | "library" | "settings" | "logs";
 
+export interface ShellProps {
+  readonly engine: DownloadEngine;
+  readonly queue: StoreApi<QueueStoreState>;
+  readonly settings: StoreApi<SettingsStoreState>;
+}
+
 const NAV: ReadonlyArray<{ id: ShellView; label: string }> = [
-  { id: "home", label: "Home" },
-  { id: "downloads", label: "Downloads" },
-  { id: "library", label: "Library" },
-  { id: "settings", label: "Settings" },
-  { id: "logs", label: "Logs" },
+  { id: "home", label: STRINGS.home.title },
+  { id: "downloads", label: STRINGS.downloads.title },
+  { id: "library", label: STRINGS.library.title },
+  { id: "settings", label: STRINGS.settings.title },
+  { id: "logs", label: STRINGS.logs.title },
 ];
 
-const THEMES: ReadonlyArray<{ id: ThemeName; label: string; swatch: string }> = [
-  { id: "obsidian", label: "Obsidian theme", swatch: "#27272a" },
-  { id: "midnight", label: "Midnight theme", swatch: "#818cf8" },
-  { id: "ember", label: "Ember theme", swatch: "#fb923c" },
+const THEMES: ReadonlyArray<{ id: ThemeName; swatch: string }> = [
+  { id: "obsidian", swatch: "#27272a" },
+  { id: "midnight", swatch: "#818cf8" },
+  { id: "ember", swatch: "#fb923c" },
 ];
 
-const VIEW_COPY: Readonly<Record<ShellView, { title: string; body: string }>> = {
-  home: { title: "Home", body: "Paste a link to analyze it. Full screen lands in M4." },
-  downloads: { title: "Downloads", body: "Live progress cards land in M4." },
-  library: { title: "Library", body: "History with search lands in M4." },
-  settings: { title: "Settings", body: "Download folder, presets, and engine updates land in M4." },
-  logs: { title: "Logs & About", body: "Raw engine console and versions land in M4." },
+const THEME_LABELS: Readonly<Record<ThemeName, string>> = {
+  obsidian: "Obsidian theme",
+  midnight: "Midnight theme",
+  ember: "Ember theme",
 };
 
-export function Shell({ engine }: { engine: DownloadEngine }): React.JSX.Element {
+export function Shell({ engine, queue, settings }: ShellProps): React.JSX.Element {
   const [view, setView] = useState<ShellView>("home");
-  const [theme, setTheme] = useState<ThemeName>("obsidian");
+  const theme = useStore(settings, (s) => s.settings.theme);
   const navRef = useRef<HTMLElement | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    let alive = true;
-    engine
-      .loadSettings()
-      .then((s) => {
-        if (alive) setTheme(s.theme);
-      })
+    void settings
+      .getState()
+      .load()
       .catch(() => undefined);
-    return () => {
-      alive = false;
-    };
-  }, [engine]);
+    void queue
+      .getState()
+      .refresh()
+      .catch(() => undefined);
+  }, [queue, settings]);
 
   useEffect(() => {
     document.documentElement.dataset["theme"] = theme;
@@ -67,18 +78,23 @@ export function Shell({ engine }: { engine: DownloadEngine }): React.JSX.Element
   };
 
   const switchTheme = (next: ThemeName): void => {
-    setTheme(next);
-    engine.saveSettings({ theme: next }).catch(() => undefined);
+    settings
+      .getState()
+      .save({ theme: next })
+      .catch(() => undefined);
   };
 
-  const copy = VIEW_COPY[view];
   return (
     <div className="grabber-app" data-testid="grabber-shell">
       <header className="grabber-titlebar">
         <span className="grabber-mark" aria-hidden="true" />
         <span className="grabber-appname">{APP_NAME}</span>
-        <span className="grabber-viewtitle">{copy.title}</span>
-        <span className="grabber-theme-dots no-drag" role="group" aria-label="Theme">
+        <span className="grabber-viewtitle">{NAV.find((n) => n.id === view)?.label ?? ""}</span>
+        <span
+          className="grabber-theme-dots no-drag"
+          role="group"
+          aria-label={STRINGS.navThemeGroup}
+        >
           {THEMES.map((t) => (
             <button
               key={t.id}
@@ -86,8 +102,8 @@ export function Shell({ engine }: { engine: DownloadEngine }): React.JSX.Element
               className="grabber-dot"
               style={{ background: t.swatch }}
               data-active={t.id === theme}
-              title={t.label}
-              aria-label={t.label}
+              title={THEME_LABELS[t.id]}
+              aria-label={THEME_LABELS[t.id]}
               aria-pressed={t.id === theme}
               onPointerDown={(e) => {
                 pressScale(e.currentTarget);
@@ -121,13 +137,11 @@ export function Shell({ engine }: { engine: DownloadEngine }): React.JSX.Element
           ))}
         </nav>
         <main ref={mainRef} className="grabber-main">
-          <section className="grabber-view" aria-live="polite">
-            <h1>{copy.title}</h1>
-            <p>{copy.body}</p>
-            <div className="grabber-card">
-              <p>Engine + queue are wired underneath; screens arrive in M4.</p>
-            </div>
-          </section>
+          {view === "home" && <Home engine={engine} queue={queue} settings={settings} />}
+          {view === "downloads" && <Downloads engine={engine} queue={queue} settings={settings} />}
+          {view === "library" && <Library engine={engine} queue={queue} settings={settings} />}
+          {view === "settings" && <SettingsScreen engine={engine} settings={settings} />}
+          {view === "logs" && <Logs engine={engine} queue={queue} />}
         </main>
       </div>
     </div>
