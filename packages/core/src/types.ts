@@ -13,6 +13,8 @@ export interface FormatOption {
   /** e.g. "video" | "audio" | "video+audio" | "storyboard" */
   readonly kind: string;
   readonly resolution: string | null;
+  readonly width: number | null;
+  readonly height: number | null;
   readonly fps: number | null;
   readonly vcodec: string | null;
   readonly acodec: string | null;
@@ -44,7 +46,10 @@ export interface MediaInfo {
 export type MediaKind = "video" | "audio";
 
 export type AudioPreset = "MP3" | "M4A" | "Opus" | "FLAC";
-export type VideoPreset = "Best" | "2160" | "1440" | "1080" | "720" | "480";
+export type VideoPreset = "Best" | "2160" | "1440" | "1080" | "720" | "480" | "Compatible";
+
+/** Preferred video codec for downloads (applied via yt-dlp `-S` format sort). */
+export type CodecPreference = "auto" | "h264" | "vp9" | "av1";
 
 export interface DownloadPreset {
   readonly kind: MediaKind;
@@ -95,6 +100,7 @@ export interface AppSettings {
   readonly embedSubs: boolean;
   readonly mergeContainer: string;
   readonly sponsorBlock: boolean;
+  readonly codecPreference: CodecPreference;
   readonly theme: ThemeName;
   readonly postDownloadAction: "none" | "open-file" | "reveal";
   readonly autoCheckUpdate: boolean;

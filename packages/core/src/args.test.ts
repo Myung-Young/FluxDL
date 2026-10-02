@@ -24,6 +24,7 @@ function base(over: Partial<DownloadArgsInput> = {}): DownloadArgsInput {
     speedLimit: null,
     proxy: null,
     cookiesFromBrowser: null,
+    codecPreference: "auto",
     noPlaylist: true,
     ...over,
   };
@@ -100,5 +101,58 @@ describe("arg builder", () => {
       "--ignore-config",
     );
     expect(buildDownloadArgs(base())).toContain("--ignore-config");
+  });
+
+  it("omits --format-sort for auto codec preference", () => {
+    const args = buildDownloadArgs(base());
+    expect(args).not.toContain("--format-sort");
+  });
+
+  it("applies codec preference via -S sort (preset x codec matrix)", () => {
+    const cases = [
+      { videoPreset: "1080", codec: "h264", sort: "vcodec:h264" },
+      { videoPreset: "720", codec: "vp9", sort: "vcodec:vp9" },
+      { videoPreset: "Best", codec: "av1", sort: "vcodec:av01" },
+      { videoPreset: "Compatible", codec: "auto", sort: "vcodec:h264,acodec:aac" },
+      { videoPreset: "Compatible", codec: "vp9", sort: "vcodec:h264,acodec:aac" },
+    ] as const;
+    for (const c of cases) {
+      const args = buildDownloadArgs(
+        base({
+          preset: { kind: "video", videoPreset: c.videoPreset, audioPreset: "MP3", rawFormat: null },
+          codecPreference: c.codec,
+        }),
+      );
+      const i = args.indexOf("--format-sort");
+      expect(i).toBeGreaterThan(-1);
+      expect(args[i + 1]).toBe(c.sort);
+    }
+  });
+
+  it("Compatible preset caps at 1080p and merges to the configured container", () => {
+    const args = buildDownloadArgs(
+      base({
+        preset: { kind: "video", videoPreset: "Compatible", audioPreset: "MP3", rawFormat: null },
+      }),
+    );
+    expect(args.join(" ")).toContain("height<=1080");
+    expect(args).toContain("--merge-output-format");
+  });
+
+  it("never sorts audio presets or raw formats", () => {
+    const audio = buildDownloadArgs(
+      base({
+        preset: { kind: "audio", videoPreset: "Best", audioPreset: "MP3", rawFormat: null },
+        codecPreference: "h264",
+      }),
+    );
+    expect(audio).not.toContain("--format-sort");
+    const raw = buildDownloadArgs(
+      base({
+        preset: { kind: "video", videoPreset: "720", audioPreset: "MP3", rawFormat: "bv*+ba/b" },
+        codecPreference: "h264",
+      }),
+    );
+    expect(raw).not.toContain("--format-sort");
   });
 });

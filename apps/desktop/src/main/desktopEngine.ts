@@ -73,6 +73,8 @@ interface ActiveJob {
 }
 
 const DESTINATION_RE = /\[download\] Destination: (.+)/;
+const MERGER_RE = /\[Merger\] Merging formats into "(.+)"/;
+const EXTRACT_AUDIO_RE = /\[ExtractAudio\] Destination: (.+)/;
 const MAX_LOG_CHARS = 500_000;
 
 function appendLog(log: string, chunk: string): string {
@@ -209,6 +211,7 @@ export class DesktopEngine implements DownloadEngine {
       speedLimit: s.speedLimit,
       proxy: s.proxy,
       cookiesFromBrowser: s.cookiesFromBrowser,
+      codecPreference: s.codecPreference,
       noPlaylist: true,
     });
     this.jobs.set(id, {
@@ -241,6 +244,11 @@ export class DesktopEngine implements DownloadEngine {
       const dest = DESTINATION_RE.exec(line);
       if (dest !== null && dest[1] !== undefined) {
         job.destination = dest[1].trim();
+      }
+      // Merged / extracted outputs replace the per-stream temp files.
+      const merged = MERGER_RE.exec(line) ?? EXTRACT_AUDIO_RE.exec(line);
+      if (merged !== null && merged[1] !== undefined) {
+        job.destination = merged[1].trim();
       }
       const parsed = parseProgressLine(line);
       if (parsed === null) return;

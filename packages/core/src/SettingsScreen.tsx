@@ -253,6 +253,26 @@ export function SettingsScreen({ engine, settings }: SettingsScreenProps): React
           )}
         </select>
 
+        <label className="field-label" htmlFor="set-codec">
+          {STRINGS.settings.codecPreference}
+        </label>
+        <select
+          id="set-codec"
+          className="input"
+          value={saved.codecPreference}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "auto" || v === "h264" || v === "vp9" || v === "av1") {
+              save({ codecPreference: v });
+            }
+          }}
+        >
+          <option value="auto">{STRINGS.settings.codecAuto}</option>
+          <option value="h264">{STRINGS.settings.codecH264}</option>
+          <option value="vp9">{STRINGS.settings.codecVp9}</option>
+          <option value="av1">{STRINGS.settings.codecAv1}</option>
+        </select>
+
         <span className="field-label" id="set-theme-label">
           {STRINGS.settings.theme}
         </span>

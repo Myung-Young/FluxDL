@@ -1,4 +1,4 @@
-import type { DownloadPreset } from "./types.js";
+import type { CodecPreference, DownloadPreset } from "./types.js";
 import { PROGRESS_TEMPLATE } from "./progress.js";
 import { normalizeUrl } from "./url.js";
 
@@ -6,7 +6,7 @@ import { normalizeUrl } from "./url.js";
  * yt-dlp arg builder. Always returns an args array (never a shell string).
  * Flags verified against yt-dlp 2026.08.19 (`yt-dlp --help`):
  * -J/--dump-single-json, --flat-playlist, --newline, --progress-template,
- * -c/--continue, -o/--output, -f/--format, -x/--extract-audio,
+ * -c/--continue, -o/--output, -f/--format, -S/--format-sort, -x/--extract-audio,
  * --merge-output-format, --ffmpeg-location, --embed-*, --write-subs,
  * --sponsorblock-*, --limit-rate, --proxy, --cookies-from-browser, -U/--update.
  */
@@ -27,6 +27,7 @@ export interface DownloadArgsInput {
   readonly speedLimit: string | null;
   readonly proxy: string | null;
   readonly cookiesFromBrowser: string | null;
+  readonly codecPreference: CodecPreference;
   readonly noPlaylist: boolean;
 }
 
@@ -62,6 +63,31 @@ function videoFormatOf(preset: DownloadPreset): string {
       return "bestvideo[height<=720]+bestaudio/best[height<=720]/best";
     case "480":
       return "bestvideo[height<=480]+bestaudio/best[height<=480]/best";
+    case "Compatible":
+      // Same 1080p cap as "1080"; codecSortOf() forces H.264 + AAC via -S.
+      return "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best";
+  }
+}
+
+/**
+ * yt-dlp `-S` sort expression for a codec preference, or null for default
+ * ordering. Verified empirically against yt-dlp 2026.08.19 on a video with
+ * av1/vp9/h264 variants (default selects av01; `-S vcodec:h264` selects
+ * avc1; `-S vcodec:h264,acodec:aac` selects avc1+mp4a).
+ */
+export function codecSortOf(preset: DownloadPreset, codecPref: CodecPreference): string | null {
+  if (preset.kind !== "video") return null;
+  if (preset.rawFormat !== null && preset.rawFormat.trim().length > 0) return null;
+  if (preset.videoPreset === "Compatible") return "vcodec:h264,acodec:aac";
+  switch (codecPref) {
+    case "h264":
+      return "vcodec:h264";
+    case "vp9":
+      return "vcodec:vp9";
+    case "av1":
+      return "vcodec:av01";
+    case "auto":
+      return null;
   }
 }
 
@@ -102,6 +128,10 @@ export function buildDownloadArgs(input: DownloadArgsInput): string[] {
     args.push("--audio-format", audioFormatOf(input.preset));
   } else {
     args.push("--format", videoFormatOf(input.preset));
+    const sort = codecSortOf(input.preset, input.codecPreference);
+    if (sort !== null) {
+      args.push("--format-sort", sort);
+    }
     if (input.mergeContainer.trim().length > 0) {
       args.push("--merge-output-format", input.mergeContainer.trim());
     }

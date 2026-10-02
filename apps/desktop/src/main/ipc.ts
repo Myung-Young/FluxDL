@@ -30,7 +30,7 @@ function parseJobInput(raw: unknown): DownloadJobInput {
       ? presetRaw["rawFormat"]
       : null;
   if (kind !== "video" && kind !== "audio") throw new Error("Invalid preset kind.");
-  const validVideo = ["Best", "2160", "1440", "1080", "720", "480"] as const;
+  const validVideo = ["Best", "2160", "1440", "1080", "720", "480", "Compatible"] as const;
   const validAudio = ["MP3", "M4A", "Opus", "FLAC"] as const;
   if (!validVideo.includes(videoPreset as (typeof validVideo)[number])) {
     throw new Error("Invalid video preset.");

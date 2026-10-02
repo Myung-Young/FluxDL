@@ -2,8 +2,16 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
-import type { AudioPreset, DownloadPreset, MediaInfo, MediaKind, VideoPreset } from "./types.js";
+import type {
+  AudioPreset,
+  CodecPreference,
+  DownloadPreset,
+  MediaInfo,
+  MediaKind,
+  VideoPreset,
+} from "./types.js";
 import { isValidUrl } from "./url.js";
+import { estimatePresetSize, formatSize } from "./media.js";
 import { readClipboardText } from "./clipboard.js";
 import { STRINGS } from "./strings.js";
 import { pressScale } from "./motion.js";
@@ -17,8 +25,31 @@ export interface HomeProps {
   readonly onPasteConsumed: () => void;
 }
 
-const VIDEO_PRESETS: readonly VideoPreset[] = ["Best", "2160", "1440", "1080", "720", "480"];
+const VIDEO_PRESETS: readonly VideoPreset[] = [
+  "Compatible",
+  "Best",
+  "2160",
+  "1440",
+  "1080",
+  "720",
+  "480",
+];
 const AUDIO_PRESETS: readonly AudioPreset[] = ["MP3", "M4A", "Opus", "FLAC"];
+
+function presetLabel(kind: MediaKind, preset: VideoPreset | AudioPreset): string {
+  if (kind === "video" && preset === "Compatible") return STRINGS.home.presetCompatible;
+  return preset;
+}
+
+function estimateText(
+  info: MediaInfo,
+  preset: DownloadPreset,
+  codecPref: CodecPreference,
+): string {
+  const est = estimatePresetSize(info, preset, codecPref);
+  if (est === null) return STRINGS.home.sizeUnknown;
+  return `~${formatSize(est.bytes)}`;
+}
 
 export function formatDuration(totalSeconds: number | null): string {
   if (totalSeconds === null || !Number.isFinite(totalSeconds)) {
@@ -286,6 +317,10 @@ export function Home({
           <div className="chip-row">
             {presets.map((p) => {
               const active = kind === "video" ? videoPreset === p : audioPreset === p;
+              const rowPreset: DownloadPreset =
+                kind === "video"
+                  ? { kind, videoPreset: p as VideoPreset, audioPreset, rawFormat: null }
+                  : { kind, videoPreset, audioPreset: p as AudioPreset, rawFormat: null };
               return (
                 <button
                   key={p}
@@ -301,7 +336,10 @@ export function Home({
                     setRawFormat(null);
                   }}
                 >
-                  {p}
+                  {presetLabel(kind, p)}{" "}
+                  <span className="chip-size">
+                    {estimateText(info, rowPreset, settingsState.codecPreference)}
+                  </span>
                 </button>
               );
             })}
@@ -332,6 +370,9 @@ export function Home({
                     }}
                   />
                   <span>{f.label}</span>
+                  <span className="muted">
+                    {f.filesize !== null ? `~${formatSize(f.filesize)}` : STRINGS.home.sizeUnknown}
+                  </span>
                 </label>
               ))}
             </details>

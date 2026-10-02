@@ -510,6 +510,12 @@ select.input {
   border-color: transparent;
 }
 
+.chip-size {
+  color: var(--fg-2);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
 .advanced {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);

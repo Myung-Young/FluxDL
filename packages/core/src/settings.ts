@@ -1,4 +1,4 @@
-import type { AppSettings, ThemeName } from "./types.js";
+import type { AppSettings, CodecPreference, ThemeName } from "./types.js";
 import { clampConcurrency } from "./queue.js";
 
 /** Defaults when no persisted settings exist yet. */
@@ -16,12 +16,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   embedSubs: false,
   mergeContainer: "mp4",
   sponsorBlock: false,
+  codecPreference: "auto",
   theme: "obsidian",
   postDownloadAction: "none",
   autoCheckUpdate: true,
 };
 
 const THEMES: readonly ThemeName[] = ["obsidian", "midnight", "ember"];
+const CODECS: readonly CodecPreference[] = ["auto", "h264", "vp9", "av1"];
 const POST_ACTIONS: readonly AppSettings["postDownloadAction"][] = ["none", "open-file", "reveal"];
 
 function cleanString(value: unknown, fallback: string): string {
@@ -46,6 +48,7 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
   const concurrencyRaw =
     typeof patch.concurrency === "number" ? patch.concurrency : base.concurrency;
   const themeRaw = patch.theme ?? base.theme;
+  const codecRaw = patch.codecPreference ?? base.codecPreference;
   const postRaw = patch.postDownloadAction ?? base.postDownloadAction;
   return {
     downloadDir: typeof patch.downloadDir === "string" ? patch.downloadDir : base.downloadDir,
@@ -65,6 +68,7 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
     embedSubs: cleanBool(patch.embedSubs, base.embedSubs),
     mergeContainer: cleanString(patch.mergeContainer, base.mergeContainer),
     sponsorBlock: cleanBool(patch.sponsorBlock, base.sponsorBlock),
+    codecPreference: CODECS.includes(codecRaw) ? codecRaw : base.codecPreference,
     theme: THEMES.includes(themeRaw) ? themeRaw : base.theme,
     postDownloadAction: POST_ACTIONS.includes(postRaw) ? postRaw : base.postDownloadAction,
     autoCheckUpdate: cleanBool(patch.autoCheckUpdate, base.autoCheckUpdate),

@@ -2,6 +2,7 @@ export { APP_NAME } from "./branding.js";
 export type {
   AppSettings,
   AudioPreset,
+  CodecPreference,
   DownloadJob,
   DownloadJobInput,
   DownloadPreset,
@@ -52,13 +53,15 @@ export {
   buildInfoArgs,
   buildUpdateArgs,
   buildVersionArgs,
+  codecSortOf,
 } from "./args.js";
 export type { DownloadArgsInput } from "./args.js";
 export { parseProgressLine, PROGRESS_TEMPLATE } from "./progress.js";
 export type { ParsedProgress } from "./progress.js";
 export { mapDownloadError } from "./errors.js";
 export type { ErrorCategory, MappedError } from "./errors.js";
-export { parseMediaInfo } from "./media.js";
+export { parseMediaInfo, estimatePresetSize, formatSize } from "./media.js";
+export type { SizeEstimate } from "./media.js";
 export {
   MAX_CONCURRENCY,
   MIN_CONCURRENCY,

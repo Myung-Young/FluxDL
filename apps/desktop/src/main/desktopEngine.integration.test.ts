@@ -15,13 +15,24 @@ function hasYtDlp(): boolean {
   }
 }
 
-const HAS_YTDLP = hasYtDlp();
+function hasFfprobe(): boolean {
+  try {
+    const r = spawnSync("ffprobe", ["-version"], { timeout: 15000 });
+    return r.status === 0;
+  } catch {
+    return false;
+  }
+}
 
-function makeEngine() {
+const HAS_YTDLP = hasYtDlp();
+const HAS_FFPROBE = hasFfprobe();
+
+function makeEngine(plain = false) {
   const base = mkdtempSync(join(tmpdir(), "fluxdl-m6-"));
   // Spaces + unicode on purpose: the engine must survive them end to end.
-  const userData = join(base, "user data münchen 輸入");
-  const outputDir = join(base, "out put münchen 輸入");
+  // plain=true skips non-ASCII (yt-dlp mangles those in printed paths: D48).
+  const userData = plain ? join(base, "userdata") : join(base, "user data münchen 輸入");
+  const outputDir = plain ? join(base, "out put") : join(base, "out put münchen 輸入");
   const events: EngineProgress[] = [];
   const engine = new DesktopEngine({
     userDataDir: userData,
@@ -63,8 +74,7 @@ describe.skipIf(!HAS_YTDLP)("desktop engine live (real yt-dlp)", () => {
     expect(info.formats.length).toBeGreaterThan(0);
   });
 
-  it("kills mid-download then resumes to a complete file", async () => {
-    const { engine, events, outputDir, base } = makeEngine();
+  it("kills mid-download then resumes to a complete file", async () => {    const { engine, events, outputDir, base } = makeEngine();
     const unsub = engine.onProgress((e) => {
       events.push(e);
     });
@@ -101,4 +111,82 @@ describe.skipIf(!HAS_YTDLP)("desktop engine live (real yt-dlp)", () => {
       rmSync(base, { recursive: true, force: true });
     }
   }, 180_000);
+
+  it("Compatible preset downloads H.264 + AAC in mp4 (ffprobe-verified)", async () => {
+    if (!HAS_FFPROBE) return;
+    // ASCII-spaces dir (D48: yt-dlp mangles non-ASCII in printed paths).
+    const { engine, events, outputDir, base } = makeEngine(true);
+    const unsub = engine.onProgress((e) => {
+      events.push(e);
+    });
+    try {
+      // "Me at the zoo": tiny (~1 MB), stable, multi-format manifest.
+      const id = await engine.start({
+        url: "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+        title: "M1.1 compatible probe",
+        preset: { kind: "video", videoPreset: "Compatible", audioPreset: "MP3", rawFormat: null },
+        outputDir,
+      });
+      const finished = await waitFor(
+        events,
+        (e) => e.id === id && e.stage === "done",
+        120_000,
+        "compatible done",
+      );
+      expect(finished.destination?.endsWith(".mp4")).toBe(true);
+      const probe = spawnSync(
+        "ffprobe",
+        [
+          "-v",
+          "error",
+          "-show_entries",
+          "stream=codec_name",
+          "-of",
+          "csv=p=0",
+          finished.destination ?? "",
+        ],
+        { timeout: 30000, encoding: "utf8" },
+      );
+      expect(probe.status).toBe(0);
+      const codecs = probe.stdout.split("\n").map((s) => s.trim());
+      expect(codecs).toContain("h264");
+      expect(codecs).toContain("aac");
+    } finally {
+      unsub();
+      rmSync(base, { recursive: true, force: true });
+    }
+  }, 180_000);
+
+  it("Compatible selector resolves to avc1+mp4a on a multi-codec video", async () => {
+    const { buildDownloadArgs } = await import("@grabber/core/args.js");
+    const full = buildDownloadArgs({
+      url: "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+      preset: { kind: "video", videoPreset: "Compatible", audioPreset: "MP3", rawFormat: null },
+      outputDir: tmpdir(),
+      filenameTemplate: "%(title)s [%(id)s].%(ext)s",
+      ffmpegDir: null,
+      mergeContainer: "mp4",
+      embedThumbnail: false,
+      embedMetadata: false,
+      writeSubs: false,
+      subLangs: "en",
+      embedSubs: false,
+      sponsorBlock: false,
+      speedLimit: null,
+      proxy: null,
+      cookiesFromBrowser: null,
+      codecPreference: "auto",
+      noPlaylist: true,
+    });
+    const target = full[full.length - 1] ?? "";
+    const probe = spawnSync(
+      "yt-dlp",
+      [...full.slice(0, -1), "--simulate", "--print", "%(vcodec)s %(acodec)s", target],
+      { timeout: 90000, encoding: "utf8" },
+    );
+    expect(probe.status).toBe(0);
+    const picked = probe.stdout.trim();
+    expect(picked.startsWith("avc1")).toBe(true);
+    expect(picked).toContain("mp4a");
+  }, 120_000);
 });

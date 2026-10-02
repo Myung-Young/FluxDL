@@ -35,8 +35,8 @@ describe("v1.0 fixtures load unchanged", () => {
     expect(merged.downloadDir).toBe("C:\\Users\\P\\Videos\\FluxDL");
     expect(merged.concurrency).toBe(2);
     expect(merged.theme).toBe("obsidian");
-    // Unknown future keys never leak through; missing future keys get defaults.
-    expect("codecPreference" in merged).toBe(false);
+    // New fields are absent in v1.0 files and arrive via defaults.
+    expect(merged.codecPreference).toBe("auto");
   });
 
   it("queue + history fixtures load from disk byte-identical in shape", async () => {
