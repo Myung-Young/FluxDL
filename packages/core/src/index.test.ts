@@ -4,7 +4,7 @@ import { IPC_CHANNELS } from "./engine.js";
 
 describe("core M0", () => {
   it("keeps the app name in one constant", () => {
-    expect(APP_NAME).toBe("Grabber");
+    expect(APP_NAME).toBe("FluxDL");
   });
 
   it("exposes a fixed single IPC channel map", () => {

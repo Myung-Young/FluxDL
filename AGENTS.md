@@ -1,6 +1,6 @@
-# AGENTS.md — Grabber
+# AGENTS.md — FluxDL
 
-Working name is `Grabber`. It lives in exactly ONE constant: `APP_NAME` in
+Working name is `FluxDL`. It lives in exactly ONE constant: `APP_NAME` in
 `packages/core/src/branding.ts`. Never hardcode the display name elsewhere.
 
 ## Scope

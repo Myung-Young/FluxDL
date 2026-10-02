@@ -87,6 +87,9 @@ export function buildDownloadArgs(input: DownloadArgsInput): string[] {
     "--continue",
     "--ignore-config",
     "--no-warnings",
+    // Keep very long titles inside Windows path limits.
+    "--trim-filenames",
+    "200",
   ];
 
   args.push("--output", joinOutputTemplate(input.outputDir, input.filenameTemplate));

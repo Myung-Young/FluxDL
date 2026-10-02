@@ -1,4 +1,4 @@
-# Grabber (M0)
+# FluxDL
 
 Premium dark-UI GUI for the yt-dlp CLI. Phase 1: Windows `.exe` (installer + portable).
 

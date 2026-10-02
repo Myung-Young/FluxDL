@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["node", "vite/client", "electron-vite/node"]
   },
-  "include": ["src/**/*", "electron.vite.config.ts"]
+  "include": ["src/**/*", "e2e/**/*", "electron.vite.config.ts"]
 }

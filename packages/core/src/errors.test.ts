@@ -11,6 +11,11 @@ describe("mapDownloadError", () => {
     ["URLError: <urlopen error [Errno 11001] getaddrinfo failed>", "network"],
     ["HTTP Error 429: Too Many Requests", "rate-limited"],
     ["ERROR: Unsupported URL: https://example.com", "unsupported-url"],
+    // Captured from yt-dlp 2026.08.19 with an unreachable proxy:
+    [
+      "ERROR: [youtube] aqz-KE-bpKQ: Unable to download API page: ('Unable to connect to proxy', NewConnectionError(\"HTTPSConnection(host='127.0.0.1', port=9): Failed to establish a new connection\"))",
+      "network",
+    ],
     ["Something totally new broke", "unknown"],
     ["", "unknown"],
   ] as const)("maps %s -> %s", (raw, category) => {

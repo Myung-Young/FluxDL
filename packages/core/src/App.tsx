@@ -11,8 +11,12 @@ import type { StoreApi } from "zustand";
 
 function getEngine(): DownloadEngine | null {
   if (typeof window === "undefined") return null;
-  const w = window as unknown as { grabber?: DownloadEngine };
-  return w.grabber ?? null;
+  const w = window as unknown as {
+    grabber?: DownloadEngine;
+    /** E2E seam: Playwright sets this before boot to inject a mock engine. */
+    __grabberOverride?: DownloadEngine;
+  };
+  return w.__grabberOverride ?? w.grabber ?? null;
 }
 
 export function App(): React.JSX.Element {

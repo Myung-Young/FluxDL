@@ -90,6 +90,11 @@ describe("persist", () => {
     expect(await loadHistoryFromDisk(d)).toEqual([]);
   });
 
+  it("surfaces disk/IO failures instead of silently dropping data", async () => {
+    await expect(saveQueueToDisk("C:\\bad\0path", [job("a")])).rejects.toThrow();
+    await expect(appendHistoryToDisk("C:\\bad\0path", job("a"))).rejects.toThrow();
+  });
+
   it("validates jobs strictly", () => {
     expect(isDownloadJob(job("x"))).toBe(true);
     expect(isDownloadJob(null)).toBe(false);

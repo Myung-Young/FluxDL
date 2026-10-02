@@ -60,7 +60,7 @@ const RULES: ReadonlyArray<{
   {
     category: "network",
     pattern:
-      /network.*unreachable|connection.*timed out|temporary failure|failed to resolve|socket.*timeout|connection refused|urlopen error/i,
+      /network.*unreachable|connection.*timed out|temporary failure|failed to resolve|socket.*timeout|connection refused|urlopen error|unable to connect|newconnectionerror|proxyerror|failed to establish.*connection|name or service not known|getaddrinfo failed/i,
     message: "Network error. Check your connection or proxy and retry.",
     suggestCookies: false,
   },

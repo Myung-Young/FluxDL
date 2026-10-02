@@ -83,6 +83,13 @@ describe("arg builder", () => {
     expect(args).toContain("--cookies-from-browser");
   });
 
+  it("trims very long filenames for Windows path limits", () => {
+    const args = buildDownloadArgs(base());
+    const i = args.indexOf("--trim-filenames");
+    expect(i).toBeGreaterThan(-1);
+    expect(args[i + 1]).toBe("200");
+  });
+
   it("builds version/update args", () => {
     expect(buildVersionArgs()).toEqual(["--version"]);
     expect(buildUpdateArgs()).toEqual(["--update"]);
