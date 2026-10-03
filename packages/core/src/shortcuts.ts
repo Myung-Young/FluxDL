@@ -2,6 +2,7 @@
  * Global shortcut matching (pure). Wiring lives in Shell:
  * - Ctrl/Cmd+V pastes + analyzes when focus is NOT in an editable field.
  * - Ctrl/Cmd+, opens Settings.
+ * - Ctrl/Cmd+K opens the command palette (never inside editable fields).
  */
 
 export interface KeyCombo {
@@ -29,6 +30,10 @@ export function isPasteAnalyze(combo: KeyCombo): boolean {
 
 export function isOpenSettings(combo: KeyCombo): boolean {
   return combo.ctrlOrCmd && !combo.shift && combo.key === ",";
+}
+
+export function isCommandPalette(combo: KeyCombo): boolean {
+  return combo.ctrlOrCmd && !combo.shift && combo.key === "k";
 }
 
 export function isEditableTarget(target: unknown): boolean {

@@ -329,3 +329,30 @@ test("bulk: pause all then resume all", async () => {
   });
   expect(pageErrors).toEqual([]);
 });
+
+test("palette: Ctrl+K filters and runs a command", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Home" }).click();
+  await page.keyboard.press("Control+k");
+  await expect(page.locator('[role="combobox"]')).toBeVisible({ timeout: 15000 });
+  await page.locator('[role="combobox"]').fill("downloads");
+  await expect(page.locator('[role="option"]').first()).toContainText("Downloads");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".grabber-view h1")).toHaveText("Downloads", { timeout: 15000 });
+  // Reopen and dismiss with Escape; focus returns without errors.
+  await page.keyboard.press("Control+k");
+  await expect(page.locator('[role="combobox"]')).toBeVisible({ timeout: 15000 });
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[role="combobox"]')).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
+});

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import { APP_NAME } from "./branding.js";
@@ -8,7 +8,9 @@ import { fadeSwap, pressScale, staggerIn } from "./motion.js";
 import { STRINGS } from "./strings.js";
 import { isValidUrl } from "./url.js";
 import { readClipboardText } from "./clipboard.js";
-import { comboFromEvent, isEditableTarget, isOpenSettings, isPasteAnalyze } from "./shortcuts.js";
+import { comboFromEvent, isCommandPalette, isEditableTarget, isOpenSettings, isPasteAnalyze } from "./shortcuts.js";
+import { CommandPalette } from "./CommandPalette.js";
+import type { CommandContext } from "./commands.js";
 import { Home } from "./Home.js";
 import { Downloads } from "./Downloads.js";
 import { Library } from "./Library.js";
@@ -59,6 +61,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   const [view, setView] = useState<ShellView>("home");
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
   const [pendingSection, setPendingSection] = useState<string | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState<boolean>(false);
   const [aggregateText, setAggregateText] = useState<string>(STRINGS.status.ready);
   const lastAggSent = useRef<number | null>(null);
   const aggTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -136,16 +139,36 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
     setPendingSection(null);
   }, [view, pendingSection]);
 
-  const navigate = useCallback((next: "settings" | "logs", section?: string): void => {
+  const navigate = useCallback((next: ShellView, section?: string): void => {
     if (section !== undefined) setPendingSection(section);
     switchView(next);
   }, [switchView]);
 
+  const pasteAndAnalyze = useCallback(
+    (url: string): void => {
+      setPendingPaste(url);
+      switchView("home");
+    },
+    [switchView],
+  );
+
+  const paletteContext: CommandContext = useMemo(
+    () => ({ engine, queue, settings, toast, jobs, navigate, pasteAndAnalyze }),
+    [engine, queue, settings, toast, jobs, navigate, pasteAndAnalyze],
+  );
+
   // Global shortcuts: Ctrl+, opens Settings; Ctrl+V pastes + analyzes
-  // when focus is outside editable fields.
+  // when focus is outside editable fields; Ctrl+K opens the palette
+  // everywhere except inside editable fields.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const combo = comboFromEvent(e);
+      if (isCommandPalette(combo)) {
+        if (isEditableTarget(e.target)) return;
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+        return;
+      }
       if (isOpenSettings(combo)) {
         e.preventDefault();
         switchView("settings");
@@ -279,6 +302,13 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
         </main>
       </div>
       <Toasts toast={toast} />
+      <CommandPalette
+        open={paletteOpen}
+        context={paletteContext}
+        onClose={() => {
+          setPaletteOpen(false);
+        }}
+      />
     </div>
   );
 }

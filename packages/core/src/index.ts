@@ -86,9 +86,18 @@ export { createToastStore } from "./toast.js";
 export type { Toast, ToastAction, ToastKind, ToastStoreState } from "./toast.js";
 export { Toasts } from "./Toasts.js";
 export { ensureNotificationPermission, sendNotification } from "./notify.js";
-export { comboFromEvent, isEditableTarget, isOpenSettings, isPasteAnalyze } from "./shortcuts.js";
+export { comboFromEvent, isEditableTarget, isOpenSettings, isPasteAnalyze, isCommandPalette } from "./shortcuts.js";
 export type { KeyCombo } from "./shortcuts.js";
 export { readClipboardText, writeClipboardText } from "./clipboard.js";
+export {
+  BUILTIN_COMMANDS,
+  availableCommands,
+  fuzzyScore,
+  rankCommands,
+} from "./commands.js";
+export type { CommandContext, CommandDef, CommandView, RankedCommand } from "./commands.js";
+export { CommandPalette } from "./CommandPalette.js";
+export type { CommandPaletteProps } from "./CommandPalette.js";
 export {
   LOG_TAIL_CHARS,
   MAX_ERROR_EVENTS,

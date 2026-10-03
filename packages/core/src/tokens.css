@@ -747,6 +747,16 @@ select.input {
   padding-left: var(--space-4);
 }
 
+.cmd-option {
+  cursor: pointer;
+}
+
+.cmd-option[data-active="true"] {
+  background: var(--accent-soft);
+  color: var(--fg-0);
+  border-color: var(--accent);
+}
+
 .toast {
   display: flex;
   align-items: center;

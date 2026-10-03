@@ -107,3 +107,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M1.9
 
 - D55: Release v1.1.0. All gates green at tag time: typecheck, lint (0 warnings), 128 core + 30 desktop tests (incl. live-binary integration: analyze, kill/resume, Compatible ffprobe, selector proof, archive skip), build, 6/6 Playwright smoke. `pnpm dist` produced FluxDL-Setup-1.1.0.exe + FluxDL-Portable-1.1.0.exe (~198MB each, same class as 0.1.0). Gap (rule 12): the portable-from-spaces-path GUI pass did not complete in-session — the portable extract+boot exceeded automation timeouts repeatedly, so launch → analyze → real download on the packaged portable is UNVERIFIED; same code paths are live-tested, but run the portable once manually before distributing.
+
+## M2.1
+
+- D56: Command palette registry is data (id + strings key + keywords + when/run) with a hand-rolled fuzzy scorer (substring fast path, subsequence + prefix/consecutive bonuses) and usage-count recency boost; no new dependency. Shell owns open state + memoized context; Ctrl+K is ignored inside editable fields; combobox/listbox pattern with focus trap/restore and staggered entrance. Density toggle command lands in M2.5 (setting does not exist yet); availability predicates are covered by context tests.
