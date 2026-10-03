@@ -1,5 +1,5 @@
 import type { DownloadJob } from "./types.js";
-import { STRINGS } from "./strings.js";
+import type { Strings } from "./strings.js";
 import {
   MENU_AUDIO_PRESETS,
   MENU_VIDEO_PRESETS,
@@ -26,6 +26,7 @@ export function buildJobMenu(
   job: DownloadJob,
   h: JobMenuHandlers,
   move: MenuMove = { up: false, down: false },
+  strings: Strings,
 ): MenuItemDef[] {
   const defs: MenuItemDef[] = [];
   for (const id of menuItemsFor(job.status, job.destination !== null, move)) {
@@ -33,7 +34,7 @@ export function buildJobMenu(
       case "copy-url":
         defs.push({
           id,
-          label: STRINGS.menu.copyUrl,
+          label: strings.menu.copyUrl,
           run: () => {
             h.copyUrl(job.url);
           },
@@ -44,7 +45,7 @@ export function buildJobMenu(
           const dest = job.destination;
           defs.push({
             id,
-            label: STRINGS.menu.copyPath,
+            label: strings.menu.copyPath,
             run: () => {
               h.copyPath(dest);
             },
@@ -54,7 +55,7 @@ export function buildJobMenu(
       case "open":
         defs.push({
           id,
-          label: STRINGS.downloads.openFile,
+          label: strings.downloads.openFile,
           run: () => {
             h.openFile();
           },
@@ -63,7 +64,7 @@ export function buildJobMenu(
       case "reveal":
         defs.push({
           id,
-          label: STRINGS.downloads.showInFolder,
+          label: strings.downloads.showInFolder,
           run: () => {
             h.reveal();
           },
@@ -73,12 +74,12 @@ export function buildJobMenu(
         const names = job.preset.kind === "video" ? MENU_VIDEO_PRESETS : MENU_AUDIO_PRESETS;
         defs.push({
           id,
-          label: STRINGS.menu.retryPreset,
+          label: strings.menu.retryPreset,
           children: names.map((name) => {
             const preset = presetForMenu(job.preset.kind, name);
             return {
               id: `preset:${name}`,
-              label: name === "Compatible" ? STRINGS.home.presetCompatible : name,
+              label: name === "Compatible" ? strings.home.presetCompatible : name,
               run: () => {
                 if (preset !== null) h.retryWithPreset(preset);
               },
@@ -90,7 +91,7 @@ export function buildJobMenu(
       case "remove":
         defs.push({
           id,
-          label: STRINGS.menu.remove,
+          label: strings.menu.remove,
           run: () => {
             h.remove();
           },
@@ -101,7 +102,7 @@ export function buildJobMenu(
         if (up !== undefined) {
           defs.push({
             id,
-            label: STRINGS.menu.moveUp,
+            label: strings.menu.moveUp,
             run: () => {
               up();
             },
@@ -114,7 +115,7 @@ export function buildJobMenu(
         if (down !== undefined) {
           defs.push({
             id,
-            label: STRINGS.menu.moveDown,
+            label: strings.menu.moveDown,
             run: () => {
               down();
             },
@@ -125,7 +126,7 @@ export function buildJobMenu(
       case "delete-file":
         defs.push({
           id,
-          label: STRINGS.menu.deleteFile,
+          label: strings.menu.deleteFile,
           run: () => {
             h.deleteFile();
           },

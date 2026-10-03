@@ -56,8 +56,7 @@ describe("mergeSettings", () => {
     ).toBe(60);
   });
 
-  it("defaults comfortable density and sanitizes it", () => {
-    expect(DEFAULT_SETTINGS.density).toBe("comfortable");
+  it("defaults comfortable density and sanitizes it", () => {    expect(DEFAULT_SETTINGS.density).toBe("comfortable");
     expect(DEFAULT_SETTINGS.thumbnailAccent).toBe(true);
     expect(DEFAULT_SETTINGS.accentOverride).toBeNull();
     expect(mergeSettings(DEFAULT_SETTINGS, { density: "compact" }).density).toBe("compact");
@@ -68,5 +67,11 @@ describe("mergeSettings", () => {
       "#818cf8",
     );
     expect(mergeSettings(DEFAULT_SETTINGS, { accentOverride: "red" }).accentOverride).toBeNull();
+  });
+
+  it("defaults auto language and sanitizes it", () => {
+    expect(DEFAULT_SETTINGS.language).toBe("auto");
+    expect(mergeSettings(DEFAULT_SETTINGS, { language: "ms" }).language).toBe("ms");
+    expect(mergeSettings(DEFAULT_SETTINGS, { language: "fr" as never }).language).toBe("auto");
   });
 });

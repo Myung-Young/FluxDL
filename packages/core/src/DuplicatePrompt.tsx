@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { STRINGS } from "./strings.js";
+import type { Strings } from "./strings.js";
 import type { DownloadJob } from "./types.js";
 import {
   filterDuplicates,
@@ -21,7 +21,10 @@ export interface GuardSnapshots {
  * filterDuplicates; when a hit needs a decision it renders a modal dialog
  * (role=dialog, focus trapped, Esc = Skip, focus restored on close).
  */
-export function useDuplicateGuard(): {
+export function useDuplicateGuard(
+  strings: Strings,
+  locale: string,
+): {
   guard: (
     targets: readonly GuardInput[],
     opts: GuardSnapshots & {
@@ -110,7 +113,7 @@ export function useDuplicateGuard(): {
 
   if (pending === null) return { guard, dialog: null };
   const { hit, fileStillExists } = pending;
-  const date = new Date(hit.job.createdAt).toLocaleDateString();
+  const date = new Date(hit.job.createdAt).toLocaleDateString(locale);
   return {
     guard,
     dialog: (
@@ -118,18 +121,18 @@ export function useDuplicateGuard(): {
         className="grabber-modal"
         role="dialog"
         aria-modal="true"
-        aria-label={STRINGS.duplicate.title}
+        aria-label={strings.duplicate.title}
         data-testid="dup-dialog"
       >
         <div className="grabber-card" ref={boxRef}>
-          <h2>{STRINGS.duplicate.title}</h2>
+          <h2>{strings.duplicate.title}</h2>
           <p className="muted">
             {hit.scope === "queue"
-              ? STRINGS.duplicate.queueMessage
-              : STRINGS.duplicate.historyMessage}
+              ? strings.duplicate.queueMessage
+              : strings.duplicate.historyMessage}
           </p>
           <p className="muted">
-            {STRINGS.duplicate.downloadedOn} {date}
+            {strings.duplicate.downloadedOn} {date}
           </p>
           <p className="preview-title">{hit.job.title}</p>
           <div className="chip-row">
@@ -141,7 +144,7 @@ export function useDuplicateGuard(): {
                 choose("skip");
               }}
             >
-              {STRINGS.duplicate.skip}
+              {strings.duplicate.skip}
             </button>
             <button
               type="button"
@@ -151,7 +154,7 @@ export function useDuplicateGuard(): {
                 choose("anyway");
               }}
             >
-              {STRINGS.duplicate.downloadAnyway}
+              {strings.duplicate.downloadAnyway}
             </button>
             {fileStillExists && hit.job.destination !== null && (
               <button
@@ -162,7 +165,7 @@ export function useDuplicateGuard(): {
                   choose("open");
                 }}
               >
-                {STRINGS.duplicate.openFile}
+                {strings.duplicate.openFile}
               </button>
             )}
           </div>

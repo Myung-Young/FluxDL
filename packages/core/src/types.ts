@@ -116,6 +116,9 @@ export type ThemeName = "obsidian" | "midnight" | "ember";
 
 export type Density = "comfortable" | "compact";
 
+/** UI language: explicit locale or follow the system (M2.8). */
+export type Language = "auto" | "en" | "ms";
+
 export interface AppSettings {
   readonly downloadDir: string;
   readonly filenameTemplate: string;
@@ -152,4 +155,6 @@ export interface AppSettings {
   readonly accentOverride: string | null;
   /** Playlist jobs download into a subfolder (M2.7, default ON). */
   readonly playlistSubfolder: boolean;
+  /** UI language (M2.8). */
+  readonly language: Language;
 }

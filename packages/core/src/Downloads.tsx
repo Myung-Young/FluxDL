@@ -3,7 +3,8 @@ import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
 import type { DownloadJob } from "./types.js";
-import { STRINGS } from "./strings.js";
+import type { Strings } from "./strings.js";
+import { useStrings } from "./locale.js";
 import { sendNotification } from "./notify.js";
 import { flipShift, pressScale, tweenProgress } from "./motion.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
@@ -57,6 +58,7 @@ function Card({
   onMenu,
   queuePos,
   onMove,
+  strings,
 }: {
   job: DownloadJob;
   engine: DownloadEngine;
@@ -68,6 +70,7 @@ function Card({
   /** Position within the queued subsequence (null when not queued). */
   queuePos: { index: number; total: number } | null;
   onMove: (id: string, toIndex: number) => void;
+  strings: Strings;
 }): React.JSX.Element {
   const actions = queue.getState();
   const run = (fn: () => Promise<void>): void => {
@@ -122,7 +125,7 @@ function Card({
           <button
             type="button"
             className="btn btn-small"
-            aria-label={STRINGS.downloads.pause}
+            aria-label={strings.downloads.pause}
             onPointerDown={(e) => {
               pressScale(e.currentTarget);
             }}
@@ -130,14 +133,14 @@ function Card({
               run(() => actions.pause(job.id));
             }}
           >
-            {STRINGS.downloads.pause}
+            {strings.downloads.pause}
           </button>
         )}
         {job.status === "paused" && (
           <button
             type="button"
             className="btn btn-small"
-            aria-label={STRINGS.downloads.resume}
+            aria-label={strings.downloads.resume}
             onPointerDown={(e) => {
               pressScale(e.currentTarget);
             }}
@@ -145,14 +148,14 @@ function Card({
               run(() => actions.resume(job.id));
             }}
           >
-            {STRINGS.downloads.resume}
+            {strings.downloads.resume}
           </button>
         )}
         {job.status === "error" && (
           <button
             type="button"
             className="btn btn-small"
-            aria-label={STRINGS.downloads.retry}
+            aria-label={strings.downloads.retry}
             onPointerDown={(e) => {
               pressScale(e.currentTarget);
             }}
@@ -160,14 +163,14 @@ function Card({
               run(() => actions.retry(job.id));
             }}
           >
-            {STRINGS.downloads.retry}
+            {strings.downloads.retry}
           </button>
         )}
         {job.status !== "done" && (
           <button
             type="button"
             className="btn btn-small"
-            aria-label={STRINGS.downloads.cancel}
+            aria-label={strings.downloads.cancel}
             onPointerDown={(e) => {
               pressScale(e.currentTarget);
             }}
@@ -175,7 +178,7 @@ function Card({
               run(() => actions.cancel(job.id));
             }}
           >
-            {STRINGS.downloads.cancel}
+            {strings.downloads.cancel}
           </button>
         )}
         {job.destination !== null ? (
@@ -183,38 +186,38 @@ function Card({
             <button
               type="button"
               className="btn btn-small"
-              aria-label={STRINGS.downloads.openFile}
+              aria-label={strings.downloads.openFile}
               onClick={() => {
                 if (job.destination !== null) {
                   engine.openPath(job.destination).catch(() => undefined);
                 }
               }}
             >
-              {STRINGS.downloads.openFile}
+              {strings.downloads.openFile}
             </button>
             <button
               type="button"
               className="btn btn-small"
-              aria-label={STRINGS.downloads.showInFolder}
+              aria-label={strings.downloads.showInFolder}
               onClick={() => {
                 if (job.destination !== null) {
                   engine.revealInFolder(job.destination).catch(() => undefined);
                 }
               }}
             >
-              {STRINGS.downloads.showInFolder}
+              {strings.downloads.showInFolder}
             </button>
           </>
         ) : (
           <button
             type="button"
             className="btn btn-small"
-            aria-label={STRINGS.downloads.showFolder}
+            aria-label={strings.downloads.showFolder}
             onClick={() => {
               engine.openPath(job.outputDir).catch(() => undefined);
             }}
           >
-            {STRINGS.downloads.showFolder}
+            {strings.downloads.showFolder}
           </button>
         )}
       </div>
@@ -229,6 +232,7 @@ export function Downloads({
   toast,
   navigate,
 }: DownloadsProps): React.JSX.Element {
+  const S = useStrings(settings);
   const jobs = useStore(queue, (s) => s.jobs);
   const prevIds = useRef<ReadonlySet<string>>(new Set());
   const [menu, setMenu] = useState<{ job: DownloadJob; x: number; y: number } | null>(null);
@@ -340,20 +344,20 @@ export function Downloads({
 
   const copyText = (text: string): void => {
     void writeClipboardText(text).then((ok) => {
-      if (!ok) toast.getState().push(STRINGS.menu.copyFailed, "error");
+      if (!ok) toast.getState().push(S.menu.copyFailed, "error");
     });
   };
 
   const failBulk = (err: unknown): void => {
     toast.getState().push(
-      err instanceof Error ? err.message : STRINGS.menu.copyFailed,
+      err instanceof Error ? err.message : S.menu.copyFailed,
       "error",
     );
   };
 
   const menuItems = (job: DownloadJob): MenuItemDef[] => {
     const fail = (err: unknown): void => {
-      toast.getState().push(err instanceof Error ? err.message : STRINGS.menu.copyFailed, "error");
+      toast.getState().push(err instanceof Error ? err.message : S.menu.copyFailed, "error");
     };
     const qIndex = queuedIds.indexOf(job.id);
     return buildJobMenu(
@@ -394,11 +398,11 @@ export function Downloads({
         deleteFile: () => {
           const dest = job.destination;
           if (dest === null) return;
-          if (!window.confirm(STRINGS.menu.deleteConfirm)) return;
+          if (!window.confirm(S.menu.deleteConfirm)) return;
           engine
             .trashFile(dest)
             .then(() => {
-              toast.getState().push(STRINGS.menu.deletedToast, "success");
+              toast.getState().push(S.menu.deletedToast, "success");
             })
             .catch(fail);
         },
@@ -407,6 +411,7 @@ export function Downloads({
         up: qIndex > 0,
         down: qIndex >= 0 && qIndex < queuedIds.length - 1,
       },
+      S,
     );
   };
 
@@ -421,8 +426,8 @@ export function Downloads({
       for (const id of vanished) {
         const h = hist.find((x) => x.id === id);
         if (h?.status === "done") {
-          toast.getState().push(`${STRINGS.toast.finished}: ${h.title}`, "success");
-          sendNotification(STRINGS.toast.finished, h.title);
+          toast.getState().push(`${S.toast.finished}: ${h.title}`, "success");
+          sendNotification(S.toast.finished, h.title);
           if (action !== "none" && h.destination !== null) {
             if (action === "open-file") {
               await engine.openPath(h.destination).catch(() => undefined);
@@ -434,8 +439,8 @@ export function Downloads({
           const detail = h.error !== null ? ` — ${h.error}` : "";
           toast
             .getState()
-            .push(`${STRINGS.toast.failed}: ${h.title}${detail}`, "error", {
-              label: STRINGS.errors.actionRetry,
+            .push(`${S.toast.failed}: ${h.title}${detail}`, "error", {
+              label: S.errors.actionRetry,
               run: () => {
                 void queue
                   .getState()
@@ -448,11 +453,11 @@ export function Downloads({
                   .catch(() => undefined);
               },
             });
-          sendNotification(STRINGS.toast.failed, h.title);
+          sendNotification(S.toast.failed, h.title);
         }
       }
     })();
-  }, [jobs, engine, queue, settings, toast]);
+  }, [jobs, engine, queue, settings, toast, S]);
 
   const canPause = jobs.some(
     (j) => j.status === "queued" || j.status === "analyzing" || j.status === "downloading" || j.status === "processing",
@@ -462,10 +467,10 @@ export function Downloads({
   const hasErrors = jobs.some((j) => j.status === "error");
 
   return (
-    <section className="grabber-view" aria-label={STRINGS.downloads.title}>
-      <h1>{STRINGS.downloads.title}</h1>
+    <section className="grabber-view" aria-label={S.downloads.title}>
+      <h1>{S.downloads.title}</h1>
       {jobs.length > 0 && (
-        <div className="chip-row" role="group" aria-label={STRINGS.downloads.bulkActions}>
+        <div className="chip-row" role="group" aria-label={S.downloads.bulkActions}>
           <button
             type="button"
             className="btn btn-small"
@@ -474,7 +479,7 @@ export function Downloads({
               queue.getState().pauseAll().catch(failBulk);
             }}
           >
-            {STRINGS.downloads.pauseAll}
+            {S.downloads.pauseAll}
           </button>
           <button
             type="button"
@@ -484,18 +489,18 @@ export function Downloads({
               queue.getState().resumeAll().catch(failBulk);
             }}
           >
-            {STRINGS.downloads.resumeAll}
+            {S.downloads.resumeAll}
           </button>
           <button
             type="button"
             className="btn btn-small"
             disabled={!hasQueued}
             onClick={() => {
-              if (!window.confirm(STRINGS.downloads.cancelQueuedConfirm)) return;
+              if (!window.confirm(S.downloads.cancelQueuedConfirm)) return;
               queue.getState().cancelQueued().catch(failBulk);
             }}
           >
-            {STRINGS.downloads.cancelQueued}
+            {S.downloads.cancelQueued}
           </button>
           <button
             type="button"
@@ -505,13 +510,13 @@ export function Downloads({
               queue.getState().clearFinished().catch(failBulk);
             }}
           >
-            {STRINGS.downloads.clearFinished}
+            {S.downloads.clearFinished}
           </button>
         </div>
       )}
       {jobs.length === 0 ? (
         <div className="grabber-card">
-          <p className="muted">{STRINGS.downloads.empty}</p>
+          <p className="muted">{S.downloads.empty}</p>
         </div>
       ) : (
         <div
@@ -537,6 +542,7 @@ export function Downloads({
                 settings={settings}
                 toast={toast}
                 navigate={navigate}
+                strings={S}
                 onMenu={(target, x, y) => {
                   setMenu({ job: target, x, y });
                 }}
@@ -553,7 +559,7 @@ export function Downloads({
       )}
       {menu !== null && (
         <ContextMenu
-          label={STRINGS.menu.label}
+          label={S.menu.label}
           items={menuItems(menu.job)}
           x={menu.x}
           y={menu.y}

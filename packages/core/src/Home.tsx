@@ -12,12 +12,13 @@ import type {
   PlaylistEntry,
   VideoPreset,
 } from "./types.js";
+import type { Strings } from "./strings.js";
 import { isValidUrl, normalizeUrl } from "./url.js";
 import { estimatePresetSize, formatSize } from "./media.js";
 import { deriveAccent } from "./color.js";
 import { LruCache } from "./cache.js";
 import { readClipboardText } from "./clipboard.js";
-import { STRINGS } from "./strings.js";
+import { formatStr, localeTag, resolveLanguage, useStrings } from "./locale.js";
 import { pressScale, tweenAccentVar } from "./motion.js";
 import { BatchPanel } from "./BatchPanel.js";
 import { useDuplicateGuard } from "./DuplicatePrompt.js";
@@ -46,24 +47,30 @@ const VIDEO_PRESETS: readonly VideoPreset[] = [
 ];
 const AUDIO_PRESETS: readonly AudioPreset[] = ["MP3", "M4A", "Opus", "FLAC"];
 
-function presetLabel(kind: MediaKind, preset: VideoPreset | AudioPreset): string {
-  if (kind === "video" && preset === "Compatible") return STRINGS.home.presetCompatible;
+function presetLabel(
+  strings: Strings,
+  kind: MediaKind,
+  preset: VideoPreset | AudioPreset,
+): string {
+  if (kind === "video" && preset === "Compatible") return strings.home.presetCompatible;
   return preset;
 }
 
 function estimateText(
+  strings: Strings,
+  locale: string,
   info: MediaInfo,
   preset: DownloadPreset,
   codecPref: CodecPreference,
 ): string {
   const est = estimatePresetSize(info, preset, codecPref);
-  if (est === null) return STRINGS.home.sizeUnknown;
-  return `~${formatSize(est.bytes)}`;
+  if (est === null) return strings.home.sizeUnknown;
+  return `~${formatSize(est.bytes, locale)}`;
 }
 
-export function formatDuration(totalSeconds: number | null): string {
+export function formatDuration(strings: Strings, totalSeconds: number | null): string {
   if (totalSeconds === null || !Number.isFinite(totalSeconds)) {
-    return STRINGS.home.unknownDuration;
+    return strings.home.unknownDuration;
   }
   const s = Math.max(0, Math.floor(totalSeconds));
   const h = Math.floor(s / 3600);
@@ -101,7 +108,10 @@ export function Home({
   const [entryStates, setEntryStates] = useState<Map<string, EntryState> | null>(null);
   const [checkingEntries, setCheckingEntries] = useState<boolean>(false);
   const [entryPresets, setEntryPresets] = useState<Record<string, DownloadPreset>>({});
-  const { guard, dialog: duplicateDialog } = useDuplicateGuard();
+  const settingsState = useStore(settings, (s) => s.settings);
+  const S = useStrings(settings);
+  const locale = localeTag(resolveLanguage(settingsState.language));
+  const { guard, dialog: duplicateDialog } = useDuplicateGuard(S, locale);
   const analyzeCache = useRef(new LruCache<MediaInfo>(30, 10 * 60 * 1000));
   const analyzeReq = useRef<string | null>(null);
   const cancelledReqs = useRef<Set<string>>(new Set());
@@ -111,7 +121,6 @@ export function Home({
   const lastIndex = useRef<number | null>(null);
   const urlRef = useRef<string>(url);
   urlRef.current = url;
-  const settingsState = useStore(settings, (s) => s.settings);
 
   const cssVar = (name: string, fallback: string): string => {
     if (typeof document === "undefined") return fallback;
@@ -165,7 +174,7 @@ export function Home({
       if (text !== null && text.trim().length > 0) {
         setUrl(text.trim());
       } else if (text !== null) {
-        setError(STRINGS.home.invalidUrl);
+        setError(S.home.invalidUrl);
       }
     });
   };
@@ -224,7 +233,7 @@ export function Home({
       try {
         key = normalizeUrl(value);
       } catch {
-        setError(STRINGS.home.invalidUrl);
+        setError(S.home.invalidUrl);
         return;
       }
       if (!opts.force) {
@@ -270,7 +279,7 @@ export function Home({
         setError(
           err instanceof Error && err.message.length > 0
             ? err.message
-            : STRINGS.home.analyzeFailed,
+            : S.home.analyzeFailed,
         );
       } finally {
         if (analyzeReq.current === requestId) {
@@ -279,7 +288,7 @@ export function Home({
         }
       }
     },
-    [engine, applyThumbAccent, refreshEntryStates],
+    [engine, applyThumbAccent, refreshEntryStates, S],
   );
 
   const cancelAnalyze = useCallback((): void => {
@@ -352,10 +361,10 @@ export function Home({
         <span className="entry-title" title={e.title}>
           {e.title}
         </span>
-        {downloaded && <span className="badge">{STRINGS.playlist.downloaded}</span>}
+        {downloaded && <span className="badge">{S.playlist.downloaded}</span>}
         <select
           className="input"
-          aria-label={STRINGS.batch.presetLabel}
+          aria-label={S.batch.presetLabel}
           value={overrideValue}
           onChange={(sel) => {
             const v = sel.target.value;
@@ -383,7 +392,7 @@ export function Home({
             }
           }}
         >
-          <option value="global">{STRINGS.batch.useGlobalPreset}</option>
+          <option value="global">{S.batch.useGlobalPreset}</option>
           {VIDEO_PRESETS.map((p) => (
             <option key={`v:${p}`} value={`v:${p}`}>
               {p}
@@ -457,9 +466,9 @@ export function Home({
         });
         count += 1;
       }
-      setQueuedNote(`${STRINGS.home.queuedToast} (${String(count)})`);
+      setQueuedNote(formatStr(S.home.queuedToast, { count }));
     } catch {
-      setError(STRINGS.home.analyzeFailed);
+      setError(S.home.analyzeFailed);
     } finally {
       setQueueing(false);
     }
@@ -481,8 +490,8 @@ export function Home({
   const presets = kind === "video" ? VIDEO_PRESETS : AUDIO_PRESETS;
 
   return (
-    <section className="grabber-view" aria-label={STRINGS.home.title}>
-      <h1>{STRINGS.home.title}</h1>
+    <section className="grabber-view" aria-label={S.home.title}>
+      <h1>{S.home.title}</h1>
       <div
         className="grabber-card"
         aria-busy={analyzing}
@@ -492,13 +501,13 @@ export function Home({
         onDrop={onDrop}
       >
         <label className="field-label" htmlFor="home-url">
-          {STRINGS.home.urlLabel}
+          {S.home.urlLabel}
         </label>
         <div className="url-row">
           <input
             id="home-url"
             className="input"
-            placeholder={STRINGS.home.urlPlaceholder}
+            placeholder={S.home.urlPlaceholder}
             value={url}
             onChange={(e) => {
               setUrl(e.target.value);
@@ -517,7 +526,7 @@ export function Home({
             }}
             onClick={paste}
           >
-            {STRINGS.home.paste}
+            {S.home.paste}
           </button>
           <button
             type="button"
@@ -530,7 +539,7 @@ export function Home({
               void analyze();
             }}
           >
-            {analyzing ? STRINGS.home.analyzing : STRINGS.home.analyze}
+            {analyzing ? S.home.analyzing : S.home.analyze}
           </button>
           {analyzing && (
             <button
@@ -540,7 +549,7 @@ export function Home({
                 cancelAnalyze();
               }}
             >
-              {STRINGS.home.cancelAnalyze}
+              {S.home.cancelAnalyze}
             </button>
           )}
         </div>
@@ -552,10 +561,10 @@ export function Home({
               setWatchClipboard(e.target.checked);
             }}
           />
-          {STRINGS.home.watchClipboard}
+          {S.home.watchClipboard}
         </label>
-        <p className="hint">{STRINGS.home.dropHint}</p>
-        <p className="hint">{STRINGS.home.shortcutsHint}</p>
+        <p className="hint">{S.home.dropHint}</p>
+        <p className="hint">{S.home.shortcutsHint}</p>
         {error !== null && (
           <p className="error-text" role="alert">
             {error}
@@ -568,7 +577,7 @@ export function Home({
       {analyzing && info === null && (
         <div className="grabber-card" aria-busy="true">
           <p className="muted" role="status">
-            {STRINGS.home.analyzing}
+            {S.home.analyzing}
           </p>
           <div className="skeleton skeleton-title" aria-hidden="true" />
           <div className="skeleton skeleton-line" aria-hidden="true" />
@@ -605,7 +614,7 @@ export function Home({
               <h2 className="preview-title">{info.title}</h2>
               {info.uploader !== null && <p className="muted">{info.uploader}</p>}
               <p className="muted">
-                {STRINGS.home.previewDuration}: {formatDuration(info.duration)}
+                {S.home.previewDuration}: {formatDuration(S, info.duration)}
               </p>
             </div>
           </div>
@@ -625,7 +634,7 @@ export function Home({
                   setRawFormat(null);
                 }}
               >
-                {k === "video" ? STRINGS.home.kindVideo : STRINGS.home.kindAudio}
+                {k === "video" ? S.home.kindVideo : S.home.kindAudio}
               </button>
             ))}
           </div>
@@ -651,9 +660,9 @@ export function Home({
                     setRawFormat(null);
                   }}
                 >
-                  {presetLabel(kind, p)}{" "}
+                  {presetLabel(S, kind, p)}{" "}
                   <span className="chip-size">
-                    {estimateText(info, rowPreset, settingsState.codecPreference)}
+                    {estimateText(S, locale, info, rowPreset, settingsState.codecPreference)}
                   </span>
                 </button>
               );
@@ -662,7 +671,7 @@ export function Home({
 
           {info.formats.length > 0 && (
             <details className="advanced">
-              <summary>{STRINGS.home.advancedFormats}</summary>
+              <summary>{S.home.advancedFormats}</summary>
               <label className="format-row">
                 <input
                   type="radio"
@@ -686,7 +695,7 @@ export function Home({
                   />
                   <span>{f.label}</span>
                   <span className="muted">
-                    {f.filesize !== null ? `~${formatSize(f.filesize)}` : STRINGS.home.sizeUnknown}
+                    {f.filesize !== null ? `~${formatSize(f.filesize, locale)}` : S.home.sizeUnknown}
                   </span>
                 </label>
               ))}
@@ -698,7 +707,7 @@ export function Home({
               <div className="playlist-bar">
                 <span className="muted">
                   {String(selected.length)}/{String(info.entries.length)}{" "}
-                  {STRINGS.home.entriesSelected}
+                  {S.home.entriesSelected}
                 </span>
                 <button
                   type="button"
@@ -707,7 +716,7 @@ export function Home({
                     setSelected(info.entries.map((e) => e.id));
                   }}
                 >
-                  {STRINGS.home.selectAll}
+                  {S.home.selectAll}
                 </button>
                 <button
                   type="button"
@@ -716,14 +725,14 @@ export function Home({
                     setSelected([]);
                   }}
                 >
-                  {STRINGS.home.selectNone}
+                  {S.home.selectNone}
                 </button>
               </div>
               <div className="chip-row">
                 <input
                   className="input"
-                  placeholder={STRINGS.playlist.filterPlaceholder}
-                  aria-label={STRINGS.playlist.filterPlaceholder}
+                  placeholder={S.playlist.filterPlaceholder}
+                  aria-label={S.playlist.filterPlaceholder}
                   value={entryFilter}
                   spellCheck={false}
                   onChange={(e) => {
@@ -738,16 +747,16 @@ export function Home({
                       setHideDownloaded(e.target.checked);
                     }}
                   />
-                  {STRINGS.playlist.hideDownloaded}
+                  {S.playlist.hideDownloaded}
                 </label>
-                {checkingEntries && <span className="muted">{STRINGS.playlist.checking}</span>}
+                {checkingEntries && <span className="muted">{S.playlist.checking}</span>}
               </div>
               {visibleEntries.length >= 200 ? (
                 <VirtualList
                   items={visibleEntries}
                   rowHeight={44}
                   height={440}
-                  ariaLabel={STRINGS.home.entriesSelected}
+                  ariaLabel={S.home.entriesSelected}
                   keyOf={(e) => e.id}
                   renderRow={(e, i) => renderEntryRow(e, i)}
                 />
@@ -758,7 +767,7 @@ export function Home({
                   ))}
                 </ul>
               )}
-              <p className="hint">{STRINGS.home.playlistPresetNote}</p>
+              <p className="hint">{S.home.playlistPresetNote}</p>
             </div>
           )}
 
@@ -774,8 +783,8 @@ export function Home({
             }}
           >
             {info.isPlaylist && info.entries.length > 0
-              ? STRINGS.home.queueSelected
-              : STRINGS.home.queueSingle}
+              ? S.home.queueSelected
+              : S.home.queueSingle}
           </button>
           <button
             type="button"
@@ -785,7 +794,7 @@ export function Home({
               void analyzeValue(url, { force: true });
             }}
           >
-            {STRINGS.home.reanalyze}
+            {S.home.reanalyze}
           </button>
           {queuedNote !== null && (
             <p className="note" role="status">

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { STRINGS } from "./strings.js";
+import type { Strings } from "./strings.js";
+import { useStrings } from "./locale.js";
 import { staggerIn } from "./motion.js";
 import {
   BUILTIN_COMMANDS,
@@ -27,6 +28,7 @@ export function CommandPalette({ open, context, onClose }: CommandPaletteProps):
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
   const lastFocus = useRef<Element | null>(null);
+  const S: Strings = useStrings(context.settings);
 
   const available = useMemo(
     () => availableCommands(BUILTIN_COMMANDS, context),
@@ -36,11 +38,11 @@ export function CommandPalette({ open, context, onClose }: CommandPaletteProps):
   const labels = useMemo(() => {
     const out: Record<string, string> = {};
     for (const def of available) {
-      const text = (STRINGS.commands as Record<string, string>)[def.labelKey];
+      const text = (S.commands as Record<string, string>)[def.labelKey];
       out[def.id] = text ?? def.id;
     }
     return out;
-  }, [available]);
+  }, [available, S]);
 
   const ranked = useMemo(
     () => rankCommands(available, labels, query, usage),
@@ -125,7 +127,7 @@ export function CommandPalette({ open, context, onClose }: CommandPaletteProps):
     <div className="grabber-modal" onPointerDown={(e) => {
       if (e.target === e.currentTarget) onClose();
     }}>
-      <div className="grabber-card" role="dialog" aria-modal="true" aria-label={STRINGS.commands.title}>
+      <div className="grabber-card" role="dialog" aria-modal="true" aria-label={S.commands.title}>
         <input
           ref={inputRef}
           className="input"
@@ -133,8 +135,8 @@ export function CommandPalette({ open, context, onClose }: CommandPaletteProps):
           aria-expanded="true"
           aria-controls="cmd-list"
           aria-autocomplete="list"
-          aria-label={STRINGS.commands.title}
-          placeholder={STRINGS.commands.placeholder}
+          aria-label={S.commands.title}
+          placeholder={S.commands.placeholder}
           value={query}
           spellCheck={false}
           onChange={(e) => {
@@ -143,7 +145,7 @@ export function CommandPalette({ open, context, onClose }: CommandPaletteProps):
           onKeyDown={onKeyDown}
         />
         {ranked.length === 0 ? (
-          <p className="hint">{STRINGS.commands.empty}</p>
+          <p className="hint">{S.commands.empty}</p>
         ) : (
           <ul id="cmd-list" ref={listRef} role="listbox" className="entries">
             {ranked.map(({ def }, i) => (

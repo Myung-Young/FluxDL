@@ -49,12 +49,18 @@ export function aggregateStatus(jobs: readonly DownloadJob[]): AggregateStatus {
 }
 
 /** Human speed for the aggregate line, e.g. 13002342 -> "12.4 MB/s". */
-export function formatSpeedBps(bps: number): string {
+export function formatSpeedBps(bps: number, locale = "en"): string {
   if (!Number.isFinite(bps) || bps < 0) return "-";
+  const one = (v: number): string =>
+    new Intl.NumberFormat(locale, {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+      useGrouping: false,
+    }).format(v);
   if (bps < 1024) return `${String(Math.round(bps))} B/s`;
-  if (bps < 1024 ** 2) return `${(bps / 1024).toFixed(1)} KB/s`;
-  if (bps < 1024 ** 3) return `${(bps / 1024 ** 2).toFixed(1)} MB/s`;
-  return `${(bps / 1024 ** 3).toFixed(1)} GB/s`;
+  if (bps < 1024 ** 2) return `${one(bps / 1024)} KB/s`;
+  if (bps < 1024 ** 3) return `${one(bps / 1024 ** 2)} MB/s`;
+  return `${one(bps / 1024 ** 3)} GB/s`;
 }
 
 /** Max taskbar/tray send rate: 4 updates/s. Pure gate (injected clock). */

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine, EngineVersions } from "./engine.js";
 import type { AudioPreset, DownloadPreset, ThemeName, VideoPreset } from "./types.js";
-import { STRINGS } from "./strings.js";
+import { useStrings } from "./locale.js";
 import { pressScale } from "./motion.js";
 import type { SettingsStoreState } from "./stores.js";
 
@@ -67,6 +67,7 @@ const AUDIO_PRESETS: readonly AudioPreset[] = ["MP3", "M4A", "Opus"];
  * Draft commits on Done; Skip discards the draft.
  */
 export function Onboarding({ engine, settings, onDone }: OnboardingProps): React.JSX.Element {
+  const S = useStrings(settings);
   const saved = settings.getState().settings;
   const [step, setStep] = useState<OnboardingStep>("folder");
   const [draft, setDraft] = useState<OnboardingDraft>({
@@ -119,15 +120,15 @@ export function Onboarding({ engine, settings, onDone }: OnboardingProps): React
   const prev = prevStep(step);
 
   return (
-    <div className="grabber-modal" role="dialog" aria-modal="true" aria-label={STRINGS.onboarding.title} data-testid="onboarding">
+    <div className="grabber-modal" role="dialog" aria-modal="true" aria-label={S.onboarding.title} data-testid="onboarding">
       <div className="grabber-card">
-        <h2>{STRINGS.onboarding.title}</h2>
-        <p className="hint">{STRINGS.onboarding.subtitle}</p>
+        <h2>{S.onboarding.title}</h2>
+        <p className="hint">{S.onboarding.subtitle}</p>
 
         {step === "folder" && (
           <div>
             <label className="field-label" htmlFor="onboard-dir">
-              {STRINGS.onboarding.stepFolder}
+              {S.onboarding.stepFolder}
             </label>
             <div className="url-row">
               <input
@@ -146,7 +147,7 @@ export function Onboarding({ engine, settings, onDone }: OnboardingProps): React
                   void browse();
                 }}
               >
-                {STRINGS.onboarding.browse}
+                {S.onboarding.browse}
               </button>
             </div>
           </div>
@@ -154,8 +155,8 @@ export function Onboarding({ engine, settings, onDone }: OnboardingProps): React
 
         {step === "theme" && (
           <div>
-            <span className="field-label">{STRINGS.onboarding.stepTheme}</span>
-            <div className="chip-row" role="group" aria-label={STRINGS.onboarding.stepTheme}>
+            <span className="field-label">{S.onboarding.stepTheme}</span>
+            <div className="chip-row" role="group" aria-label={S.onboarding.stepTheme}>
               {THEMES.map((t) => (
                 <button
                   key={t}
@@ -169,7 +170,7 @@ export function Onboarding({ engine, settings, onDone }: OnboardingProps): React
                     setDraft({ ...draft, theme: t });
                   }}
                 >
-                  {t}
+                  {S.settings.themes[t]}
                 </button>
               ))}
             </div>
@@ -178,8 +179,8 @@ export function Onboarding({ engine, settings, onDone }: OnboardingProps): React
 
         {step === "preset" && (
           <div>
-            <span className="field-label">{STRINGS.onboarding.stepPreset}</span>
-            <div className="chip-row" role="group" aria-label={STRINGS.onboarding.stepPreset}>
+            <span className="field-label">{S.onboarding.stepPreset}</span>
+            <div className="chip-row" role="group" aria-label={S.onboarding.stepPreset}>
               {[...VIDEO_PRESETS.map((p) => `v:${p}`), ...AUDIO_PRESETS.map((p) => `a:${p}`)].map(
                 (key) => {
                   const active =
@@ -224,9 +225,9 @@ export function Onboarding({ engine, settings, onDone }: OnboardingProps): React
             </div>
             <p className="muted" role="status">
               {engineFailed
-                ? STRINGS.onboarding.engineFail
+                ? S.onboarding.engineFail
                 : versions !== null
-                  ? `${STRINGS.onboarding.engineOk}: yt-dlp ${versions.ytdlp}`
+                  ? `${S.onboarding.engineOk}: yt-dlp ${versions.ytdlp}`
                   : "…"}
             </p>
           </div>
@@ -241,7 +242,7 @@ export function Onboarding({ engine, settings, onDone }: OnboardingProps): React
                 setStep(prev);
               }}
             >
-              {STRINGS.onboarding.back}
+              {S.onboarding.back}
             </button>
           )}
           {next !== null ? (
@@ -252,7 +253,7 @@ export function Onboarding({ engine, settings, onDone }: OnboardingProps): React
                 setStep(next);
               }}
             >
-              {STRINGS.onboarding.next}
+              {S.onboarding.next}
             </button>
           ) : (
             <button
@@ -263,7 +264,7 @@ export function Onboarding({ engine, settings, onDone }: OnboardingProps): React
                 finish(true);
               }}
             >
-              {STRINGS.onboarding.done}
+              {S.onboarding.done}
             </button>
           )}
           <button
@@ -274,7 +275,7 @@ export function Onboarding({ engine, settings, onDone }: OnboardingProps): React
               finish(false);
             }}
           >
-            {STRINGS.onboarding.skip}
+            {S.onboarding.skip}
           </button>
         </div>
       </div>

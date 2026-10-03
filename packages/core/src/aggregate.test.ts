@@ -72,6 +72,15 @@ describe("formatSpeedBps", () => {
     expect(formatSpeedBps(12.4 * 1024 ** 2)).toBe("12.4 MB/s");
     expect(formatSpeedBps(Number.NaN)).toBe("-");
   });
+
+  it("localizes decimals via Intl", () => {
+    const decimals = new Intl.NumberFormat("ms-MY", {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+      useGrouping: false,
+    }).format(12.4);
+    expect(formatSpeedBps(12.4 * 1024 ** 2, "ms-MY")).toBe(`${decimals} MB/s`);
+  });
 });
 
 describe("shouldSendAggregate", () => {

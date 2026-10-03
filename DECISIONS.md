@@ -135,3 +135,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M2.7
 
 - D62: Smarter playlists. Archive format verified live (`youtube <id>` CRLF). Entry identity = parent extractor + entry id (flat-playlist ids ARE video ids), so archive/history matching works; legacy URL fallback retained. New engine methods fileExistsBulk + archiveHas (28 → 30); entries enqueued with extractor/videoId for future matches. Subfolders via sanitized `playlistSubdir` (UI-side sanitize, args-side traversal strip, --trim-filenames kept). Shared VirtualList (fixed rows, overscan, pure window maths) for entry lists and Library ≥200. Per-entry preset overrides, title filter, hide-downloaded toggle; shift range-select kept (operates on the filtered list).
+
+## M2.8
+
+- D63: i18n EN + MS. strings.ts split into EN source-of-truth + MS with a recursive Parity<> type (missing key fails typecheck) plus a runtime key-walk test. Screens read the active dict via useStrings(settings) (strings.ts itself stays dependency-free so main can import it); JobMenu takes it as a param, Toasts/DuplicatePrompt via props. Interpolation ({count}/{n}) on counts, plural() flat in Malay, Intl decimals/dates via localeTag, natural Malay (muat turun, baris gilir, tetapan; tech terms kept). Error mapper localized too (main resolves auto via app.getLocale). Desktop live tests need no changes (PATH binary path). E2E covers the Settings language switch end to end.

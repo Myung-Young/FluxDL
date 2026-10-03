@@ -243,8 +243,8 @@ export function estimatePresetSize(
   };
 }
 
-/** Human size for estimate chips, e.g. 1283456789 -> "1.2 GB". */
-export function formatSize(bytes: number): string {
+/** Human size for estimate chips, e.g. 1283456789 -> "1.2 GB" (Intl decimals). */
+export function formatSize(bytes: number, locale = "en"): string {
   if (!Number.isFinite(bytes) || bytes < 0) return "-";
   const units = ["B", "KB", "MB", "GB", "TB"] as const;
   let value = bytes;
@@ -254,6 +254,13 @@ export function formatSize(bytes: number): string {
     unit += 1;
   }
   const label = units[unit] ?? "B";
-  const text = unit <= 1 ? String(Math.round(value)) : value.toFixed(1);
+  const text =
+    unit <= 1
+      ? String(Math.round(value))
+      : new Intl.NumberFormat(locale, {
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+          useGrouping: false,
+        }).format(value);
   return `${text} ${label}`;
 }

@@ -3,9 +3,9 @@ import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
 import type { AppSettings, Density, ThemeName } from "./types.js";
-import { STRINGS } from "./strings.js";
 import { deriveAccentScale } from "./color.js";
 import type { SettingsStoreState } from "./stores.js";
+import { useStrings } from "./locale.js";
 
 const ACCENT_SWATCHES: readonly string[] = [
   "#818cf8",
@@ -33,6 +33,7 @@ const FILENAME_PRESETS: readonly string[] = [
 const MERGE_CONTAINERS: readonly string[] = ["mp4", "mkv", "webm"];
 
 export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenProps): React.JSX.Element {
+  const S = useStrings(settings);
   const saved = useStore(settings, (s) => s.settings);
   const ready = useStore(settings, (s) => s.ready);
   const [flash, setFlash] = useState<boolean>(false);
@@ -67,11 +68,11 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
 
   if (!ready) {
     return (
-      <section className="grabber-view" aria-label={STRINGS.settings.title}>
-        <h1>{STRINGS.settings.title}</h1>
+      <section className="grabber-view" aria-label={S.settings.title}>
+        <h1>{S.settings.title}</h1>
         <div className="grabber-card">
           <p className="muted" aria-busy="true">
-            {STRINGS.settings.loading}
+            {S.settings.loading}
           </p>
         </div>
       </section>
@@ -101,22 +102,22 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
   };
 
   return (
-    <section className="grabber-view" aria-label={STRINGS.settings.title}>
-      <h1>{STRINGS.settings.title}</h1>
+    <section className="grabber-view" aria-label={S.settings.title}>
+      <h1>{S.settings.title}</h1>
       {flash && (
         <p className="note" role="status">
-          {STRINGS.settings.saved}
+          {S.settings.saved}
         </p>
       )}
       {archiveNote && (
         <p className="note" role="status">
-          {STRINGS.settings.archiveCleared}
+          {S.settings.archiveCleared}
         </p>
       )}
 
       <div className="grabber-card settings-grid">
         <label className="field-label" htmlFor="set-dir" id="settings-section-folder">
-          {STRINGS.settings.downloadDir}
+          {S.settings.downloadDir}
         </label>
         <div className="url-row">
           <input
@@ -124,7 +125,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
             key={saved.downloadDir}
             className="input"
             defaultValue={saved.downloadDir}
-            placeholder={STRINGS.settings.downloadDir}
+            placeholder={S.settings.downloadDir}
             spellCheck={false}
             onBlur={(e) => {
               commitText(e, (v) => ({ downloadDir: v }));
@@ -137,12 +138,12 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
               void browse();
             }}
           >
-            {STRINGS.settings.browse}
+            {S.settings.browse}
           </button>
         </div>
 
         <label className="field-label" htmlFor="set-template">
-          {STRINGS.settings.filenameTemplate}
+          {S.settings.filenameTemplate}
         </label>
         <input
           id="set-template"
@@ -154,7 +155,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
             commitText(e, (v) => ({ filenameTemplate: v }));
           }}
         />
-        <div className="chip-row" aria-label={STRINGS.settings.filenamePresets}>
+        <div className="chip-row" aria-label={S.settings.filenamePresets}>
           {FILENAME_PRESETS.map((p) => (
             <button
               key={p}
@@ -171,7 +172,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
         </div>
 
         <label className="field-label" htmlFor="set-concurrency">
-          {STRINGS.settings.concurrency}
+          {S.settings.concurrency}
         </label>        <input
           id="set-concurrency"
           key={String(saved.concurrency)}
@@ -186,7 +187,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
         />
 
         <label className="field-label" htmlFor="set-timeout">
-          {STRINGS.settings.analyzeTimeout}
+          {S.settings.analyzeTimeout}
         </label>
         <input
           id="set-timeout"
@@ -202,7 +203,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
         />
 
         <label className="field-label" htmlFor="set-speed">
-          {STRINGS.settings.speedLimit}
+          {S.settings.speedLimit}
         </label>
         <input
           id="set-speed"
@@ -216,7 +217,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
         />
 
         <label className="field-label" htmlFor="set-proxy" id="settings-section-proxy">
-          {STRINGS.settings.proxy}
+          {S.settings.proxy}
         </label>
         <input
           id="set-proxy"
@@ -230,7 +231,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
         />
 
         <label className="field-label" htmlFor="set-cookies" id="settings-section-cookies">
-          {STRINGS.settings.cookies}
+          {S.settings.cookies}
         </label>
         <input
           id="set-cookies"
@@ -245,7 +246,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
         />
 
         <label className="field-label" htmlFor="set-cookies-file">
-          {STRINGS.settings.cookiesFile}
+          {S.settings.cookiesFile}
         </label>
         <input
           id="set-cookies-file"
@@ -262,15 +263,15 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
         <div className="check-col">
           {(
             [
-              ["embedThumbnail", STRINGS.settings.embedThumbnail],
-              ["embedMetadata", STRINGS.settings.embedMetadata],
-              ["subtitles", STRINGS.settings.subtitles],
-              ["embedSubs", STRINGS.settings.embedSubs],
-              ["sponsorBlock", STRINGS.settings.sponsorBlock],
-              ["skipArchived", STRINGS.settings.skipArchived],
-              ["playlistSubfolder", STRINGS.settings.playlistSubfolder],
-              ["thumbnailAccent", STRINGS.settings.thumbnailAccent],
-              ["autoCheckUpdate", STRINGS.settings.autoCheckUpdate],
+              ["embedThumbnail", S.settings.embedThumbnail],
+              ["embedMetadata", S.settings.embedMetadata],
+              ["subtitles", S.settings.subtitles],
+              ["embedSubs", S.settings.embedSubs],
+              ["sponsorBlock", S.settings.sponsorBlock],
+              ["skipArchived", S.settings.skipArchived],
+              ["playlistSubfolder", S.settings.playlistSubfolder],
+              ["thumbnailAccent", S.settings.thumbnailAccent],
+              ["autoCheckUpdate", S.settings.autoCheckUpdate],
             ] as const
           ).map(([key, label]) => (
             <label key={key} className="check-row">
@@ -287,7 +288,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
         </div>
 
         <label className="field-label" htmlFor="set-sublangs">
-          {STRINGS.settings.subtitleLangs}
+          {S.settings.subtitleLangs}
         </label>
         <input
           id="set-sublangs"
@@ -301,7 +302,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
         />
 
         <label className="field-label" htmlFor="set-merge">
-          {STRINGS.settings.mergeContainer}
+          {S.settings.mergeContainer}
         </label>
         <select
           id="set-merge"
@@ -322,7 +323,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
         </select>
 
         <label className="field-label" htmlFor="set-codec">
-          {STRINGS.settings.codecPreference}
+          {S.settings.codecPreference}
         </label>
         <select
           id="set-codec"
@@ -335,14 +336,14 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
             }
           }}
         >
-          <option value="auto">{STRINGS.settings.codecAuto}</option>
-          <option value="h264">{STRINGS.settings.codecH264}</option>
-          <option value="vp9">{STRINGS.settings.codecVp9}</option>
-          <option value="av1">{STRINGS.settings.codecAv1}</option>
+          <option value="auto">{S.settings.codecAuto}</option>
+          <option value="h264">{S.settings.codecH264}</option>
+          <option value="vp9">{S.settings.codecVp9}</option>
+          <option value="av1">{S.settings.codecAv1}</option>
         </select>
 
         <span className="field-label" id="set-theme-label">
-          {STRINGS.settings.theme}
+          {S.settings.theme}
         </span>        <div className="chip-row" role="group" aria-labelledby="set-theme-label">
           {(["obsidian", "midnight", "ember"] as const).map((t: ThemeName) => (
             <button
@@ -354,18 +355,18 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
                 save({ theme: t });
               }}
             >
-              {t}
+              {S.settings.themes[t]}
             </button>
           ))}
         </div>
 
         <span className="field-label" id="set-density-label">
-          {STRINGS.settings.density}
+          {S.settings.density}
         </span>        <div className="chip-row" role="group" aria-labelledby="set-density-label">
           {(
             [
-              ["comfortable", STRINGS.settings.densityComfortable],
-              ["compact", STRINGS.settings.densityCompact],
+              ["comfortable", S.settings.densityComfortable],
+              ["compact", S.settings.densityCompact],
             ] as const
           ).map(([d, label]: readonly [Density, string]) => (
             <button
@@ -383,7 +384,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
         </div>
 
         <span className="field-label" id="set-accent-label">
-          {STRINGS.settings.accent}
+          {S.settings.accent}
         </span>
         <div className="chip-row" role="group" aria-labelledby="set-accent-label">
           {ACCENT_SWATCHES.map((hex) => (
@@ -407,9 +408,9 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
             key={saved.accentOverride ?? "none"}
             className="input"
             defaultValue={saved.accentOverride ?? ""}
-            placeholder={STRINGS.settings.accentCustom}
+            placeholder={S.settings.accentCustom}
             spellCheck={false}
-            aria-label={STRINGS.settings.accentCustom}
+            aria-label={S.settings.accentCustom}
             onBlur={(e) => {
               const v = e.target.value.trim().toLowerCase();
               if (v.length === 0) {
@@ -426,18 +427,37 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
               save({ accentOverride: null });
             }}
           >
-            {STRINGS.settings.accentReset}
+            {S.settings.accentReset}
           </button>
         </div>
         {saved.accentOverride !== null &&
           (deriveAccentScale(saved.accentOverride)?.warning ?? false) && (
             <p className="note" role="status">
-              {STRINGS.settings.accentWarning}
+              {S.settings.accentWarning}
             </p>
           )}
 
+        <label className="field-label" htmlFor="set-language">
+          {S.settings.language}
+        </label>
+        <select
+          id="set-language"
+          className="input"
+          value={saved.language}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "auto" || v === "en" || v === "ms") {
+              save({ language: v });
+            }
+          }}
+        >
+          <option value="auto">{S.settings.languageAuto}</option>
+          <option value="en">{S.settings.languageEnglish}</option>
+          <option value="ms">{S.settings.languageMalay}</option>
+        </select>
+
         <label className="field-label" htmlFor="set-post">
-          {STRINGS.settings.postAction}
+          {S.settings.postAction}
         </label>        <select
           id="set-post"
           className="input"
@@ -449,18 +469,18 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
             }
           }}
         >
-          <option value="none">{STRINGS.settings.postNone}</option>
-          <option value="open-file">{STRINGS.settings.postOpen}</option>
-          <option value="reveal">{STRINGS.settings.postReveal}</option>
+          <option value="none">{S.settings.postNone}</option>
+          <option value="open-file">{S.settings.postOpen}</option>
+          <option value="reveal">{S.settings.postReveal}</option>
         </select>
 
         <div>
           <button
             type="button"
             className="btn"
-            aria-label={STRINGS.settings.clearArchive}
+            aria-label={S.settings.clearArchive}
             onClick={() => {
-              if (!window.confirm(STRINGS.settings.archiveConfirm)) return;
+              if (!window.confirm(S.settings.archiveConfirm)) return;
               void engine
                 .clearArchive()
                 .then(() => {
@@ -469,7 +489,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
                 .catch(() => undefined);
             }}
           >
-            {STRINGS.settings.clearArchive}
+            {S.settings.clearArchive}
           </button>
         </div>
 
@@ -480,7 +500,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
             data-testid="settings-replay"
             onClick={onReplay}
           >
-            {STRINGS.onboarding.replay}
+            {S.onboarding.replay}
           </button>
         </div>
       </div>

@@ -3,10 +3,10 @@ import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
 import { pruneHistory, searchHistory } from "./queue.js";
 import type { DownloadJob } from "./types.js";
-import { STRINGS } from "./strings.js";
 import { pressScale } from "./motion.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 import type { ToastStoreState } from "./toast.js";
+import { useStrings } from "./locale.js";
 import { ContextMenu, type MenuItemDef } from "./ContextMenu.js";
 import { buildJobMenu } from "./JobMenu.js";
 import { writeClipboardText } from "./clipboard.js";
@@ -19,6 +19,7 @@ export interface LibraryProps {
 }
 
 export function Library({ engine, queue, settings, toast }: LibraryProps): React.JSX.Element {
+  const S = useStrings(settings);
   const [history, setHistory] = useState<readonly DownloadJob[]>([]);
   const [query, setQuery] = useState<string>("");
   const [busy, setBusy] = useState<boolean>(false);
@@ -59,7 +60,7 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
     setBusy(true);
     try {
       await engine.removeHistory(id);
-      toast.getState().push(STRINGS.toast.removed, "info");
+      toast.getState().push(S.toast.removed, "info");
       await refresh();
     } finally {
       setBusy(false);
@@ -67,11 +68,11 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
   };
 
   const clearAll = async (): Promise<void> => {
-    if (!window.confirm(STRINGS.library.clearConfirm)) return;
+    if (!window.confirm(S.library.clearConfirm)) return;
     setBusy(true);
     try {
       await engine.clearHistory();
-      toast.getState().push(STRINGS.toast.cleared, "info");
+      toast.getState().push(S.toast.cleared, "info");
       await refresh();
     } finally {
       setBusy(false);
@@ -80,13 +81,13 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
 
   const copyText = (text: string): void => {
     void writeClipboardText(text).then((ok) => {
-      if (!ok) toast.getState().push(STRINGS.menu.copyFailed, "error");
+      if (!ok) toast.getState().push(S.menu.copyFailed, "error");
     });
   };
 
   const fail = (err: unknown): void => {
     toast.getState().push(
-      err instanceof Error ? err.message : STRINGS.menu.copyFailed,
+      err instanceof Error ? err.message : S.menu.copyFailed,
       "error",
     );
   };
@@ -118,31 +119,32 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
       },
       remove: () => {
         void remove(job.id);
-      },
-      deleteFile: () => {
+      },      deleteFile: () => {
         const dest = job.destination;
         if (dest === null) return;
-        if (!window.confirm(STRINGS.menu.deleteConfirm)) return;
+        if (!window.confirm(S.menu.deleteConfirm)) return;
         engine
           .trashFile(dest)
           .then(() => engine.updateHistory({ ...job, fileDeleted: true }))
           .then(() => refresh())
           .then(() => {
-            toast.getState().push(STRINGS.menu.deletedToast, "success");
+            toast.getState().push(S.menu.deletedToast, "success");
           })
           .catch(fail);
       },
-    });
+    },
+    undefined,
+    S);
 
   return (
-    <section className="grabber-view" aria-label={STRINGS.library.title}>
-      <h1>{STRINGS.library.title}</h1>
+    <section className="grabber-view" aria-label={S.library.title}>
+      <h1>{S.library.title}</h1>
       <div className="grabber-card">
         <input
           className="input"
-          placeholder={STRINGS.library.searchPlaceholder}
+          placeholder={S.library.searchPlaceholder}
           value={query}
-          aria-label={STRINGS.library.searchPlaceholder}
+          aria-label={S.library.searchPlaceholder}
           onChange={(e) => {
             setQuery(e.target.value);
           }}
@@ -151,13 +153,13 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
       {loading ? (
         <div className="grabber-card">
           <p className="muted" aria-busy="true">
-            {STRINGS.library.loading}
+            {S.library.loading}
           </p>
         </div>
       ) : visible.length === 0 ? (
         <div className="grabber-card">
           <p className="muted">
-            {query.trim().length > 0 ? STRINGS.library.emptySearch : STRINGS.library.empty}
+            {query.trim().length > 0 ? S.library.emptySearch : S.library.empty}
           </p>
         </div>
       ) : (
@@ -183,7 +185,7 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
               <p className="muted">
                 {h.status}
                 {h.error !== null ? ` · ${h.error}` : ""}
-                {h.fileDeleted === true ? ` · ${STRINGS.menu.fileDeleted}` : ""}
+                {h.fileDeleted === true ? ` · ${S.menu.fileDeleted}` : ""}
               </p>
               <div className="chip-row">
                 <button
@@ -197,7 +199,7 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
                     redownload(h).catch(() => undefined);
                   }}
                 >
-                  {STRINGS.library.redownload}
+                  {S.library.redownload}
                 </button>
                 <button
                   type="button"
@@ -207,7 +209,7 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
                     void remove(h.id);
                   }}
                 >
-                  {STRINGS.library.remove}
+                  {S.library.remove}
                 </button>
               </div>
             </article>
@@ -223,12 +225,12 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
             void clearAll();
           }}
         >
-          {STRINGS.library.clearAll}
+          {S.library.clearAll}
         </button>
       )}
       {menu !== null && (
         <ContextMenu
-          label={STRINGS.menu.label}
+          label={S.menu.label}
           items={menuItems(menu.job)}
           x={menu.x}
           y={menu.y}

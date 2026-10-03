@@ -31,6 +31,7 @@ async function installMock(page: Page): Promise<void> {
       skipArchived: true,
       density: "comfortable",
       accentOverride: null,
+      language: "en",
       onboardingDone: true,
       defaultPreset: { kind: "video", videoPreset: "1080", audioPreset: "MP3", rawFormat: null },
       theme: "obsidian",
@@ -382,5 +383,29 @@ test("onboarding: replay from Settings then skip", async () => {
   await expect(page.locator('[data-testid="onboarding"]')).toBeVisible({ timeout: 15000 });
   await page.locator('[data-testid="onboard-skip"]').click();
   await expect(page.locator('[data-testid="onboarding"]')).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
+});
+
+test("i18n: switching to Malay re-labels the shell", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Settings" }).click();
+  await page.locator("#set-language").selectOption("ms");
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Tetapan" }).click();
+  await expect(page.locator(".grabber-view h1")).toHaveText("Tetapan", { timeout: 15000 });
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Utama" }).click();
+  await expect(page.locator(".grabber-view h1")).toHaveText("Utama", { timeout: 15000 });
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Tetapan" }).click();
+  await page.locator("#set-language").selectOption("en");
+  await expect(page.locator(".grabber-view h1")).toHaveText("Settings", { timeout: 15000 });
   expect(pageErrors).toEqual([]);
 });

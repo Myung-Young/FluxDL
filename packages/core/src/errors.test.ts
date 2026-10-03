@@ -91,4 +91,18 @@ describe("actionable errors (M1.4)", () => {
     expect(t.message).toContain("60");
     expect(t.actions.map((a) => a.id)).toEqual(["retry", "logs"]);
   });
+
+  it("localizes messages to Bahasa Melayu", () => {
+    expect(mapDownloadError("confirm your age", "ms").message).toContain("umur");
+    expect(mapDownloadError("Could not copy Chrome cookie database", "ms").category).toBe(
+      "cookie-unavailable",
+    );
+    expect(mapDownloadError("Could not copy Chrome cookie database", "ms").message).toContain(
+      "pelayar",
+    );
+    expect(mapDownloadError("HTTP Error 403: Forbidden", "ms").message).toContain("Kemas kini");
+    expect(mapDownloadError("Something new", "ms").message).toContain("gagal");
+    expect(cancelledMapped("ms").message).toContain("dibatalkan");
+    expect(timeoutMapped(60, "ms").message).toContain("tamat masa");
+  });
 });

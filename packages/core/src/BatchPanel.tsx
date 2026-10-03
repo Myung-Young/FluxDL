@@ -10,8 +10,9 @@ import type {
   MediaKind,
   VideoPreset,
 } from "./types.js";
-import { STRINGS } from "./strings.js";
+import type { Strings } from "./strings.js";
 import { pressScale } from "./motion.js";
+import { formatStr, localeTag, resolveLanguage, useStrings } from "./locale.js";
 import { LruCache } from "./cache.js";
 import { sanitizePlaylistTitle } from "./playlist.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
@@ -49,17 +50,21 @@ const VIDEO_PRESETS: readonly VideoPreset[] = [
 ];
 const AUDIO_PRESETS: readonly AudioPreset[] = ["MP3", "M4A", "Opus", "FLAC"];
 
-function statusLabel(status: BatchStatus): string {
+function statusLabel(strings: Strings, status: BatchStatus): string {
   switch (status) {
     case "pending":
-      return STRINGS.batch.statusPending;
+      return strings.batch.statusPending;
     case "analyzing":
-      return STRINGS.batch.statusAnalyzing;
+      return strings.batch.statusAnalyzing;
     case "ready":
-      return STRINGS.batch.statusReady;
+      return strings.batch.statusReady;
     case "failed":
-      return STRINGS.batch.statusFailed;
+      return strings.batch.statusFailed;
   }
+}
+
+function presetName(strings: Strings, preset: VideoPreset | AudioPreset): string {
+  return preset === "Compatible" ? strings.home.presetCompatible : preset;
 }
 
 function overrideValue(preset: DownloadPreset | null): string {
@@ -100,7 +105,11 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
   const entriesRef = useRef<readonly BatchEntry[]>([]);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const settingsState = useStore(settings, (s) => s.settings);
-  const { guard, dialog: duplicateDialog } = useDuplicateGuard();
+  const S = useStrings(settings);
+  const { guard, dialog: duplicateDialog } = useDuplicateGuard(
+    S,
+    localeTag(resolveLanguage(settingsState.language)),
+  );
   const analyzeCache = useRef(new LruCache<MediaInfo>(30, 10 * 60 * 1000));
   const inFlight = useRef(new Map<string, string>());
   const cancelledReqs = useRef<Set<string>>(new Set());
@@ -117,19 +126,19 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
     setEntries(addBatchEntries(entriesRef.current, parsed.valid));
     const parts: string[] = [];
     if (parsed.invalid.length > 0) {
-      parts.push(`${STRINGS.batch.invalidSkipped} ${String(parsed.invalid.length)}`);
+      parts.push(formatStr(S.batch.invalidSkipped, { n: parsed.invalid.length }));
     }
     if (parsed.duplicates > 0) {
-      parts.push(`${STRINGS.batch.duplicatesSkipped} ${String(parsed.duplicates)}`);
+      parts.push(formatStr(S.batch.duplicatesSkipped, { n: parsed.duplicates }));
     }
-    if (parsed.truncated) parts.push(STRINGS.batch.truncatedNote);
+    if (parsed.truncated) parts.push(S.batch.truncatedNote);
     setNote(parts.length > 0 ? parts.join(" ") : null);
   };
 
   const ingestFile = (file: File | null): void => {
     if (file === null) return;
     if (file.size > MAX_BATCH_BYTES) {
-      setNote(STRINGS.batch.fileTooBig);
+      setNote(S.batch.fileTooBig);
       return;
     }
     const reader = new FileReader();
@@ -190,7 +199,7 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
             setEntries(
               updateBatchEntry(entriesRef.current, key, {
                 status: "failed",
-                error: STRINGS.home.analyzeFailed,
+                error: S.home.analyzeFailed,
               }),
             );
           }
@@ -280,7 +289,7 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
         }
         setEntries(removeBatchEntry(entriesRef.current, row.key));
       }
-      setNote(`${STRINGS.batch.queuedToast} (${String(count)})`);
+      setNote(formatStr(S.batch.queuedToast, { count }));
     } finally {
       setQueueing(false);
     }
@@ -293,7 +302,7 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
   return (
     <div
       className="grabber-card"
-      aria-label={STRINGS.batch.title}
+      aria-label={S.batch.title}
       onDragOver={(e) => {
         e.preventDefault();
       }}
@@ -305,15 +314,15 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
         ingestFile(file ?? null);
       }}
     >
-      <h2>{STRINGS.batch.title}</h2>
-      <p className="hint">{STRINGS.batch.description}</p>
+      <h2>{S.batch.title}</h2>
+      <p className="hint">{S.batch.description}</p>
       <label className="field-label" htmlFor="batch-input">
-        {STRINGS.batch.inputLabel}
+        {S.batch.inputLabel}
       </label>
       <textarea
         id="batch-input"
         className="input batch-text"
-        placeholder={STRINGS.batch.inputPlaceholder}
+        placeholder={S.batch.inputPlaceholder}
         value={text}
         rows={4}
         spellCheck={false}
@@ -334,7 +343,7 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
             setText("");
           }}
         >
-          {STRINGS.batch.add}
+          {S.batch.add}
         </button>
         <button
           type="button"
@@ -346,7 +355,7 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
             fileRef.current?.click();
           }}
         >
-          {STRINGS.batch.chooseFile}
+          {S.batch.chooseFile}
         </button>
         <input
           ref={fileRef}
@@ -362,7 +371,7 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
         />
       </div>
 
-      <div className="segmented" role="group" aria-label={STRINGS.batch.presetLabel}>
+      <div className="segmented" role="group" aria-label={S.batch.presetLabel}>
         {(["video", "audio"] as const).map((k) => (
           <button
             key={k}
@@ -376,7 +385,7 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
               setKind(k);
             }}
           >
-            {k === "video" ? STRINGS.home.kindVideo : STRINGS.home.kindAudio}
+            {k === "video" ? S.home.kindVideo : S.home.kindAudio}
           </button>
         ))}
         {presets.map((p) => (
@@ -393,19 +402,18 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
               else setAudioPreset(p as AudioPreset);
             }}
           >
-            {p}
+            {presetName(S, p)}
           </button>
         ))}
       </div>
-
       {entries.length === 0 ? (
-        <p className="hint">{STRINGS.batch.empty}</p>
+        <p className="hint">{S.batch.empty}</p>
       ) : (
         <ul className="entries">
           {entries.map((e) => (
             <li key={e.key} data-testid="batch-row" className="batch-row">
               <span data-testid="batch-status" className="muted">
-                {statusLabel(e.status)}
+                {statusLabel(S, e.status)}
               </span>
               <span className="batch-title" title={e.input}>
                 {e.info !== null ? e.info.title : e.input}
@@ -421,12 +429,12 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
                     setEntries(expandPlaylistEntry(entriesRef.current, e.key));
                   }}
                 >
-                  {STRINGS.batch.expand}
+                  {S.batch.expand}
                 </button>
               )}
               <select
                 className="input"
-                aria-label={STRINGS.batch.presetLabel}
+                aria-label={S.batch.presetLabel}
                 value={overrideValue(e.preset)}
                 onChange={(sel) => {
                   setEntries(
@@ -436,15 +444,15 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
                   );
                 }}
               >
-                <option value="global">{STRINGS.batch.useGlobalPreset}</option>
+                <option value="global">{S.batch.useGlobalPreset}</option>
                 {VIDEO_PRESETS.map((p) => (
                   <option key={`v:${p}`} value={`v:${p}`}>
-                    {p}
+                    {presetName(S, p)}
                   </option>
                 ))}
                 {AUDIO_PRESETS.map((p) => (
                   <option key={`a:${p}`} value={`a:${p}`}>
-                    {p}
+                    {presetName(S, p)}
                   </option>
                 ))}
               </select>
@@ -455,7 +463,7 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
                   setEntries(removeBatchEntry(entriesRef.current, e.key));
                 }}
               >
-                {STRINGS.batch.remove}
+                {S.batch.remove}
               </button>
             </li>
           ))}
@@ -475,7 +483,7 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
             void analyzeStatuses(["pending"]);
           }}
         >
-          {busy ? STRINGS.batch.analyzing : STRINGS.batch.analyzeAll}
+          {busy ? S.batch.analyzing : S.batch.analyzeAll}
         </button>
         {busy && (
           <button
@@ -485,7 +493,7 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
               stopAnalyze();
             }}
           >
-            {STRINGS.batch.stop}
+            {S.batch.stop}
           </button>
         )}
         <button
@@ -500,7 +508,7 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
             void queueAll();
           }}
         >
-          {queueing ? STRINGS.batch.queueing : `${STRINGS.batch.queueAllReady} (${String(readyCount)})`}
+          {queueing ? S.batch.queueing : `${S.batch.queueAllReady} (${String(readyCount)})`}
         </button>
         {failedCount > 0 && (
           <button
@@ -512,7 +520,7 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
               void analyzeStatuses(["pending"]);
             }}
           >
-            {STRINGS.batch.retryFailed} ({String(failedCount)})
+            {S.batch.retryFailed} ({String(failedCount)})
           </button>
         )}
       </div>

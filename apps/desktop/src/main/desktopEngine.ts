@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { readFile, rm, stat, unlink } from "node:fs/promises";
 import { platform as osPlatform, release as osRelease } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { dialog, shell } from "electron";
+import { dialog, shell, app } from "electron";
 import { APP_NAME } from "@grabber/core/branding.js";
 import type { AppSettings, DownloadJob, DownloadJobInput, MediaInfo } from "@grabber/core/types.js";
 import type {
@@ -18,8 +18,8 @@ import type {
   ThumbnailColor,
   Unsubscribe,
 } from "@grabber/core/engine.js";
-import type { ErrorCategory, MappedError } from "@grabber/core/errors.js";
-import { STRINGS } from "@grabber/core/strings.js";
+import type { ErrorCategory, ErrorLocale, MappedError } from "@grabber/core/errors.js";
+import { STRINGS, STRINGS_MS } from "@grabber/core/strings.js";
 import {
   buildDownloadArgs,
   buildFfmpegVersionArgs,
@@ -190,6 +190,26 @@ export class DesktopEngine implements DownloadEngine {
     return resolveYtDlpPath(this.deps.userDataDir, this.deps.bundledBinDir);
   }
 
+  /** Active error locale: explicit setting, else system locale. */
+  private errorLang(): ErrorLocale {
+    try {
+      const lang = loadSettingsFromDisk(this.deps.userDataDir).language;
+      if (lang === "en" || lang === "ms") return lang;
+    } catch {
+      // Fall through to the system locale.
+    }
+    try {
+      if (app.getLocale().toLowerCase().startsWith("ms")) return "ms";
+    } catch {
+      // Ignore; default below.
+    }
+    return "en";
+  }
+
+  private errorStrings(): typeof STRINGS {
+    return this.errorLang() === "ms" ? (STRINGS_MS as typeof STRINGS) : STRINGS;
+  }
+
   private emit(event: EngineProgress): void {
     for (const cb of this.listeners) {
       try {
@@ -265,26 +285,26 @@ export class DesktopEngine implements DownloadEngine {
       proc.on("error", (err: Error) => {
         settle(() => {
           reject(
-            new EngineError(mapDownloadError(err instanceof Error ? err.message : String(err))),
+            new EngineError(mapDownloadError(err instanceof Error ? err.message : String(err), this.errorLang())),
           );
         });
       });
       proc.on("close", (code: number | null) => {
         if (entry.cancelled) {
           settle(() => {
-            reject(new EngineError(cancelledMapped()));
+            reject(new EngineError(cancelledMapped(this.errorLang())));
           });
           return;
         }
         if (entry.timedOut) {
           settle(() => {
-            reject(new EngineError(timeoutMapped(timeoutSec)));
+            reject(new EngineError(timeoutMapped(timeoutSec, this.errorLang())));
           });
           return;
         }
         if (code !== 0) {
           settle(() => {
-            reject(new EngineError(mapDownloadError(stderr)));
+            reject(new EngineError(mapDownloadError(stderr, this.errorLang())));
           });
           return;
         }
@@ -295,7 +315,10 @@ export class DesktopEngine implements DownloadEngine {
           settle(() => {
             reject(
               new EngineError(
-                mapDownloadError(`Unsupported URL: metadata was not JSON.\n${stderr}`),
+                mapDownloadError(
+                  `Unsupported URL: metadata was not JSON.\n${stderr}`,
+                  this.errorLang(),
+                ),
               ),
             );
           });
@@ -310,7 +333,7 @@ export class DesktopEngine implements DownloadEngine {
           settle(() => {
             reject(
               new EngineError(
-                mapDownloadError(err instanceof Error ? err.message : "Invalid metadata payload."),
+                mapDownloadError(err instanceof Error ? err.message : "Invalid metadata payload.", this.errorLang()),
               ),
             );
           });
@@ -330,7 +353,7 @@ export class DesktopEngine implements DownloadEngine {
   start(job: DownloadJobInput): Promise<string> {
     const normalizedUrl = normalizeUrl(job.url);
     if (job.title.trim().length === 0) {
-      throw new EngineError(mapDownloadError("Unsupported URL: missing title."));
+      throw new EngineError(mapDownloadError("Unsupported URL: missing title.", this.errorLang()));
     }
     const outputDir = job.outputDir.trim().length > 0 ? job.outputDir : this.deps.defaultOutputDir;
     const input: DownloadJobInput = {
@@ -449,7 +472,7 @@ export class DesktopEngine implements DownloadEngine {
       const current = this.jobs.get(id);
       if (current === undefined) return;
       if (current.state === "pausing" || current.state === "cancelling") return;
-      const mapped = mapDownloadError(err.message);
+      const mapped = mapDownloadError(err.message, this.errorLang());
       this.finishWithError(id, mapped);
     });
     proc.on("close", (code: number | null) => {
@@ -502,7 +525,7 @@ export class DesktopEngine implements DownloadEngine {
         });
         return;
       }
-      this.finishWithError(id, mapDownloadError(current.rawLog));
+      this.finishWithError(id, mapDownloadError(current.rawLog, this.errorLang()));
     });
   }
 
@@ -622,17 +645,19 @@ export class DesktopEngine implements DownloadEngine {
   async updateEngine(): Promise<EngineVersions> {
     // Never run -U while downloads are active (kill first would corrupt).
     if (this.jobs.size > 0) {
-      throw new Error(STRINGS.errors.updateBlockedBusy);
+      throw new Error(this.errorStrings().errors.updateBlockedBusy);
     }
     const target = await ensureUserDataBinary(this.deps.userDataDir, this.deps.bundledBinDir);
     let out: { stdout: string; stderr: string; code: number | null };
     try {
       out = await runBinary(target, buildUpdateArgs());
     } catch (err) {
-      throw new EngineError(mapDownloadError(err instanceof Error ? err.message : String(err)));
+      throw new EngineError(mapDownloadError(err instanceof Error ? err.message : String(err), this.errorLang()));
     }
     if (out.code !== 0) {
-      throw new EngineError(mapDownloadError(`${out.stdout}\n${out.stderr}`));
+      throw new EngineError(
+        mapDownloadError(`${out.stdout}\n${out.stderr}`, this.errorLang()),
+      );
     }
     return this.getEngineVersion();
   }

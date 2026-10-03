@@ -159,4 +159,14 @@ describe("formatSize", () => {
     expect(formatSize(Number.NaN)).toBe("-");
     expect(formatSize(-1)).toBe("-");
   });
+
+  it("localizes decimals via Intl", () => {
+    const decimals = new Intl.NumberFormat("ms-MY", {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+      useGrouping: false,
+    }).format(1.2);
+    expect(formatSize(1283456789, "ms-MY")).toBe(`${decimals} GB`);
+    expect(formatSize(1536, "ms-MY")).toBe("2 KB");
+  });
 });

@@ -3,6 +3,7 @@ import type {
   AudioPreset,
   CodecPreference,
   Density,
+  Language,
   ThemeName,
   VideoPreset,
 } from "./types.js";
@@ -36,10 +37,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   density: "comfortable",
   accentOverride: null,
   playlistSubfolder: true,
+  language: "auto",
 };
 
 const THEMES: readonly ThemeName[] = ["obsidian", "midnight", "ember"];
 const DENSITIES: readonly Density[] = ["comfortable", "compact"];
+const LANGUAGES: readonly Language[] = ["auto", "en", "ms"];
 const CODECS: readonly CodecPreference[] = ["auto", "h264", "vp9", "av1"];
 const POST_ACTIONS: readonly AppSettings["postDownloadAction"][] = ["none", "open-file", "reveal"];
 const VIDEO_PRESETS: readonly VideoPreset[] = [
@@ -118,6 +121,7 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
   const themeRaw = patch.theme ?? base.theme;
   const codecRaw = patch.codecPreference ?? base.codecPreference;
   const densityRaw = patch.density ?? base.density;
+  const languageRaw = patch.language ?? base.language;
   const postRaw = patch.postDownloadAction ?? base.postDownloadAction;
   return {
     downloadDir: typeof patch.downloadDir === "string" ? patch.downloadDir : base.downloadDir,
@@ -160,5 +164,6 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
         ? base.accentOverride
         : cleanAccentOverride(patch.accentOverride),
     playlistSubfolder: cleanBool(patch.playlistSubfolder, base.playlistSubfolder),
+    language: LANGUAGES.includes(languageRaw) ? languageRaw : base.language,
   };
 }

@@ -5,7 +5,7 @@ import { APP_NAME } from "./branding.js";
 import type { DownloadEngine } from "./engine.js";
 import type { ThemeName } from "./types.js";
 import { fadeSwap, pressScale, staggerIn } from "./motion.js";
-import { STRINGS } from "./strings.js";
+import { formatStr, localeTag, resolveLanguage, useStrings } from "./locale.js";
 import { isValidUrl } from "./url.js";
 import { readClipboardText } from "./clipboard.js";
 import { comboFromEvent, isCommandPalette, isEditableTarget, isOpenSettings, isPasteAnalyze } from "./shortcuts.js";
@@ -38,33 +38,18 @@ export interface ShellProps {
   readonly settings: StoreApi<SettingsStoreState>;
   readonly toast: StoreApi<ToastStoreState>;
 }
-
-const NAV: ReadonlyArray<{ id: ShellView; label: string }> = [
-  { id: "home", label: STRINGS.home.title },
-  { id: "downloads", label: STRINGS.downloads.title },
-  { id: "library", label: STRINGS.library.title },
-  { id: "settings", label: STRINGS.settings.title },
-  { id: "logs", label: STRINGS.logs.title },
-];
-
 const THEMES: ReadonlyArray<{ id: ThemeName; swatch: string }> = [
   { id: "obsidian", swatch: "#27272a" },
   { id: "midnight", swatch: "#818cf8" },
   { id: "ember", swatch: "#fb923c" },
 ];
 
-const THEME_LABELS: Readonly<Record<ThemeName, string>> = {
-  obsidian: "Obsidian theme",
-  midnight: "Midnight theme",
-  ember: "Ember theme",
-};
-
 export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX.Element {
   const [view, setView] = useState<ShellView>("home");
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
   const [pendingSection, setPendingSection] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState<boolean>(false);
-  const [aggregateText, setAggregateText] = useState<string>(STRINGS.status.ready);
+  const [aggregateText, setAggregateText] = useState<string>("");
   const [replayOnboarding, setReplayOnboarding] = useState<boolean>(false);
   const settingsReady = useStore(settings, (s) => s.ready);
   const onboardingDone = useStore(settings, (s) => s.settings.onboardingDone);
@@ -74,6 +59,18 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   const theme = useStore(settings, (s) => s.settings.theme);
   const density = useStore(settings, (s) => s.settings.density);
   const accentOverride = useStore(settings, (s) => s.settings.accentOverride);
+  const S = useStrings(settings);
+  const locale = localeTag(resolveLanguage(useStore(settings, (s) => s.settings.language)));
+  const nav: ReadonlyArray<{ id: ShellView; label: string }> = useMemo(
+    () => [
+      { id: "home", label: S.home.title },
+      { id: "downloads", label: S.downloads.title },
+      { id: "library", label: S.library.title },
+      { id: "settings", label: S.settings.title },
+      { id: "logs", label: S.logs.title },
+    ],
+    [S],
+  );
   const navRef = useRef<HTMLElement | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
 
@@ -140,9 +137,9 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   // Aggregate status: sidebar footer + throttled taskbar/tray updates.
   useEffect(() => {
     const agg = aggregateStatus(jobs);
-    const speed = agg.speedBps > 0 ? ` · ${formatSpeedBps(agg.speedBps)}` : "";
+    const speed = agg.speedBps > 0 ? ` · ${formatSpeedBps(agg.speedBps, locale)}` : "";
     const text =
-      agg.active > 0 ? `${String(agg.active)} ${STRINGS.status.active}${speed}` : STRINGS.status.ready;
+      agg.active > 0 ? `${formatStr(S.status.activeCount, { count: agg.active })}${speed}` : S.status.ready;
     setAggregateText(text);
     const send = (): void => {
       lastAggSent.current = Date.now();
@@ -159,7 +156,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
     return () => {
       if (aggTimer.current !== null) clearTimeout(aggTimer.current);
     };
-  }, [jobs, engine]);
+  }, [jobs, engine, S, locale]);
 
   // Error-action deep links (settings section anchors).
   useEffect(() => {
@@ -251,16 +248,16 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
           focusMain();
         }}
       >
-        {STRINGS.skipToContent}
+        {S.skipToContent}
       </a>
       <header className="grabber-titlebar">
         <span className="grabber-mark" aria-hidden="true" />
         <span className="grabber-appname">{APP_NAME}</span>
-        <span className="grabber-viewtitle">{NAV.find((n) => n.id === view)?.label ?? ""}</span>
+        <span className="grabber-viewtitle">{nav.find((n) => n.id === view)?.label ?? ""}</span>
         <span
           className="grabber-theme-dots no-drag"
           role="group"
-          aria-label={STRINGS.navThemeGroup}
+          aria-label={S.navThemeGroup}
         >
           {THEMES.map((t) => (
             <button
@@ -269,8 +266,8 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
               className="grabber-dot"
               style={{ background: t.swatch }}
               data-active={t.id === theme}
-              title={THEME_LABELS[t.id]}
-              aria-label={THEME_LABELS[t.id]}
+              title={S.settings.themes[t.id]}
+              aria-label={S.settings.themes[t.id]}
               aria-pressed={t.id === theme}
               onPointerDown={(e) => {
                 pressScale(e.currentTarget);
@@ -284,7 +281,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
       </header>
       <div className="grabber-body">
         <nav ref={navRef} className="grabber-nav" aria-label="Primary">
-          {NAV.map((item) => (
+          {nav.map((item) => (
             <button
               key={item.id}
               type="button"
@@ -337,10 +334,10 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
               }}
             />
           )}
-          {view === "logs" && <Logs engine={engine} queue={queue} />}
+          {view === "logs" && <Logs engine={engine} queue={queue} settings={settings} />}
         </main>
       </div>
-      <Toasts toast={toast} />
+      <Toasts toast={toast} strings={S} />
       <CommandPalette
         open={paletteOpen}
         context={paletteContext}
