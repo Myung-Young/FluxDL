@@ -211,4 +211,13 @@ describe("queue state machine", () => {
     expect(retryInSeconds(failed, 2000)).toBeNull();
     expect(retryInSeconds(jobAt("queued"), 0)).toBeNull();
   });
+
+  it("preserves splitChapters option in makeJob (M4.2)", () => {
+    const job = makeJob("j-split", { ...input, splitChapters: true }, 1);
+    expect(job.splitChapters).toBe(true);
+
+    const normal = makeJob("j-normal", input, 1);
+    expect(normal.splitChapters).toBeUndefined();
+  });
 });
+

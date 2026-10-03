@@ -35,6 +35,12 @@ export interface PlaylistEntry {
 
 export type LiveStatus = "is_live" | "is_upcoming" | "was_live" | "not_live" | "post_live";
 
+export interface ChapterInfo {
+  readonly title: string;
+  readonly startTime: number;
+  readonly endTime: number;
+}
+
 export interface MediaInfo {
   readonly url: string;
   readonly title: string;
@@ -50,6 +56,8 @@ export interface MediaInfo {
   readonly formats: readonly FormatOption[];
   /** Live stream status reported by yt-dlp (M4.1). */
   readonly liveStatus?: LiveStatus | null;
+  /** Internal video chapters if present (M4.2). */
+  readonly chapters?: readonly ChapterInfo[] | null;
 }
 
 export type MediaKind = "video" | "audio";
@@ -111,6 +119,8 @@ export interface DownloadJob {
   readonly liveFromStart?: boolean;
   /** Wait for scheduled upcoming stream (--wait-for-video) (M4.1). */
   readonly waitForVideo?: boolean;
+  /** Split by chapters into containing folder (M4.2). */
+  readonly splitChapters?: boolean | null;
 }
 
 export interface DownloadJobInput extends Pick<
@@ -125,6 +135,7 @@ export interface DownloadJobInput extends Pick<
   | "liveStatus"
   | "liveFromStart"
   | "waitForVideo"
+  | "splitChapters"
 > {
   readonly useArchive?: boolean;
   /** Sanitized playlist subfolder (UI-side, when the setting is on). */

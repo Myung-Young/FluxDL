@@ -4,6 +4,7 @@ import {
   formatSize,
   parseMediaInfo,
   parseLiveStatus,
+  parseChapters,
 } from "./media.js";
 import type { DownloadPreset, MediaInfo } from "./types.js";
 import bbbDump from "./bbb-54formats.json";
@@ -210,3 +211,47 @@ describe("parseLiveStatus (M4.1)", () => {
     expect(normal.liveStatus).toBeNull();
   });
 });
+
+describe("parseChapters", () => {
+  it("parses valid chapters list", () => {
+    const res = parseChapters({
+      chapters: [
+        { title: "Intro", start_time: 0, end_time: 30 },
+        { title: "Main Part", start_time: 30, end_time: 120 },
+      ],
+    });
+    expect(res).toEqual([
+      { title: "Intro", startTime: 0, endTime: 30 },
+      { title: "Main Part", startTime: 30, endTime: 120 },
+    ]);
+  });
+
+  it("returns null for missing, non-array, or empty chapters", () => {
+    expect(parseChapters({})).toBeNull();
+    expect(parseChapters({ chapters: [] })).toBeNull();
+    expect(parseChapters({ chapters: "not an array" })).toBeNull();
+  });
+
+  it("handles fallback chapter title and default times", () => {
+    const res = parseChapters({
+      chapters: [{}],
+    });
+    expect(res).toEqual([{ title: "Chapter", startTime: 0, endTime: 0 }]);
+  });
+
+  it("propagates through parseMediaInfo", () => {
+    const info = parseMediaInfo("https://youtu.be/x", {
+      title: "Talk",
+      chapters: [
+        { title: "Part 1", start_time: 0, end_time: 60 },
+        { title: "Part 2", start_time: 60, end_time: 180 },
+      ],
+    });
+    expect(info.chapters).toHaveLength(2);
+    expect(info.chapters?.[0]?.title).toBe("Part 1");
+
+    const noChapters = parseMediaInfo("https://youtu.be/x", { title: "No Chapters" });
+    expect(noChapters.chapters).toBeNull();
+  });
+});
+

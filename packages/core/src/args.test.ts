@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildChapterOutputTemplate,
   buildDownloadArgs,
   buildInfoArgs,
   buildUpdateArgs,
@@ -220,4 +221,23 @@ describe("arg builder", () => {
     const normalArgs = buildDownloadArgs(base({ liveStatus: "was_live" }));
     expect(normalArgs).not.toContain("--hls-use-mpegts");
   });
+
+  it("builds chapter output template with and without playlist subfolder", () => {
+    const flat = buildChapterOutputTemplate("C:\\Users\\P\\Videos\\Grabber", null);
+    expect(flat).toBe("C:\\Users\\P\\Videos\\Grabber/%(title)s/%(section_number)03d - %(section_title)s.%(ext)s");
+
+    const nested = buildChapterOutputTemplate("C:\\Users\\P\\Videos\\Grabber", "My Playlist");
+    expect(nested).toBe("C:\\Users\\P\\Videos\\Grabber/My Playlist/%(title)s/%(section_number)03d - %(section_title)s.%(ext)s");
+  });
+
+  it("adds --split-chapters and chapter output template when splitChapters is enabled (M4.2)", () => {
+    const args = buildDownloadArgs(base({ splitChapters: true }));
+    expect(args).toContain("--split-chapters");
+    const outputIdx = args.lastIndexOf("--output");
+    expect(outputIdx).toBeGreaterThan(-1);
+    expect(args[outputIdx + 1]).toBe(
+      "chapter:C:\\Users\\P\\Videos\\Grabber/%(title)s/%(section_number)03d - %(section_title)s.%(ext)s",
+    );
+  });
 });
+

@@ -299,6 +299,7 @@ export function retryInSeconds(job: DownloadJob, now: number): number | null {
       : {}),
     ...(input.liveFromStart === true ? { liveFromStart: true as const } : {}),
     ...(input.waitForVideo === true ? { waitForVideo: true as const } : {}),
+    ...(input.splitChapters === true ? { splitChapters: true as const } : {}),
   };
 }
 

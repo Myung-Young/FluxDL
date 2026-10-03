@@ -4,6 +4,7 @@ import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
 import type {
   AudioPreset,
+  ChapterInfo,
   CodecPreference,
   DownloadJob,
   DownloadPreset,
@@ -110,6 +111,7 @@ export function Home({
   const [entryPresets, setEntryPresets] = useState<Record<string, DownloadPreset>>({});
   const [liveFromStart, setLiveFromStart] = useState<boolean>(false);
   const [waitForVideo, setWaitForVideo] = useState<boolean>(true);
+  const [splitChapters, setSplitChapters] = useState<boolean>(false);
   const settingsState = useStore(settings, (s) => s.settings);
   const S = useStrings(settings);
   const locale = localeTag(resolveLanguage(settingsState.language));
@@ -246,6 +248,7 @@ export function Home({
           setRawFormat(null);
           setEntryStates(null);
           setEntryPresets({});
+          setSplitChapters(false);
           lastIndex.current = null;
           void applyThumbAccent(cached.thumbnail);
           void refreshEntryStates(cached);
@@ -269,6 +272,7 @@ export function Home({
         setRawFormat(null);
         setEntryStates(null);
         setEntryPresets({});
+        setSplitChapters(false);
         lastIndex.current = null;
         void applyThumbAccent(media.thumbnail);
         void refreshEntryStates(media);
@@ -325,6 +329,15 @@ export function Home({
       return true;
     });
   }, [info, entryFilter, hideDownloaded, entryStates]);
+
+  const chapters = useMemo<readonly ChapterInfo[]>(
+    () =>
+      info !== null && !info.isPlaylist && info.chapters !== undefined && info.chapters !== null
+        ? info.chapters
+        : [],
+    [info],
+  );
+  const hasChapters = chapters.length > 0;
 
   const toggleEntry = (id: string, index: number, additive: boolean): void => {
     if (!info) return;
@@ -470,6 +483,7 @@ export function Home({
             : {}),
           ...(info.liveStatus === "is_live" && liveFromStart ? { liveFromStart: true } : {}),
           ...(info.liveStatus === "is_upcoming" && waitForVideo ? { waitForVideo: true } : {}),
+          ...(splitChapters && hasChapters ? { splitChapters: true } : {}),
         });
         count += 1;
       }
@@ -715,6 +729,44 @@ export function Home({
               </label>
             </div>
           )}
+
+          {hasChapters && (
+            <>
+              <div className="chip-row">
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    checked={splitChapters}
+                    onChange={(e) => {
+                      setSplitChapters(e.target.checked);
+                    }}
+                  />
+                  {S.home.splitChapters}
+                </label>
+                <span className="muted">
+                  {formatStr(S.home.chaptersCount, { count: chapters.length })}
+                </span>
+              </div>
+              {splitChapters && (
+                <details className="advanced">
+                  <summary>
+                    {formatStr(S.home.chaptersList, { count: chapters.length })}
+                  </summary>
+                  <ul className="chapter-list">
+                    {chapters.map((ch) => (
+                      <li key={`${String(ch.startTime)}-${ch.title}`} className="chapter-row">
+                        <span className="chapter-time">
+                          {formatDuration(S, ch.startTime)}
+                        </span>
+                        <span className="chapter-title">{ch.title}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </>
+          )}
+
 
           {info.formats.length > 0 && (
             <details className="advanced">

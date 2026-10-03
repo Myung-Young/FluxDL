@@ -221,32 +221,47 @@ function Card({
           </button>
         )}
         {job.destination !== null ? (
-          <>
+          job.splitChapters === true ? (
             <button
               type="button"
               className="btn btn-small"
-              aria-label={strings.downloads.openFile}
+              aria-label={strings.downloads.showFolder}
               onClick={() => {
                 if (job.destination !== null) {
                   engine.openPath(job.destination).catch(() => undefined);
                 }
               }}
             >
-              {strings.downloads.openFile}
+              {strings.downloads.showFolder}
             </button>
-            <button
-              type="button"
-              className="btn btn-small"
-              aria-label={strings.downloads.showInFolder}
-              onClick={() => {
-                if (job.destination !== null) {
-                  engine.revealInFolder(job.destination).catch(() => undefined);
-                }
-              }}
-            >
-              {strings.downloads.showInFolder}
-            </button>
-          </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="btn btn-small"
+                aria-label={strings.downloads.openFile}
+                onClick={() => {
+                  if (job.destination !== null) {
+                    engine.openPath(job.destination).catch(() => undefined);
+                  }
+                }}
+              >
+                {strings.downloads.openFile}
+              </button>
+              <button
+                type="button"
+                className="btn btn-small"
+                aria-label={strings.downloads.showInFolder}
+                onClick={() => {
+                  if (job.destination !== null) {
+                    engine.revealInFolder(job.destination).catch(() => undefined);
+                  }
+                }}
+              >
+                {strings.downloads.showInFolder}
+              </button>
+            </>
+          )
         ) : (
           <button
             type="button"
@@ -431,7 +446,11 @@ export function Downloads({
         },
         reveal: () => {
           if (job.destination !== null) {
-            engine.revealInFolder(job.destination).catch(fail);
+            if (job.splitChapters === true) {
+              engine.openPath(job.destination).catch(fail);
+            } else {
+              engine.revealInFolder(job.destination).catch(fail);
+            }
           }
         },
         retryWithPreset: (preset) => {
@@ -453,7 +472,8 @@ export function Downloads({
         deleteFile: () => {
           const dest = job.destination;
           if (dest === null) return;
-          if (!window.confirm(S.menu.deleteConfirm)) return;
+          const confirmMsg = job.splitChapters === true ? S.menu.deleteFolderConfirm : S.menu.deleteConfirm;
+          if (!window.confirm(confirmMsg)) return;
           engine
             .trashFile(dest)
             .then(() => {
@@ -482,6 +502,7 @@ export function Downloads({
         const h = hist.find((x) => x.id === id);
         if (h?.status === "done") {
           const dest = h.destination;
+          const toastLabel = h.splitChapters === true ? S.downloads.showFolder : S.downloads.openFile;
           toast
             .getState()
             .push(
@@ -490,7 +511,7 @@ export function Downloads({
               dest === null
                 ? undefined
                 : {
-                    label: S.downloads.openFile,
+                    label: toastLabel,
                     run: () => {
                       engine.openPath(dest).catch(() => undefined);
                     },
@@ -498,7 +519,7 @@ export function Downloads({
             );
           sendNotification(S.toast.finished, h.title);
           if (action !== "none" && h.destination !== null) {
-            if (action === "open-file") {
+            if (action === "open-file" || h.splitChapters === true) {
               await engine.openPath(h.destination).catch(() => undefined);
             } else {
               await engine.revealInFolder(h.destination).catch(() => undefined);

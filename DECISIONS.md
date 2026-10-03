@@ -200,3 +200,8 @@ Log for ambiguous decisions (simplest option wins, keep going).
 
 - D78: Quality-of-Life & Polish pass (Library 1-click open/reveal, Downloads clearFinished condition & queue sweep, Nav count badge). Library cards now expose "Open file" and "Show in folder" buttons for existing files (reusing existing strings S.downloads.openFile / showInFolder, zero new strings). Downloads toolbar clearFinished was previously disabled when !hasErrors; now correctly checks for any clearable items (error, done, cancelled), and queueController.clearFinished() sweeps all three terminal states into history. The Downloads navigation button now displays a live count badge when jobs exist in the queue.
 
+## M4.4 (v1.4 M4.2)
+
+- D79: Split by chapters. `parseChapters` in `media.ts` extracts chapter metadata (title, start/end times). Home preview surfaces chapters count, a toggle checkbox for non-playlist media with chapters, and a collapsible chapter list. When enabled, `buildDownloadArgs` passes `--split-chapters` and `--output chapter:...` with template `buildChapterOutputTemplate` organizing split files into a dedicated subfolder `.../<title>/<section_number>03d - <section_title>.<ext>`. `desktopEngine` parses the split chapter destination as the containing directory, and protects against trashing root paths. UI across Downloads, Library, and JobMenu adapts labels ("Open folder", "Delete folder") and actions for chapter-split directories. Unit tests verify chapter parsing, template construction, args, and job state.
+
+

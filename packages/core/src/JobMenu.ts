@@ -55,7 +55,7 @@ export function buildJobMenu(
       case "open":
         defs.push({
           id,
-          label: strings.downloads.openFile,
+          label: job.splitChapters === true ? strings.downloads.showFolder : strings.downloads.openFile,
           run: () => {
             h.openFile();
           },
@@ -126,7 +126,7 @@ export function buildJobMenu(
       case "delete-file":
         defs.push({
           id,
-          label: strings.menu.deleteFile,
+          label: job.splitChapters === true ? strings.menu.deleteFolder : strings.menu.deleteFile,
           run: () => {
             h.deleteFile();
           },

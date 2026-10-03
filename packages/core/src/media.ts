@@ -1,4 +1,5 @@
 import type {
+  ChapterInfo,
   CodecPreference,
   DownloadPreset,
   FormatOption,
@@ -101,6 +102,21 @@ export function parseLiveStatus(raw: Record<string, unknown>): LiveStatus | null
   return null;
 }
 
+export function parseChapters(data: Record<string, unknown>): ChapterInfo[] | null {
+  const raw = data["chapters"];
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const out: ChapterInfo[] = [];
+  for (const item of raw) {
+    if (isRecord(item)) {
+      const title = asString(item["title"]) ?? "Chapter";
+      const startTime = asNumber(item["start_time"]) ?? 0;
+      const endTime = asNumber(item["end_time"]) ?? 0;
+      out.push({ title, startTime, endTime });
+    }
+  }
+  return out.length > 0 ? out : null;
+}
+
 /**
  * Map `--dump-single-json` output (single video or playlist) to MediaInfo.
  * Never throws on missing fields; throws only when the payload is not an object.
@@ -138,6 +154,7 @@ export function parseMediaInfo(sourceUrl: string, data: unknown): MediaInfo {
     entries,
     formats,
     liveStatus: parseLiveStatus(data),
+    chapters: parseChapters(data),
   };
 }
 

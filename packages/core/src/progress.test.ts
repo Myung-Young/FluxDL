@@ -56,6 +56,8 @@ describe("parseProgressLine", () => {
     ).toBe("downloading");
     expect(parseProgressLine('[Merger] Merging formats into "out.mkv"')?.stage).toBe("processing");
     expect(parseProgressLine("[ExtractAudio] Destination: song.mp3")?.stage).toBe("processing");
+    expect(parseProgressLine("[SplitChapters] Splitting video by chapters")?.stage).toBe("processing");
+    expect(parseProgressLine("[ModifyChapters] Removing chapters from original")?.stage).toBe("processing");
     expect(parseProgressLine("[download] C:\\a.mp4 has already been downloaded")?.stage).toBe(
       "done",
     );

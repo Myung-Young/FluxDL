@@ -175,7 +175,8 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
       },      deleteFile: () => {
         const dest = job.destination;
         if (dest === null) return;
-        if (!window.confirm(S.menu.deleteConfirm)) return;
+        const confirmMsg = job.splitChapters === true ? S.menu.deleteFolderConfirm : S.menu.deleteConfirm;
+        if (!window.confirm(confirmMsg)) return;
         engine
           .trashFile(dest)
           .then(() => engine.updateHistory({ ...job, fileDeleted: true }))
@@ -209,7 +210,7 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
       <p className="muted">
         {h.status}
         {h.error !== null ? ` · ${h.error}` : ""}
-        {h.fileDeleted === true ? ` · ${S.menu.fileDeleted}` : ""}
+        {h.fileDeleted === true ? ` · ${h.splitChapters === true ? S.menu.folderDeleted : S.menu.fileDeleted}` : ""}
         {missing.has(h.id) && (
           <>
             {" · "}
@@ -228,7 +229,7 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
                 if (h.destination !== null) engine.openPath(h.destination).catch(fail);
               }}
             >
-              {S.downloads.openFile}
+              {h.splitChapters === true ? S.downloads.showFolder : S.downloads.openFile}
             </button>
             <button
               type="button"

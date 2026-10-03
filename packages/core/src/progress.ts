@@ -98,7 +98,7 @@ export function parseProgressLine(line: string): ParsedProgress | null {
   }
 
   if (
-    /^\[(Merger|ExtractAudio|VideoConvertor|VideoRemuxer|EmbedSubtitle|ThumbnailsConvertor|Metadata|SubtitlesConvertor|Fixup)/.test(
+    /^\[(Merger|ExtractAudio|VideoConvertor|VideoRemuxer|EmbedSubtitle|ThumbnailsConvertor|Metadata|SubtitlesConvertor|Fixup|SplitChapters|ModifyChapters)/.test(
       trimmed,
     )
   ) {

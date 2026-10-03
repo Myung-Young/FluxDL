@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, readdir, rm, stat, unlink } from "node:fs/promises";
 import { platform as osPlatform, release as osRelease } from "node:os";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { dialog, shell, app } from "electron";
 import { APP_NAME } from "@grabber/core/branding.js";
 import type { AppSettings, DownloadJob, DownloadJobInput, MediaInfo } from "@grabber/core/types.js";
@@ -90,6 +90,7 @@ interface ActiveJob {
 const DESTINATION_RE = /\[download\] Destination: (.+)/;
 const MERGER_RE = /\[Merger\] Merging formats into "(.+)"/;
 const EXTRACT_AUDIO_RE = /\[ExtractAudio\] Destination: (.+)/;
+const CHAPTER_DEST_RE = /\[SplitChapters\] Chapter \d+; Destination: (.+)/;
 const MAX_LOG_CHARS = 500_000;
 
 /** yt-dlp download-archive tracking already-fetched videos (M1.3). */
@@ -446,6 +447,11 @@ export class DesktopEngine implements DownloadEngine {
       const merged = MERGER_RE.exec(line) ?? EXTRACT_AUDIO_RE.exec(line);
       if (merged !== null && merged[1] !== undefined) {
         job.destination = merged[1].trim();
+      }
+      // Chapter splitting (M4.2): chapter files placed in containing folder.
+      const chapterDest = CHAPTER_DEST_RE.exec(line);
+      if (chapterDest !== null && chapterDest[1] !== undefined) {
+        job.destination = dirname(chapterDest[1].trim());
       }
       const parsed = parseProgressLine(line);
       if (parsed === null) return;
@@ -811,6 +817,18 @@ export class DesktopEngine implements DownloadEngine {
 
   async trashFile(path: string): Promise<void> {
     await this.assertAllowed(path);
+    const candidate = resolve(path);
+    const settings = loadSettingsFromDisk(this.deps.userDataDir);
+    const roots = [
+      resolve(this.deps.userDataDir),
+      resolve(this.deps.defaultOutputDir),
+      ...(settings.downloadDir ? [resolve(settings.downloadDir)] : []),
+    ];
+    for (const r of roots) {
+      if (r.toLowerCase() === candidate.toLowerCase()) {
+        throw new Error("Cannot trash root directory.");
+      }
+    }
     await shell.trashItem(path);
   }
 

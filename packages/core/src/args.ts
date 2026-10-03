@@ -42,6 +42,23 @@ export interface DownloadArgsInput {
   readonly liveFromStart?: boolean;
   /** Wait for scheduled upcoming stream (--wait-for-video) (M4.1). */
   readonly waitForVideo?: boolean;
+  /** Split video into multiple files based on internal chapters (M4.2). */
+  readonly splitChapters?: boolean | null;
+}
+
+export function buildChapterOutputTemplate(
+  outputDir: string,
+  playlistSubdir: string | null,
+): string {
+  const dir = outputDir.replace(/[/\\]+$/, "");
+  if (playlistSubdir === null) {
+    return `${dir}/%(title)s/%(section_number)03d - %(section_title)s.%(ext)s`;
+  }
+  const segs = sanitizePlaylistSubdir(playlistSubdir);
+  if (segs === null) {
+    return `${dir}/%(title)s/%(section_number)03d - %(section_title)s.%(ext)s`;
+  }
+  return `${dir}/${segs}/%(title)s/%(section_number)03d - %(section_title)s.%(ext)s`;
 }
 
 function joinOutputTemplate(
@@ -209,6 +226,13 @@ export function buildDownloadArgs(input: DownloadArgsInput): string[] {
   }
   if (input.liveStatus === "is_live" || input.liveFromStart === true) {
     args.push("--hls-use-mpegts");
+  }
+  if (input.splitChapters === true) {
+    args.push("--split-chapters");
+    args.push(
+      "--output",
+      `chapter:${buildChapterOutputTemplate(input.outputDir, input.playlistSubdir)}`,
+    );
   }
   args.push(input.noPlaylist ? "--no-playlist" : "--yes-playlist");
   args.push(url);

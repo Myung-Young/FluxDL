@@ -715,6 +715,42 @@ select.input {
   margin: 0;
 }
 
+.chapter-list {
+  list-style: none;
+  margin: var(--space-2) 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.chapter-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 6px var(--space-3);
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.chapter-row:last-child {
+  border-bottom: 0;
+}
+
+.chapter-time {
+  font-family: monospace;
+  color: var(--fg-2);
+  flex-shrink: 0;
+}
+
+.chapter-title {
+  color: var(--fg-0);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .playlist-bar {
   display: flex;
   align-items: center;
