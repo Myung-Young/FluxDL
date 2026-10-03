@@ -298,6 +298,17 @@ test("logs: repair engine reports verified", async () => {
     "FluxDL diagnostics",
     { timeout: 15000 },
   );
+  // Log search works on the placeholder with zero jobs selected.
+  await expect(page.locator('[data-testid="logs-search"]')).toBeVisible({ timeout: 15000 });
+  await page.locator('[data-testid="logs-search"]').fill("zzz-no-match");
+  await expect(page.locator(".grabber-view").getByText("No matching lines.")).toBeVisible();
+  await page.locator('[data-testid="logs-copy-log"]').click();
+  // Headless clipboard permission varies: either note proves the button ran.
+  // Scoped to the log card (the diagnostics card shows its own copy note).
+  await expect(
+    page.locator(".grabber-view").getByText(/Log copied\.|Copy failed\./).first(),
+  ).toBeVisible();
+  await page.locator('[data-testid="logs-search"]').fill("");
   expect(pageErrors).toEqual([]);
 });
 

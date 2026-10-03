@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine, EngineVersions } from "./engine.js";
 import type { DownloadJob } from "./types.js";
 import { DEFAULT_SETTINGS } from "./settings.js";
-import { useStrings } from "./locale.js";
+import { formatStr, useStrings } from "./locale.js";
 import { pressScale } from "./motion.js";
 import { buildDiagnostics } from "./diagnostics.js";
+import { countLogMatches, filterLogLines } from "./logFilter.js";
 import { writeClipboardText } from "./clipboard.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 
@@ -30,6 +31,11 @@ export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element 
   const [includeUrls, setIncludeUrls] = useState<boolean>(false);
   const [report, setReport] = useState<string | null>(null);
   const [diagNote, setDiagNote] = useState<string | null>(null);
+  const [logQuery, setLogQuery] = useState<string>("");
+  const [errorsOnly, setErrorsOnly] = useState<boolean>(false);
+  const [follow, setFollow] = useState<boolean>(true);
+  const [logNote, setLogNote] = useState<string | null>(null);
+  const logPreRef = useRef<HTMLPreElement | null>(null);
 
   const refreshVersions = useCallback(async (): Promise<void> => {
     const v = await engine.getEngineVersion().catch(() => null);
@@ -78,6 +84,23 @@ export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element 
     setSelectedId(id);
     const text = await engine.getRawLog(id).catch(() => null);
     setLogText(text);
+  };
+
+  // Follow live output: pin the scroll to the tail on new log text.
+  useEffect(() => {
+    if (!follow) return;
+    const el = logPreRef.current;
+    if (el !== null) el.scrollTop = el.scrollHeight;
+  }, [logText, follow]);
+
+  const filtering = logQuery.trim().length > 0 || errorsOnly;
+  const logSource = logText ?? S.logs.logPlaceholder;
+  const shownLog = filtering ? filterLogLines(logSource, logQuery, errorsOnly).join("\n") : logSource;
+  const matchCount = filtering ? countLogMatches(logSource, logQuery, errorsOnly) : null;
+
+  const copyLog = async (): Promise<void> => {
+    const ok = await writeClipboardText(shownLog);
+    setLogNote(ok ? S.logs.logCopied : S.menu.copyFailed);
   };
 
   const buildReport = async (): Promise<string | null> => {
@@ -196,8 +219,87 @@ export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element 
             </button>
           ))}
         </div>
-        <pre className="log-pre" aria-live="polite">
-          {logText ?? S.logs.logPlaceholder}
+        <div className="url-row">
+          <input
+            id="logs-search"
+            data-testid="logs-search"
+            className="input"
+            value={logQuery}
+            placeholder={S.logs.search}
+            aria-label={S.logs.search}
+            spellCheck={false}
+            onChange={(e) => {
+              setLogQuery(e.target.value);
+            }}
+          />
+          {logQuery.length > 0 && (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setLogQuery("");
+              }}
+            >
+              {S.logs.clearSearch}
+            </button>
+          )}
+        </div>
+        <div className="chip-row">
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={errorsOnly}
+              onChange={(e) => {
+                setErrorsOnly(e.target.checked);
+              }}
+            />
+            {S.logs.errorsOnly}
+          </label>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={follow}
+              onChange={(e) => {
+                setFollow(e.target.checked);
+              }}
+            />
+            {S.logs.follow}
+          </label>
+          <button
+            type="button"
+            className="btn btn-small"
+            disabled={selectedId === null}
+            onClick={() => {
+              if (selectedId !== null) void viewLog(selectedId);
+            }}
+          >
+            {S.logs.refresh}
+          </button>
+          <button
+            type="button"
+            className="btn btn-small"
+            data-testid="logs-copy-log"
+            onClick={() => {
+              void copyLog();
+            }}
+          >
+            {S.logs.copyLog}
+          </button>
+        </div>
+        {matchCount !== null && (
+          <p className="muted" role="status">
+            {matchCount === 0
+              ? S.logs.noMatch
+              : formatStr(S.logs.matchCount, { n: matchCount })}
+          </p>
+        )}
+        {logNote !== null && (
+          <p className="note" role="status">
+            {logNote}
+          </p>
+        )}
+        <pre ref={logPreRef} className="log-pre" aria-live="polite">
+          {shownLog}
         </pre>
       </div>
 

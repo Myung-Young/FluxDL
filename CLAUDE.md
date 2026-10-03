@@ -80,6 +80,7 @@
   (video-id match, else newest recent media).
 - `packages/core/src/settingsFilter.ts` — settings search matcher
   (multi-word AND over label + id + English keywords).
+- `packages/core/src/logFilter.ts` — raw-log line filter (text + errors-only).
 - `packages/core/src/{BatchPanel,DuplicatePrompt,ErrorActions,ContextMenu,JobMenu}.tsx` —
   batch UI, guard dialog, error buttons, themed menu, menu builder.
 - `packages/core/src/{CommandPalette,Onboarding,VirtualList}.tsx` — palette,

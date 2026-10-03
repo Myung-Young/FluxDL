@@ -167,3 +167,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M3.5
 
 - D70: Shortcut help dialog. Bare `?` (new `isShortcutHelp` matcher, shift-agnostic, ignored inside editable fields like Ctrl+K/V) opens a focus-trapped `role=dialog` (Esc/outside close, focus restore, same pattern as the guard dialog) listing Ctrl+V / Ctrl+K / Ctrl+, / ? / Esc with `<kbd>` styling. Openable from the key, a new always-available palette command (`showShortcuts` added to `CommandContext`), and the Home hint line now mentions `?`. Strings EN+MS in parity; rows helper unit-tested, `?` open/close covered in the palette e2e.
+
+## M3.6
+
+- D71: Logs triage without new engine methods. Pure `logFilter.ts` (tested: empty matches all, multi-word AND, errors-only regex) drives a search box + clear, an errors-only toggle, a match-count/no-match status line, a Refresh button (re-fetch selected), a Copy-log button, and a follow-live pin (scrolls the tail on new text). Search filters the placeholder too, so the e2e needs no jobs. Two honest notes: (a) headless clipboard denies writes, so the e2e accepts either copy note via `.first()` (the diagnostics card shows the same text); (b) a mid-session full-suite flake (onboarding modal blocking tests 4–9, ~2.8 min timeout runs) was chased hard — probes proved the settings store clean (ready/true, zero saves, 3 mock loads), no app timers, no navigation code — and the suite has since gone 10/10 repeatedly; treated as environmental slowness, watching.
