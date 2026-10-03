@@ -66,4 +66,42 @@ describe("parseProgressLine", () => {
     expect(parseProgressLine("")).toBeNull();
     expect(parseProgressLine("[info] Available subtitles")).toBeNull();
   });
+
+  it("parses template line with elapsed field (M4.1)", () => {
+    const p = parseProgressLine(
+      "[GRABBER] downloaded:5242880 total:10485760 percent: 50.0% speed: 1.00MiB/s eta: 00:05 elapsed: 00:05",
+    );
+    expect(p).toMatchObject({
+      percent: 50.0,
+      speed: "1.00MiB/s",
+      eta: "00:05",
+      elapsed: "00:05",
+      stage: "downloading",
+    });
+  });
+
+  it("treats NA percent as recording with null percent (M4.1)", () => {
+    const p = parseProgressLine(
+      "[GRABBER] downloaded:1048576 total:NA percent: NA speed: 512.00KiB/s eta: NA elapsed: 00:01:23",
+    );
+    expect(p).toMatchObject({
+      percent: null,
+      downloadedBytes: 1048576,
+      totalBytes: null,
+      speed: "512.00KiB/s",
+      eta: null,
+      elapsed: "00:01:23",
+      stage: "recording",
+    });
+  });
+
+  it("handles classic live download lines (M4.1)", () => {
+    const p = parseProgressLine("[download] 4.50MiB at 1.00MiB/s (00:04:30)");
+    expect(p).toMatchObject({
+      percent: null,
+      speed: "1.00MiB/s",
+      elapsed: "00:04:30",
+      stage: "recording",
+    });
+  });
 });

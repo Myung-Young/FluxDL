@@ -2,6 +2,7 @@ import type {
   CodecPreference,
   DownloadPreset,
   FormatOption,
+  LiveStatus,
   MediaInfo,
   PlaylistEntry,
   VideoPreset,
@@ -84,6 +85,22 @@ function mapEntry(raw: unknown, fallbackUrl: string): PlaylistEntry | null {
   };
 }
 
+export function parseLiveStatus(raw: Record<string, unknown>): LiveStatus | null {
+  const ls = asString(raw["live_status"]);
+  if (
+    ls === "is_live" ||
+    ls === "is_upcoming" ||
+    ls === "was_live" ||
+    ls === "not_live" ||
+    ls === "post_live"
+  ) {
+    return ls;
+  }
+  if (raw["is_live"] === true) return "is_live";
+  if (raw["was_live"] === true) return "was_live";
+  return null;
+}
+
 /**
  * Map `--dump-single-json` output (single video or playlist) to MediaInfo.
  * Never throws on missing fields; throws only when the payload is not an object.
@@ -120,6 +137,7 @@ export function parseMediaInfo(sourceUrl: string, data: unknown): MediaInfo {
     videoId: asString(data["id"]),
     entries,
     formats,
+    liveStatus: parseLiveStatus(data),
   };
 }
 

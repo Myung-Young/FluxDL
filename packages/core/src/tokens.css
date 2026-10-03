@@ -754,6 +754,22 @@ select.input {
   background: var(--accent);
 }
 
+/* M4.1: indeterminate progress for live recordings */
+@keyframes dl-shimmer {
+  0%   { opacity: 0.45; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.45; }
+}
+
+.dl-fill.is-indeterminate {
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-hover) 50%, var(--accent) 100%);
+  animation: dl-shimmer 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dl-fill.is-indeterminate { animation: none; opacity: 0.7; }
+}
+
 .log-pre {
   background: var(--bg-0);
   border: 1px solid var(--border);

@@ -50,6 +50,11 @@ const EN = {
     queueSingle: "Download",
     queuedToast: "Queued {count}.",
     playlistPresetNote: "The preset above applies to every selected entry.",
+    liveBadge: "LIVE",
+    upcomingBadge: "UPCOMING",
+    wasLiveBadge: "WAS LIVE",
+    liveFromStart: "Record from start",
+    waitForVideo: "Wait for stream to start",
   },
   batch: {
     title: "Batch",
@@ -114,6 +119,8 @@ const EN = {
     cancelQueuedConfirm: "Cancel every queued download? They will be kept in history.",
     clearFinished: "Clear finished",
     bulkActions: "Bulk queue actions",
+    recording: "Recording",
+    stopRecording: "Stop recording",
   },
   library: {
     title: "Library",
@@ -377,6 +384,11 @@ const MS: Parity<Strings> = {
     queueSingle: "Muat turun",
     queuedToast: "Diberatur {count}.",
     playlistPresetNote: "Pratetap di atas terpakai untuk setiap entri yang dipilih.",
+    liveBadge: "LANGSUNG",
+    upcomingBadge: "AKAN DATANG",
+    wasLiveBadge: "PERNAH LANGSUNG",
+    liveFromStart: "Rakam dari awal",
+    waitForVideo: "Tunggu siaran bermula",
   },
   batch: {
     title: "Kelompok",
@@ -441,6 +453,8 @@ const MS: Parity<Strings> = {
     cancelQueuedConfirm: "Batalkan semua muat turun yang berbaris? Ia akan disimpan dalam sejarah.",
     clearFinished: "Padam yang siap",
     bulkActions: "Tindakan kelompok baris gilir",
+    recording: "Merakam",
+    stopRecording: "Henti merakam",
   },
   library: {
     title: "Pustaka",

@@ -4,7 +4,7 @@ import type { ErrorCategory } from "./errors.js";
 /** Progress event pushed by the engine. */
 export interface EngineProgress {
   readonly id: string;
-  readonly percent: number;
+  readonly percent: number | null;
   readonly speed: string | null;
   readonly eta: string | null;
   readonly downloadedBytes: number | null;
@@ -15,6 +15,8 @@ export interface EngineProgress {
   /** Human failure message for "error" stages (mapped main-side). */
   readonly errorMessage?: string;
   readonly errorCategory?: ErrorCategory;
+  /** Elapsed duration string (e.g. "00:01:23") when available (M4.1). */
+  readonly elapsed?: string | null;
 }
 
 /** Unsubscribe function. */

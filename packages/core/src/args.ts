@@ -1,4 +1,4 @@
-import type { CodecPreference, DownloadPreset } from "./types.js";
+import type { CodecPreference, DownloadPreset, LiveStatus } from "./types.js";
 import { PROGRESS_TEMPLATE } from "./progress.js";
 import { normalizeUrl } from "./url.js";
 import { sanitizePlaylistTitle } from "./playlist.js";
@@ -10,7 +10,7 @@ import { sanitizePlaylistTitle } from "./playlist.js";
  * -c/--continue, -o/--output, -f/--format, -S/--format-sort, -x/--extract-audio,
  * --merge-output-format, --ffmpeg-location, --embed-*, --write-subs,
  * --sponsorblock-*, --limit-rate, --proxy, --cookies-from-browser, --cookies,
- * --download-archive, -U/--update.
+ * --download-archive, -U/--update, --live-from-start, --wait-for-video, --hls-use-mpegts.
  */
 
 export interface DownloadArgsInput {
@@ -36,6 +36,12 @@ export interface DownloadArgsInput {
   /** Sanitized playlist subfolder (joined under the output dir). */
   readonly playlistSubdir: string | null;
   readonly noPlaylist: boolean;
+  /** Live status detected for this download (M4.1). */
+  readonly liveStatus?: LiveStatus | null;
+  /** Record livestream from start (--live-from-start) (M4.1). */
+  readonly liveFromStart?: boolean;
+  /** Wait for scheduled upcoming stream (--wait-for-video) (M4.1). */
+  readonly waitForVideo?: boolean;
 }
 
 function joinOutputTemplate(
@@ -194,6 +200,15 @@ export function buildDownloadArgs(input: DownloadArgsInput): string[] {
   }
   if (input.archivePath !== null && input.archivePath.trim().length > 0) {
     args.push("--download-archive", input.archivePath.trim());
+  }
+  if (input.liveFromStart === true) {
+    args.push("--live-from-start");
+  }
+  if (input.waitForVideo === true) {
+    args.push("--wait-for-video", "60");
+  }
+  if (input.liveStatus === "is_live" || input.liveFromStart === true) {
+    args.push("--hls-use-mpegts");
   }
   args.push(input.noPlaylist ? "--no-playlist" : "--yes-playlist");
   args.push(url);

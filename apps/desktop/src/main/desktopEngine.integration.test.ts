@@ -102,7 +102,7 @@ describe.skipIf(!HAS_YTDLP)("desktop engine live (real yt-dlp)", () => {
       const only = (e: EngineProgress): boolean => e.id === id;
       await waitFor(
         events,
-        (e) => only(e) && e.stage === "downloading" && e.percent > 0,
+        (e) => only(e) && e.stage === "downloading" && (e.percent ?? 0) > 0,
         60_000,
         "first progress",
       );
@@ -113,7 +113,7 @@ describe.skipIf(!HAS_YTDLP)("desktop engine live (real yt-dlp)", () => {
         30_000,
         "paused",
       );
-      expect(paused.destination !== null || paused.percent >= 0).toBe(true);
+      expect(paused.destination !== null || (paused.percent ?? 0) >= 0).toBe(true);
       await engine.resume(id);
       const finished = await waitFor(events, (e) => only(e) && e.stage === "done", 90_000, "done");
       expect(finished.percent).toBe(100);

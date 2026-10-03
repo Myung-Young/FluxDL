@@ -115,7 +115,7 @@ export function transition(
 }
 
 export interface EngineProgressLike {
-  readonly percent: number;
+  readonly percent: number | null;
   readonly speed: string | null;
   readonly eta: string | null;
   readonly downloadedBytes: number | null;
@@ -124,6 +124,7 @@ export interface EngineProgressLike {
   readonly destination: string | null;
   readonly errorMessage?: string;
   readonly errorCategory?: ErrorCategory;
+  readonly elapsed?: string | null;
 }
 
 /** Fold an engine progress event into queue state (pure). */
@@ -293,6 +294,11 @@ export function retryInSeconds(job: DownloadJob, now: number): number | null {
     ...(typeof input.playlistSubdir === "string" && input.playlistSubdir.length > 0
       ? { playlistSubdir: input.playlistSubdir }
       : {}),
+    ...(input.liveStatus !== undefined && input.liveStatus !== null
+      ? { liveStatus: input.liveStatus }
+      : {}),
+    ...(input.liveFromStart === true ? { liveFromStart: true as const } : {}),
+    ...(input.waitForVideo === true ? { waitForVideo: true as const } : {}),
   };
 }
 

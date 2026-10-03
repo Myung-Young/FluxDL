@@ -5,7 +5,8 @@ import type { DownloadEngine } from "./engine.js";
 import type { DownloadJob } from "./types.js";
 import type { Strings } from "./strings.js";
 import { useStrings } from "./locale.js";
-import { formatStr } from "./locale.js";
+import { formatStr, localeTag, resolveLanguage } from "./locale.js";
+import { formatSize } from "./media.js";
 import { retryInSeconds } from "./queue.js";
 import { sendNotification } from "./notify.js";
 import { flipShift, pressScale, tweenProgress } from "./motion.js";
@@ -24,26 +25,44 @@ export interface DownloadsProps {
   readonly navigate: ErrorNavigate;
 }
 
-function Bar({ ratio }: { ratio: number }): React.JSX.Element {
+function Bar({ ratio }: { ratio: number | null }): React.JSX.Element {
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (ref.current !== null) tweenProgress(ref.current, ratio);
+    if (ref.current !== null && ratio !== null) tweenProgress(ref.current, ratio);
   }, [ratio]);
+  const isIndeterminate = ratio === null;
   return (
     <div
-      className="dl-track"
+      className={`dl-track${isIndeterminate ? " is-indeterminate" : ""}`}
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={100}
-      aria-valuenow={Math.round(ratio * 100)}
-      aria-valuetext={`${String(Math.round(ratio * 100))}%`}
+      aria-valuenow={isIndeterminate ? undefined : Math.round(ratio * 100)}
+      aria-valuetext={isIndeterminate ? "Recording" : `${String(Math.round(ratio * 100))}%`}
     >
-      <div ref={ref} className="dl-fill" style={{ width: "0%" }} />
+      <div
+        ref={ref}
+        className={`dl-fill${isIndeterminate ? " is-indeterminate" : ""}`}
+        style={{ width: isIndeterminate ? "100%" : "0%" }}
+      />
     </div>
   );
 }
 
-function statusLine(job: DownloadJob): string {
+function statusLine(job: DownloadJob, strings: Strings, locale: string): string {
+  if (job.stage === "recording") {
+    const bits: string[] = [strings.downloads.recording];
+    if (job.downloadedBytes !== null) {
+      bits.push(formatSize(job.downloadedBytes, locale));
+    }
+    if (job.eta !== null) {
+      bits.push(job.eta);
+    }
+    if (job.speed !== null) {
+      bits.push(job.speed);
+    }
+    return bits.join(" · ");
+  }
   const bits: string[] = [job.status];
   if (job.speed !== null) bits.push(job.speed);
   if (job.eta !== null) bits.push(job.eta);
@@ -62,6 +81,7 @@ function Card({
   queuePos,
   onMove,
   strings,
+  locale,
   now,
 }: {
   job: DownloadJob;
@@ -75,6 +95,7 @@ function Card({
   queuePos: { index: number; total: number } | null;
   onMove: (id: string, toIndex: number) => void;
   strings: Strings;
+  locale: string;
   now: number;
 }): React.JSX.Element {
   const actions = queue.getState();
@@ -108,8 +129,8 @@ function Card({
       }}
     >
       <h2 className="dl-title">{job.title}</h2>
-      <p className="muted">{statusLine(job)}</p>
-      <Bar ratio={job.progress / 100} />
+      <p className="muted">{statusLine(job, strings, locale)}</p>
+      <Bar ratio={job.progress !== null ? job.progress / 100 : null} />
       {job.error !== null && (
         <p className="error-text" role="alert">
           {job.error}
@@ -143,7 +164,7 @@ function Card({
           <button
             type="button"
             className="btn btn-small"
-            aria-label={strings.downloads.pause}
+            aria-label={job.stage === "recording" ? strings.downloads.stopRecording : strings.downloads.pause}
             onPointerDown={(e) => {
               pressScale(e.currentTarget);
             }}
@@ -151,7 +172,7 @@ function Card({
               run(() => actions.pause(job.id));
             }}
           >
-            {strings.downloads.pause}
+            {job.stage === "recording" ? strings.downloads.stopRecording : strings.downloads.pause}
           </button>
         )}
         {job.status === "paused" && (
@@ -251,6 +272,8 @@ export function Downloads({
   navigate,
 }: DownloadsProps): React.JSX.Element {
   const S = useStrings(settings);
+  const settingsState = useStore(settings, (s) => s.settings);
+  const locale = localeTag(resolveLanguage(settingsState.language));
   const jobs = useStore(queue, (s) => s.jobs);
   const prevIds = useRef<ReadonlySet<string>>(new Set());
   const [menu, setMenu] = useState<{ job: DownloadJob; x: number; y: number } | null>(null);
@@ -604,6 +627,7 @@ export function Downloads({
                 toast={toast}
                 navigate={navigate}
                 strings={S}
+                locale={locale}
                 now={now}
                 onMenu={(target, x, y) => {
                   setMenu({ job: target, x, y });

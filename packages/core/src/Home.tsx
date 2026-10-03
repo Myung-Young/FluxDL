@@ -108,6 +108,8 @@ export function Home({
   const [entryStates, setEntryStates] = useState<Map<string, EntryState> | null>(null);
   const [checkingEntries, setCheckingEntries] = useState<boolean>(false);
   const [entryPresets, setEntryPresets] = useState<Record<string, DownloadPreset>>({});
+  const [liveFromStart, setLiveFromStart] = useState<boolean>(false);
+  const [waitForVideo, setWaitForVideo] = useState<boolean>(true);
   const settingsState = useStore(settings, (s) => s.settings);
   const S = useStrings(settings);
   const locale = localeTag(resolveLanguage(settingsState.language));
@@ -463,6 +465,11 @@ export function Home({
             ? { useArchive: true as const }
             : {}),
           ...(subdir !== null ? { playlistSubdir: subdir } : {}),
+          ...(info.liveStatus !== undefined && info.liveStatus !== null
+            ? { liveStatus: info.liveStatus }
+            : {}),
+          ...(info.liveStatus === "is_live" && liveFromStart ? { liveFromStart: true } : {}),
+          ...(info.liveStatus === "is_upcoming" && waitForVideo ? { waitForVideo: true } : {}),
         });
         count += 1;
       }
@@ -611,7 +618,18 @@ export function Home({
               </div>
             )}
             <div>
-              <h2 className="preview-title">{info.title}</h2>
+              <div className="preview-title-row">
+                <h2 className="preview-title">{info.title}</h2>
+                {info.liveStatus === "is_live" && (
+                  <span className="badge badge-live">{S.home.liveBadge}</span>
+                )}
+                {info.liveStatus === "is_upcoming" && (
+                  <span className="badge badge-upcoming">{S.home.upcomingBadge}</span>
+                )}
+                {info.liveStatus === "was_live" && (
+                  <span className="badge badge-was-live">{S.home.wasLiveBadge}</span>
+                )}
+              </div>
               {info.uploader !== null && <p className="muted">{info.uploader}</p>}
               <p className="muted">
                 {S.home.previewDuration}: {formatDuration(S, info.duration)}
@@ -668,6 +686,35 @@ export function Home({
               );
             })}
           </div>
+
+          {info.liveStatus === "is_live" && (
+            <div className="chip-row">
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={liveFromStart}
+                  onChange={(e) => {
+                    setLiveFromStart(e.target.checked);
+                  }}
+                />
+                {S.home.liveFromStart}
+              </label>
+            </div>
+          )}
+          {info.liveStatus === "is_upcoming" && (
+            <div className="chip-row">
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={waitForVideo}
+                  onChange={(e) => {
+                    setWaitForVideo(e.target.checked);
+                  }}
+                />
+                {S.home.waitForVideo}
+              </label>
+            </div>
+          )}
 
           {info.formats.length > 0 && (
             <details className="advanced">

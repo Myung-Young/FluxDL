@@ -34,7 +34,7 @@ export function aggregateStatus(jobs: readonly DownloadJob[]): AggregateStatus {
       active += 1;
       const bps = parseSpeedBps(j.speed);
       if (bps !== null) speedBps += bps;
-      if (j.status === "downloading") {
+      if (j.status === "downloading" && j.progress !== null) {
         downloading += 1;
         percentSum += j.progress;
       }

@@ -200,4 +200,24 @@ describe("arg builder", () => {
       "C:\\Users\\P\\Videos\\Grabber/%(title)s [%(id)s].%(ext)s",
     );
   });
+
+  it("adds --live-from-start and --hls-use-mpegts for live streams (M4.1)", () => {
+    const args = buildDownloadArgs(base({ liveFromStart: true }));
+    expect(args).toContain("--live-from-start");
+    expect(args).toContain("--hls-use-mpegts");
+  });
+
+  it("adds --wait-for-video for upcoming streams (M4.1)", () => {
+    const args = buildDownloadArgs(base({ waitForVideo: true }));
+    expect(args).toContain("--wait-for-video");
+    expect(args[args.indexOf("--wait-for-video") + 1]).toBe("60");
+  });
+
+  it("adds --hls-use-mpegts when liveStatus is is_live (M4.1)", () => {
+    const args = buildDownloadArgs(base({ liveStatus: "is_live" }));
+    expect(args).toContain("--hls-use-mpegts");
+    // Not a live stream — no mpegts unless liveFromStart
+    const normalArgs = buildDownloadArgs(base({ liveStatus: "was_live" }));
+    expect(normalArgs).not.toContain("--hls-use-mpegts");
+  });
 });

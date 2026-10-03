@@ -8,22 +8,26 @@
  */
 
 export const PROGRESS_TEMPLATE =
-  "[GRABBER] downloaded:%(progress.downloaded_bytes)s total:%(progress.total_bytes)s percent:%(progress._percent_str)s speed:%(progress._speed_str)s eta:%(progress._eta_str)s";
+  "[GRABBER] downloaded:%(progress.downloaded_bytes)s total:%(progress.total_bytes)s percent:%(progress._percent_str)s speed:%(progress._speed_str)s eta:%(progress._eta_str)s elapsed:%(progress._elapsed_str)s";
 
 export interface ParsedProgress {
-  readonly percent: number;
+  readonly percent: number | null;
   readonly speed: string | null;
   readonly eta: string | null;
   readonly downloadedBytes: number | null;
   readonly totalBytes: number | null;
   readonly stage: string;
+  readonly elapsed?: string | null;
 }
 
 const TEMPLATE_RE =
-  /\[GRABBER\]\s+downloaded:\s*(?<dl>\d+|NA)\s+total:\s*(?<tot>\d+|NA)\s+percent:\s*(?<pct>[\d.]+|NA)%?\s+speed:\s*(?<spd>.+?)\s+eta:\s*(?<eta>\S+)/;
+  /\[GRABBER\]\s+downloaded:\s*(?<dl>\d+|NA)\s+total:\s*(?<tot>\d+|NA)\s+percent:\s*(?<pct>[\d.]+|NA)%?\s+speed:\s*(?<spd>.+?)\s+eta:\s*(?<eta>\S+)(?:\s+elapsed:\s*(?<elap>\S+))?/;
 
 const CLASSIC_RE =
   /\[download\]\s+(?<pct>[\d.]+)%\s+of\s+(?:~\s+)?(?<tot>\S+)\s+in\s+\S+\s+at\s+(?<spd>\S+)(?:\s+ETA\s+(?<eta>\S+))?/;
+
+const CLASSIC_LIVE_RE =
+  /\[download\]\s+(?<dl>[\d.]+\s*[KMGTPE]?i?B)\s+at\s+(?<spd>\S+)(?:\s+\((?<elap>[\d:]+)\))?/;
 
 function toBytesOrNull(raw: string): number | null {
   if (raw === "NA") return null;
@@ -55,14 +59,19 @@ export function parseProgressLine(line: string): ParsedProgress | null {
   const tpl = TEMPLATE_RE.exec(trimmed);
   if (tpl !== null && tpl.groups !== undefined) {
     const percent = toPercentOrNull(tpl.groups["pct"] ?? "NA");
-    if (percent === null) return null;
+    const speed = nullIfNA(tpl.groups["spd"] ?? "NA");
+    const eta = nullIfNA(tpl.groups["eta"] ?? "NA");
+    const elapsed = nullIfNA(tpl.groups["elap"] ?? "NA");
+    const downloadedBytes = toBytesOrNull(tpl.groups["dl"] ?? "NA");
+    const totalBytes = toBytesOrNull(tpl.groups["tot"] ?? "NA");
     return {
       percent,
-      speed: nullIfNA(tpl.groups["spd"] ?? "NA"),
-      eta: nullIfNA(tpl.groups["eta"] ?? "NA"),
-      downloadedBytes: toBytesOrNull(tpl.groups["dl"] ?? "NA"),
-      totalBytes: toBytesOrNull(tpl.groups["tot"] ?? "NA"),
-      stage: "downloading",
+      speed,
+      eta,
+      downloadedBytes,
+      totalBytes,
+      stage: percent === null ? "recording" : "downloading",
+      elapsed,
     };
   }
 
@@ -114,6 +123,21 @@ export function parseProgressLine(line: string): ParsedProgress | null {
       downloadedBytes: null,
       totalBytes: null,
       stage: percent >= 100 ? "done" : "downloading",
+    };
+  }
+
+  const classicLive = CLASSIC_LIVE_RE.exec(trimmed);
+  if (classicLive !== null && classicLive.groups !== undefined) {
+    const speed = nullIfNA(classicLive.groups["spd"] ?? "NA");
+    const elapsed = nullIfNA(classicLive.groups["elap"] ?? "NA");
+    return {
+      percent: null,
+      speed,
+      eta: null,
+      downloadedBytes: null,
+      totalBytes: null,
+      stage: "recording",
+      elapsed,
     };
   }
 

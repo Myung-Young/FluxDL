@@ -3,6 +3,7 @@ import {
   estimatePresetSize,
   formatSize,
   parseMediaInfo,
+  parseLiveStatus,
 } from "./media.js";
 import type { DownloadPreset, MediaInfo } from "./types.js";
 import bbbDump from "./bbb-54formats.json";
@@ -168,5 +169,44 @@ describe("formatSize", () => {
     }).format(1.2);
     expect(formatSize(1283456789, "ms-MY")).toBe(`${decimals} GB`);
     expect(formatSize(1536, "ms-MY")).toBe("2 KB");
+  });
+});
+
+describe("parseLiveStatus (M4.1)", () => {
+  it("maps each live_status string value", () => {
+    expect(parseLiveStatus({ live_status: "is_live" })).toBe("is_live");
+    expect(parseLiveStatus({ live_status: "is_upcoming" })).toBe("is_upcoming");
+    expect(parseLiveStatus({ live_status: "was_live" })).toBe("was_live");
+    expect(parseLiveStatus({ live_status: "not_live" })).toBe("not_live");
+    expect(parseLiveStatus({ live_status: "post_live" })).toBe("post_live");
+  });
+
+  it("falls back to boolean is_live / was_live", () => {
+    expect(parseLiveStatus({ is_live: true })).toBe("is_live");
+    expect(parseLiveStatus({ was_live: true })).toBe("was_live");
+    expect(parseLiveStatus({ is_live: false })).toBeNull();
+  });
+
+  it("returns null for unknown or missing values", () => {
+    expect(parseLiveStatus({})).toBeNull();
+    expect(parseLiveStatus({ live_status: "something_else" })).toBeNull();
+    expect(parseLiveStatus({ live_status: 42 })).toBeNull();
+  });
+
+  it("propagates through parseMediaInfo", () => {
+    const live = parseMediaInfo("https://youtu.be/x", {
+      title: "My Stream",
+      live_status: "is_live",
+    });
+    expect(live.liveStatus).toBe("is_live");
+
+    const vod = parseMediaInfo("https://youtu.be/x", {
+      title: "VOD",
+      live_status: "was_live",
+    });
+    expect(vod.liveStatus).toBe("was_live");
+
+    const normal = parseMediaInfo("https://youtu.be/x", { title: "Normal" });
+    expect(normal.liveStatus).toBeNull();
   });
 });

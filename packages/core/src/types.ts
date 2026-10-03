@@ -33,6 +33,8 @@ export interface PlaylistEntry {
   readonly selected: boolean;
 }
 
+export type LiveStatus = "is_live" | "is_upcoming" | "was_live" | "not_live" | "post_live";
+
 export interface MediaInfo {
   readonly url: string;
   readonly title: string;
@@ -46,6 +48,8 @@ export interface MediaInfo {
   readonly videoId: string | null;
   readonly entries: readonly PlaylistEntry[];
   readonly formats: readonly FormatOption[];
+  /** Live stream status reported by yt-dlp (M4.1). */
+  readonly liveStatus?: LiveStatus | null;
 }
 
 export type MediaKind = "video" | "audio";
@@ -71,7 +75,7 @@ export interface DownloadJob {
   readonly preset: DownloadPreset;
   readonly outputDir: string;
   readonly status: JobStatus;
-  readonly progress: number;
+  readonly progress: number | null;
   readonly speed: string | null;
   readonly eta: string | null;
   readonly downloadedBytes: number | null;
@@ -101,11 +105,26 @@ export interface DownloadJob {
   readonly errorCategory?: ErrorCategory | null;
   /** Set when the output file was trashed (history keeps the record). */
   readonly fileDeleted?: boolean;
+  /** Live status detected for this job (M4.1). */
+  readonly liveStatus?: LiveStatus | null;
+  /** Record stream from start (--live-from-start) (M4.1). */
+  readonly liveFromStart?: boolean;
+  /** Wait for scheduled upcoming stream (--wait-for-video) (M4.1). */
+  readonly waitForVideo?: boolean;
 }
 
 export interface DownloadJobInput extends Pick<
   DownloadJob,
-  "url" | "title" | "preset" | "outputDir" | "extractor" | "videoId" | "cookiesFromBrowser"
+  | "url"
+  | "title"
+  | "preset"
+  | "outputDir"
+  | "extractor"
+  | "videoId"
+  | "cookiesFromBrowser"
+  | "liveStatus"
+  | "liveFromStart"
+  | "waitForVideo"
 > {
   readonly useArchive?: boolean;
   /** Sanitized playlist subfolder (UI-side, when the setting is on). */

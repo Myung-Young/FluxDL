@@ -82,7 +82,7 @@ interface ActiveJob {
   input: DownloadJobInput;
   downloadArgs: string[];
   destination: string | null;
-  lastPercent: number;
+  lastPercent: number | null;
   rawLog: string;
   state: JobState;
 }
@@ -416,7 +416,7 @@ export class DesktopEngine implements DownloadEngine {
       input,
       downloadArgs: args,
       destination: null,
-      lastPercent: 0,
+      lastPercent: null,
       rawLog: "",
       state: "running",
     });
