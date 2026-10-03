@@ -195,3 +195,8 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M4.2
 
 - D77: Onboarding Done/Skip buttons did nothing on first run: `finish()` deferred `onDone()` until the async `save({ onboardingDone: true })` resolved, but on first run `onDone()` only set `replayOnboarding(false)` — already false, a no-op. The modal relied entirely on the zustand store propagating `onboardingDone=true` back through Shell's selector, which could race or fail. Fix: `onDone()` fires immediately (optimistic dismiss), a new `onboardingDismissed` local state in Shell gates the first-run condition, and save runs fire-and-forget. Replay resets `onboardingDismissed` when re-opening. New e2e test covers the Done button path (navigate to last step, click Done, verify dismiss).
+
+## M4.3
+
+- D78: Quality-of-Life & Polish pass (Library 1-click open/reveal, Downloads clearFinished condition & queue sweep, Nav count badge). Library cards now expose "Open file" and "Show in folder" buttons for existing files (reusing existing strings S.downloads.openFile / showInFolder, zero new strings). Downloads toolbar clearFinished was previously disabled when !hasErrors; now correctly checks for any clearable items (error, done, cancelled), and queueController.clearFinished() sweeps all three terminal states into history. The Downloads navigation button now displays a live count badge when jobs exist in the queue.
+

@@ -218,6 +218,30 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
         )}
       </p>
       <div className="chip-row">
+        {h.destination !== null && !missing.has(h.id) && h.fileDeleted !== true && (
+          <>
+            <button
+              type="button"
+              className="btn btn-small"
+              disabled={busy}
+              onClick={() => {
+                if (h.destination !== null) engine.openPath(h.destination).catch(fail);
+              }}
+            >
+              {S.downloads.openFile}
+            </button>
+            <button
+              type="button"
+              className="btn btn-small"
+              disabled={busy}
+              onClick={() => {
+                if (h.destination !== null) engine.revealInFolder(h.destination).catch(fail);
+              }}
+            >
+              {S.downloads.showInFolder}
+            </button>
+          </>
+        )}
         {missing.has(h.id) && (
           <button
             type="button"

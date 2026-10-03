@@ -336,7 +336,12 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
               }}
             >
               <span className="grabber-nav-glyph" aria-hidden="true" />
-              {item.label}
+              <span>{item.label}</span>
+              {item.id === "downloads" && jobs.length > 0 && (
+                <span className="grabber-nav-badge" data-testid="downloads-nav-badge">
+                  {jobs.length}
+                </span>
+              )}
             </button>
           ))}
           <div className="grabber-nav-foot" data-testid="aggregate" role="status">

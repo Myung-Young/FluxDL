@@ -244,10 +244,10 @@ export class QueueController {
     }
   }
 
-  /** Sweep error jobs into history (abandon their retries). */
+  /** Sweep error, done, or cancelled jobs into history (abandon their retries). */
   async clearFinished(): Promise<void> {
     const ids = [...this.jobs.values()]
-      .filter((j) => j.status === "error")
+      .filter((j) => j.status === "error" || j.status === "done" || j.status === "cancelled")
       .map((j) => j.id);
     for (const id of ids) {
       const job = this.jobs.get(id);

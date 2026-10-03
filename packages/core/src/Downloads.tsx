@@ -511,6 +511,9 @@ export function Downloads({
   const canResume = jobs.some((j) => j.status === "paused");
   const hasQueued = queuedIds.length > 0;
   const hasErrors = jobs.some((j) => j.status === "error");
+  const hasClearable = jobs.some(
+    (j) => j.status === "error" || j.status === "done" || j.status === "cancelled",
+  );
 
   return (
     <section className="grabber-view" aria-label={S.downloads.title}>
@@ -561,7 +564,7 @@ export function Downloads({
           <button
             type="button"
             className="btn btn-small"
-            disabled={!hasErrors}
+            disabled={!hasClearable}
             onClick={() => {
               queue.getState().clearFinished().catch(failBulk);
             }}

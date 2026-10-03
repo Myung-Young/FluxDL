@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { QueueController, type QueueEngine } from "./queueController.js";
 import type { DownloadJob, DownloadJobInput, EngineProgress } from "./index.js";
+import { makeJob } from "./queue.js";
 
 const input: DownloadJobInput = {
   url: "https://youtu.be/aqz-KE-bpKQ",
@@ -426,6 +427,28 @@ describe("QueueController", () => {
     expect(slow.history[0]?.status).toBe("error");
     ctrl.dispose();
     ctrl2.dispose();
+  });
+
+  it("clearFinished sweeps cancelled and done jobs in addition to error jobs", async () => {
+    const fake = makeFake();
+    let n = 0;
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 2,
+      maxRetries: 3,
+      createId: () => `c${String((n += 1))}`,
+    });
+    // Manually inject jobs into the controller's internal map via hydrate for testing.
+    ctrl.hydrate([
+      { ...makeJob("j-err", input, 1), status: "error", error: "err", nextRetryAt: 9999 },
+      { ...makeJob("j-done", input, 2), status: "done", progress: 1, destination: "/out/a.mp4" },
+      { ...makeJob("j-cancel", input, 3), status: "cancelled" },
+    ]);
+    expect(ctrl.getJobs()).toHaveLength(3);
+    await ctrl.clearFinished();
+    expect(ctrl.getJobs()).toHaveLength(0);
+    expect(fake.history).toHaveLength(3);
+    ctrl.dispose();
   });
 
   it("carries extractor/videoId through to engine.start (M3.1)", async () => {
