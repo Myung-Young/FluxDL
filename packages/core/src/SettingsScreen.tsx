@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
-import type { AppSettings, Density, ThemeName } from "./types.js";
+import type { AppSettings, Density } from "./types.js";
+import { THEME_NAMES } from "./themes.js";
 import { deriveAccentScale } from "./color.js";
 import type { SettingsStoreState } from "./stores.js";
 import { formatStr, useStrings } from "./locale.js";
@@ -481,7 +482,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
         <span className="field-label" id="set-theme-label" hidden={hide("set-theme")}>
           {S.settings.theme}
         </span>        <div className="chip-row" role="group" aria-labelledby="set-theme-label" hidden={hide("set-theme")}>
-          {(["obsidian", "midnight", "ember"] as const).map((t: ThemeName) => (
+          {THEME_NAMES.map((t) => (
             <button
               key={t}
               type="button"

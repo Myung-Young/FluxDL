@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine, EngineVersions } from "./engine.js";
 import type { AppSettings, AudioPreset, DownloadPreset, ThemeName, VideoPreset } from "./types.js";
+import { THEME_NAMES } from "./themes.js";
 import { useStrings } from "./locale.js";
 import { pressScale } from "./motion.js";
 import type { SettingsStoreState } from "./stores.js";
@@ -52,7 +53,7 @@ export interface OnboardingProps {
   readonly onDone: () => void;
 }
 
-const THEMES: readonly ThemeName[] = ["obsidian", "midnight", "ember"];
+const THEMES = THEME_NAMES;
 const VIDEO_PRESETS: readonly VideoPreset[] = [
   "Compatible",
   "Best",

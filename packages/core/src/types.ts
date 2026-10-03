@@ -180,7 +180,7 @@ export interface DownloadJobInput extends Pick<
   readonly playlistSubdir?: string | null;
 }
 
-export type ThemeName = "obsidian" | "midnight" | "ember";
+export type ThemeName = "obsidian" | "midnight" | "ember" | "paper";
 
 export type Density = "comfortable" | "compact";
 

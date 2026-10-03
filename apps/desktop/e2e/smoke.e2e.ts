@@ -653,3 +653,35 @@ test("stats: shows totals, weekly chart and uploaders from history", async () =>
   await expect(page.locator('[data-testid="stats-unknown-size"]')).toContainText("1");
   expect(pageErrors).toEqual([]);
 });
+
+test("themes: the Paper light theme applies and persists to chrome", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+  await installMock(page);
+  await page.reload();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await expect(page.locator('[data-testid="grabber-shell"]')).toBeVisible({ timeout: 30000 });
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "obsidian");
+
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Settings" }).click();
+  await expect(page.locator(".grabber-view h1")).toHaveText("Settings", { timeout: 15000 });
+  await page.locator(".chip").filter({ hasText: "Paper" }).first().click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "paper");
+
+  // The native window colors follow the theme through applyWindowChrome.
+  const chrome = await page.evaluate(() => {
+    const mock = (window as unknown as { __grabberOverride?: { _chrome?: () => unknown } })
+      .__grabberOverride;
+    return mock?._chrome?.() ?? null;
+  });
+  expect(chrome).toMatchObject({ theme: "paper" });
+  expect(pageErrors).toEqual([]);
+});

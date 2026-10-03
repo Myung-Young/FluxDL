@@ -138,6 +138,15 @@ export const BUILTIN_COMMANDS: readonly CommandDef[] = [
     },
   },
   {
+    id: "theme-paper",
+    labelKey: "themePaper",
+    keywords: ["theme", "light", "paper", "white", "bright", "tema", "cerah", "putih"],
+    available: (ctx) => ctx.settings.getState().settings.theme !== "paper",
+    run: (ctx) => {
+      void ctx.settings.getState().save({ theme: "paper" });
+    },
+  },
+  {
     id: "theme-ember",
     labelKey: "themeEmber",
     keywords: ["theme", "orange", "ember", "tema", "oren"],

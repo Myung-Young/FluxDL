@@ -7,7 +7,8 @@ import { ensureUserDataBinary } from "./binaries.js";
 import { DesktopEngine } from "./desktopEngine.js";
 import { registerEngineIpc } from "./ipc.js";
 import { resolveTaskbarCommand } from "./taskbar.js";
-import { createWindowChrome } from "./windowChrome.js";
+import { boundsFor } from "@grabber/core/window.js";
+import { colorsFor, createWindowChrome } from "./windowChrome.js";
 
 let mainWindow: BrowserWindow | null = null;
 let engine: DesktopEngine | null = null;
@@ -83,17 +84,23 @@ function applyCsp(): void {
 }
 
 async function createWindow(): Promise<void> {
+  // Read the persisted chrome first so a light theme never flashes dark
+  // window chrome before the renderer sends its first update (M4.6).
+  const state = await chrome.ready();
+  const colors = colorsFor(state.theme);
+  const size = boundsFor(state.mini);
   const win = new BrowserWindow({
-    width: 1120,
-    height: 760,
+    width: size.width,
+    height: size.height,
+    ...(state.mini ? { alwaysOnTop: true } : {}),
     title: APP_NAME,
-    backgroundColor: "#0a0a0b",
+    backgroundColor: colors.bg,
     autoHideMenuBar: true,
     frame: false,
     titleBarStyle: "hidden",
     titleBarOverlay: {
-      color: "#0a0a0b",
-      symbolColor: "#f4f4f5",
+      color: colors.bg,
+      symbolColor: colors.fg,
       height: 44,
     },
     webPreferences: {

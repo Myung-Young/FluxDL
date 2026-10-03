@@ -165,6 +165,8 @@ export interface WindowChromeController {
   readonly subscribe: (cb: (state: WindowChromeState) => void) => () => void;
   /** Current persisted state (for boot). */
   readonly current: () => WindowState;
+  /** Resolve once the persisted state has been read (idempotent). */
+  readonly ready: () => Promise<WindowState>;
 }
 
 /**
@@ -178,8 +180,11 @@ export function createWindowChrome(deps: {
 }): WindowChromeController {
   const listeners = new Set<(state: WindowChromeState) => void>();
   let state: WindowState = DEFAULT_WINDOW_STATE;
-  void loadWindowState(deps.userDataDir).then((loaded) => {
-    state = loaded;
+  // The boot sequence awaits this so the window is created with the right
+  // colors instead of flashing the default dark chrome (M4.6 light theme).
+  const loaded = loadWindowState(deps.userDataDir).then((value) => {
+    state = value;
+    return value;
   });
 
   const notify = (): void => {
@@ -202,5 +207,6 @@ export function createWindowChrome(deps: {
       };
     },
     current: () => state,
+    ready: () => loaded,
   };
 }

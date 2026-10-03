@@ -6,12 +6,12 @@
   --bg-3: #222228;
   --fg-0: #f4f4f5;
   --fg-1: #a1a1aa;
-  --fg-2: #6b6b76;
+  --fg-2: #8b8b99;
   --accent: #e4e4e7;
   --accent-fg: #09090b;
   --accent-soft: rgb(228 228 231 / 0.1);
-  --border: #27272a;
-  --border-soft: #1d1d21;
+  --border: #3a3a3e;
+  --border-soft: #2a2a2f;
   --danger: #f87171;
   --success: #34d399;
   --warning: #fbbf24;
@@ -26,12 +26,12 @@
   --bg-3: #20203c;
   --fg-0: #eef0ff;
   --fg-1: #a5a8c5;
-  --fg-2: #6f7190;
+  --fg-2: #8a8cae;
   --accent: #818cf8;
   --accent-fg: #0b0b18;
   --accent-soft: rgb(129 140 248 / 0.14);
-  --border: #26264a;
-  --border-soft: #1a1a36;
+  --border: #33335e;
+  --border-soft: #232345;
   --danger: #f87171;
   --success: #34d399;
   --warning: #fbbf24;
@@ -46,17 +46,39 @@
   --bg-3: #302015;
   --fg-0: #fff4e8;
   --fg-1: #c9b3a0;
-  --fg-2: #8a7360;
+  --fg-2: #a08a74;
   --accent: #fb923c;
   --accent-fg: #1c0d02;
   --accent-soft: rgb(251 146 60 / 0.14);
-  --border: #3d2716;
-  --border-soft: #2a1c10;
+  --border: #4d341d;
+  --border-soft: #352415;
   --danger: #f87171;
   --success: #34d399;
   --warning: #fbbf24;
   --shadow-1: 0 1px 2px rgb(0 0 0 / 0.4);
   --shadow-2: 0 8px 28px rgb(0 0 0 / 0.5);
+}
+
+/* Light theme (M4.6). Every pair is contrast-tested in
+   apps/desktop/src/main/tokens.test.ts — do not hand-tune without it. */
+[data-theme="paper"] {
+  --bg-0: #faf9f6;
+  --bg-1: #ffffff;
+  --bg-2: #f1efe9;
+  --bg-3: #e3e0d7;
+  --fg-0: #1c1b19;
+  --fg-1: #55524c;
+  --fg-2: #6b6862;
+  --accent: #1d4ed8;
+  --accent-fg: #ffffff;
+  --accent-soft: rgb(29 78 216 / 0.1);
+  --border: #d6d2c8;
+  --border-soft: #e8e5dc;
+  --danger: #b91c1c;
+  --success: #15803d;
+  --warning: #a16207;
+  --shadow-1: 0 1px 2px rgb(28 27 25 / 0.08);
+  --shadow-2: 0 8px 28px rgb(28 27 25 / 0.12);
 }
 
 :root {
@@ -1229,4 +1251,124 @@ select.input {
 
 .toast-close:hover {
   color: var(--fg-0);
+}
+
+/* ---- forced colors (M4.6): Windows High Contrast / `active` scheme ----
+   In forced-colors mode the OS replaces our palette, so anything that relied
+   on a token for meaning (borders, focus rings, progress fills, badges) has
+   to be re-expressed with system colors. Elements that must keep their own
+   colors opt out explicitly with `forced-color-adjust: none`. */
+@media (forced-colors: active) {
+  :root {
+    --focus-ring: 0 0 0 2px Canvas, 0 0 0 4px Highlight;
+  }
+
+  /* Surfaces */
+  body,
+  .grabber-app,
+  .grabber-titlebar,
+  .grabber-nav,
+  .grabber-card,
+  .stat-tile,
+  .mini-row,
+  .grabber-menu,
+  .grabber-modal .grabber-card,
+  .toast {
+    background: Canvas;
+    color: CanvasText;
+    forced-color-adjust: none;
+  }
+
+  .grabber-card,
+  .mini-row,
+  .stat-tile,
+  .grabber-menu,
+  .toast,
+  .shortcut-row,
+  .entry-row,
+  .chapter-list,
+  .badge {
+    border-color: CanvasText;
+  }
+
+  .grabber-nav,
+  .grabber-titlebar {
+    border-color: CanvasText;
+  }
+
+  .grabber-nav-btn[aria-current="page"],
+  .btn-primary,
+  .grabber-mark,
+  .skip-link,
+  .grabber-nav-btn[aria-current="page"] .grabber-nav-badge {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+
+  .btn,
+  .chip,
+  .input,
+  select.input,
+  .grabber-dot {
+    border-color: ButtonText;
+    color: ButtonText;
+    background: ButtonFace;
+    forced-color-adjust: none;
+  }
+
+  .btn:disabled,
+  .grabber-dot[data-active="false"] {
+    color: GrayText;
+    border-color: GrayText;
+  }
+
+  /* Progress: the OS paints a solid bar, so keep our geometry but let the
+     fill carry Highlight and keep indeterminate animations visible. */
+  .dl-track {
+    border: 1px solid CanvasText;
+    background: Canvas;
+    forced-color-adjust: none;
+  }
+
+  .dl-fill,
+  .stat-bar-fill {
+    background: Highlight;
+    forced-color-adjust: none;
+  }
+
+  .dl-fill.is-indeterminate {
+    background: Highlight;
+    forced-color-adjust: none;
+  }
+
+  .badge,
+  .badge-warn {
+    border: 1px solid CanvasText;
+    color: CanvasText;
+    background: Canvas;
+    forced-color-adjust: none;
+  }
+
+  .grabber-modal {
+    background: Canvas;
+    forced-color-adjust: none;
+  }
+
+  .entry-row[aria-selected="true"],
+  .format-row:has(input:checked) {
+    background: Highlight;
+    color: HighlightText;
+    forced-color-adjust: none;
+  }
+
+  :focus-visible {
+    outline: 2px solid Highlight;
+  }
+
+  .skeleton {
+    animation: none;
+    background: Canvas;
+    border: 1px dashed GrayText;
+  }
 }

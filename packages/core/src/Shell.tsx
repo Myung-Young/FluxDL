@@ -4,6 +4,7 @@ import type { StoreApi } from "zustand";
 import { APP_NAME } from "./branding.js";
 import type { DownloadEngine } from "./engine.js";
 import type { ThemeName } from "./types.js";
+import { THEMES } from "./themes.js";
 import { fadeSwap, pressScale, staggerIn } from "./motion.js";
 import { formatStr, localeTag, resolveLanguage, useStrings } from "./locale.js";
 import { isValidUrl } from "./url.js";
@@ -42,11 +43,6 @@ export interface ShellProps {
   readonly settings: StoreApi<SettingsStoreState>;
   readonly toast: StoreApi<ToastStoreState>;
 }
-const THEMES: ReadonlyArray<{ id: ThemeName; swatch: string }> = [
-  { id: "obsidian", swatch: "#27272a" },
-  { id: "midnight", swatch: "#818cf8" },
-  { id: "ember", swatch: "#fb923c" },
-];
 
 export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX.Element {
   const [view, setView] = useState<ShellView>("home");

@@ -228,6 +228,8 @@ export {
   miniSummary,
 } from "./window.js";
 export type { MiniSummary, WindowChromeState } from "./window.js";
+export { THEMES, THEME_NAMES, isThemeName, themeSwatch } from "./themes.js";
+export type { ThemeDef } from "./themes.js";
 export { DEFAULT_SETTINGS, mergeSettings } from "./settings.js";
 export { filterSettingIds, matchSettingField } from "./settingsFilter.js";
 export type { FilterableField } from "./settingsFilter.js";

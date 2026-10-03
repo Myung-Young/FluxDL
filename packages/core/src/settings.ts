@@ -4,10 +4,10 @@ import type {
   CodecPreference,
   Density,
   Language,
-  ThemeName,
   VideoPreset,
 } from "./types.js";
 import { AUDIO_PRESETS, VIDEO_PRESETS } from "./types.js";
+import { THEME_NAMES } from "./themes.js";
 import { clampConcurrency } from "./queue.js";
 
 /** Defaults when no persisted settings exist yet. */
@@ -42,7 +42,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   historyLimit: 500,
 };
 
-const THEMES: readonly ThemeName[] = ["obsidian", "midnight", "ember"];
 const DENSITIES: readonly Density[] = ["comfortable", "compact"];
 const LANGUAGES: readonly Language[] = ["auto", "en", "ms"];
 const CODECS: readonly CodecPreference[] = ["auto", "h264", "vp9", "av1"];
@@ -142,7 +141,7 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
     sponsorBlock: cleanBool(patch.sponsorBlock, base.sponsorBlock),
     codecPreference: CODECS.includes(codecRaw) ? codecRaw : base.codecPreference,
     skipArchived: cleanBool(patch.skipArchived, base.skipArchived),
-    theme: THEMES.includes(themeRaw) ? themeRaw : base.theme,
+    theme: THEME_NAMES.includes(themeRaw) ? themeRaw : base.theme,
     postDownloadAction: POST_ACTIONS.includes(postRaw) ? postRaw : base.postDownloadAction,
     autoCheckUpdate: cleanBool(patch.autoCheckUpdate, base.autoCheckUpdate),
     onboardingDone: cleanBool(patch.onboardingDone, base.onboardingDone),
