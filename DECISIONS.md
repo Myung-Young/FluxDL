@@ -187,3 +187,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M3.10
 
 - D75: Release v1.3.0. Gates at tag: typecheck, lint (0 warnings), 194 core + 36 desktop tests (live-binary incl.), build, 10/10 Playwright smoke (settings search, `?` dialog, log search covered). Engine stays at 31 methods/channels across v1.3 (no new IPC — all features rode existing channels). `pnpm dist` artifacts verified by size + resources; portable spaces-path GUI pass again deferred (same documented gap — long extraction exceeds automation budgets).
+
+## M4.1
+
+- D76: The queue only pumped on mutations, so boot-hydrated jobs stalled as queued forever and backoff auto-retries never fired on their own (defeating the backoff design). Fix with no new engine methods: `refresh()` pumps after hydrate, the queue store exposes `pump()`, and Shell runs a 1 s tick. The controller drops overlapping ticks via a reentrancy guard (two overlapping pumps could otherwise hand the same job to the engine twice). Timers stay outside the controller per its no-internal-timers design; the tick is cheap and cleaned up on unmount.

@@ -34,6 +34,8 @@ export interface QueueStoreState {
   cancelQueued(): Promise<void>;
   clearFinished(): Promise<void>;
   retryAll(): Promise<void>;
+  /** Drive due starts + backoff retries (reentrancy-guarded, cheap). */
+  pump(): Promise<void>;
 }
 
 export function createQueueStore(
@@ -61,6 +63,9 @@ export function createQueueStore(
       const snapshot = await engine.loadQueue();
       getController(set).hydrate(snapshot);
       set({ jobs: getController(set).getJobs(), ready: true });
+      // Boot-resumed queue must actually start (M4.1): hydrate alone leaves
+      // everything queued forever since nothing else pumps on boot.
+      await getController(set).pump();
     },
     enqueue: async (input) => getController(set).enqueue(input),
     pause: async (id) => {
@@ -101,6 +106,9 @@ export function createQueueStore(
     },
     retryAll: async () => {
       await getController(set).retryAll();
+    },
+    pump: async () => {
+      await getController(set).pump();
     },
   }));
 }

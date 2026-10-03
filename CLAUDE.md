@@ -70,7 +70,8 @@
 - `packages/core/src/aggregate.ts` — aggregate status, speed formatting,
   taskbar gate, `formatWindowTitle()` for the `(N) App` title.
 - `packages/core/src/queueController.ts` — FIFO orchestrator, injected
-  engine + clock, no internal timers (`pump()` drives starts/retries);
+  engine + clock, no internal timers (`pump()` drives starts/retries,
+  reentrancy-guarded for the 1 s Shell tick);
   per-job cookie/preset overrides, remove/reorder, pauseAll/resumeAll,
   cancelQueued, clearFinished, retryAll.
 - `packages/core/src/{batch,identity,aggregate,menu,diagnostics}.ts` — batch

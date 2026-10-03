@@ -165,6 +165,21 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
     document.title = formatWindowTitle(aggregateStatus(jobs).active, APP_NAME);
   }, [jobs]);
 
+  // Keep the queue moving (M4.1): hydrated boot jobs and backoff retries
+  // only start when something pumps. The 1 s tick is cheap and the
+  // controller drops overlapping ticks via its reentrancy guard.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      void queue
+        .getState()
+        .pump()
+        .catch(() => undefined);
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [queue]);
+
   // Error-action deep links (settings section anchors).
   useEffect(() => {
     if (view !== "settings" || pendingSection === null) return;

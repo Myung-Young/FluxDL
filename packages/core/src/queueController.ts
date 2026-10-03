@@ -53,6 +53,8 @@ export class QueueController {
   private readonly engineIds = new Map<string, string>();
   private readonly revEngineIds = new Map<string, string>();
   private readonly unsubscribe: () => void;
+  /** Reentrancy guard for pump() (M4.1). */
+  private pumping = false;
 
   constructor(opts: QueueControllerOptions) {
     this.engine = opts.engine;
@@ -281,9 +283,21 @@ export class QueueController {
 
   /**
    * Start due jobs while slots are free + auto-retry eligible errors.
-   * Safe to call after any mutation or clock advance.
+   * Safe to call after any mutation or clock advance. Reentrancy-guarded
+   * (M4.1): the 1 s Shell tick may overlap an in-flight pump, and two
+   * overlapping pumps could hand the same job to the engine twice.
    */
   async pump(): Promise<void> {
+    if (this.pumping) return;
+    this.pumping = true;
+    try {
+      await this.pumpInner();
+    } finally {
+      this.pumping = false;
+    }
+  }
+
+  private async pumpInner(): Promise<void> {
     const now = this.clock.now();
     for (const job of this.getJobs()) {
       if (shouldRetry(job, this.maxRetries, now)) {

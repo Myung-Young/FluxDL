@@ -464,4 +464,41 @@ describe("QueueController", () => {
     expect(fake.started.length).toBeGreaterThanOrEqual(2);
     ctrl.dispose();
   });
+
+  it("drops an overlapping pump so one job starts once (M4.1)", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started: DownloadJobInput[] = [];
+    const slow: QueueEngine = {
+      start: (job) => {
+        started.push(job);
+        return gate.then(() => "eng-1");
+      },
+      pause: () => Promise.resolve(),
+      resume: () => Promise.resolve(),
+      cancel: () => Promise.resolve(),
+      onProgress: () => () => undefined,
+      saveQueue: () => Promise.resolve(),
+      appendHistory: () => Promise.resolve(),
+    };
+    const ctrl = new QueueController({
+      engine: slow,
+      concurrency: 1,
+      maxRetries: 3,
+      createId: () => "q1",
+    });
+    const pending = ctrl.enqueue(input);
+    await vi.waitFor(() => {
+      expect(started).toHaveLength(1);
+    });
+    await ctrl.pump();
+    await ctrl.pump();
+    release();
+    await pending;
+    expect(started).toHaveLength(1);
+    expect(ctrl.getJobs()[0]?.status).toBe("downloading");
+    ctrl.dispose();
+  });
 });
