@@ -267,6 +267,18 @@ export class QueueController {
     await this.pump();
   }
 
+  /** Manual retry for every failed job (M3.2): fresh attempts, FIFO order. */
+  async retryAll(): Promise<void> {
+    const ids = [...this.jobs.values()]
+      .filter((j) => j.status === "error")
+      .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1))
+      .map((j) => j.id);
+    for (const id of ids) {
+      if (this.jobs.get(id)?.status !== "error") continue;
+      await this.retry(id);
+    }
+  }
+
   /**
    * Start due jobs while slots are free + auto-retry eligible errors.
    * Safe to call after any mutation or clock advance.

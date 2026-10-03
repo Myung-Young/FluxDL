@@ -33,6 +33,7 @@ export interface QueueStoreState {
   resumeAll(): Promise<void>;
   cancelQueued(): Promise<void>;
   clearFinished(): Promise<void>;
+  retryAll(): Promise<void>;
 }
 
 export function createQueueStore(
@@ -97,6 +98,9 @@ export function createQueueStore(
     },
     clearFinished: async () => {
       await getController(set).clearFinished();
+    },
+    retryAll: async () => {
+      await getController(set).retryAll();
     },
   }));
 }

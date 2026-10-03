@@ -442,4 +442,26 @@ describe("QueueController", () => {
     expect(fake.started[0]?.videoId).toBe("abc123");
     ctrl.dispose();
   });
+
+  it("retryAll resets every failed job in FIFO order (M3.2)", async () => {
+    const fake = makeFake();
+    let n = 0;
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 1,
+      maxRetries: 3,
+      clock: { now: () => 0 },
+      createId: () => `q${String((n += 1))}`,
+    });
+    await ctrl.enqueue({ ...input, title: "A" });
+    await ctrl.enqueue({ ...input, title: "B" });
+    fake.fire({ ...downloading("eng-1"), stage: "error" });
+    await vi.waitFor(() => {
+      expect(ctrl.getJobs().filter((j) => j.status === "error")).toHaveLength(1);
+    });
+    await ctrl.retryAll();
+    expect(ctrl.getJobs().filter((j) => j.status === "error")).toHaveLength(0);
+    expect(fake.started.length).toBeGreaterThanOrEqual(2);
+    ctrl.dispose();
+  });
 });

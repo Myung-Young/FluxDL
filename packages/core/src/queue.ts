@@ -250,6 +250,17 @@ export function shouldRetry(job: DownloadJob, maxRetries: number, now: number): 
   return isDue(job, now);
 }
 
+/**
+ * Seconds until the scheduled auto-retry (M3.2). Null when the job is not
+ * an error with a future backoff deadline — the card then shows the plain
+ * attempt count instead of a ticking countdown.
+ */
+export function retryInSeconds(job: DownloadJob, now: number): number | null {
+  if (job.status !== "error" || job.nextRetryAt === null) return null;
+  const ms = job.nextRetryAt - now;
+  return ms > 0 ? Math.ceil(ms / 1000) : null;
+}
+
 /** Factory for new queue entries (status queued, zero attempts). */export function makeJob(id: string, input: DownloadJobInput, createdAt: number): DownloadJob {
   return {
     id,

@@ -85,9 +85,11 @@ describe("availableCommands", () => {
       availableCommands(BUILTIN_COMMANDS, c).map((d) => d.id);
     expect(ids(ctx([]))).not.toContain("pause-all");
     expect(ids(ctx([]))).not.toContain("resume-all");
+    expect(ids(ctx([]))).not.toContain("retry-all");
     expect(ids(ctx([]))).not.toContain("clear-finished");
     expect(ids(ctx(["downloading"]))).toContain("pause-all");
     expect(ids(ctx(["paused"]))).toContain("resume-all");
+    expect(ids(ctx(["error"]))).toContain("retry-all");
     expect(ids(ctx(["error"]))).toContain("clear-finished");
     // View/theme/settings commands are always available.
     expect(ids(ctx([]))).toContain("go-home");

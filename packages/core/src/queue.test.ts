@@ -9,6 +9,7 @@ import {
   makeJob,
   pruneHistory,
   reorder,
+  retryInSeconds,
   searchHistory,
   selectNextToStart,
   shouldRetry,
@@ -200,5 +201,14 @@ describe("queue state machine", () => {
     const times = moved.map((j) => j.createdAt);
     expect(new Set(times).size).toBe(3);
     expect(selectNextToStart(moved, 5, 0)?.id).toBe("c");
+  });
+
+  it("reports retry countdown seconds only for future backoff deadlines", () => {
+    const failed = transition(jobAt("downloading", 1, "f"), "fail", { error: "x", now: 0 });
+    expect(failed.nextRetryAt).toBe(2000);
+    expect(retryInSeconds(failed, 0)).toBe(2);
+    expect(retryInSeconds(failed, 1500)).toBe(1);
+    expect(retryInSeconds(failed, 2000)).toBeNull();
+    expect(retryInSeconds(jobAt("queued"), 0)).toBeNull();
   });
 });

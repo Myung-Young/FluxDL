@@ -66,10 +66,11 @@
 - `packages/core/src/queue.ts` — transition table, FIFO selector, backoff,
   history search/prune, `reorder()` (createdAt permutation, queued only).
   Illegal transitions throw. `paused` accepts progress/done (resume lands).
+  `retryInSeconds()` reports the live backoff countdown.
 - `packages/core/src/queueController.ts` — FIFO orchestrator, injected
   engine + clock, no internal timers (`pump()` drives starts/retries);
   per-job cookie/preset overrides, remove/reorder, pauseAll/resumeAll,
-  cancelQueued, clearFinished.
+  cancelQueued, clearFinished, retryAll.
 - `packages/core/src/{batch,identity,aggregate,menu,diagnostics}.ts` — batch
   parse/state, duplicate guard, aggregate status, menu matrix, diagnostics.
 - `packages/core/src/{cache,color,playlist,health,locale}.ts` — analyze LRU,

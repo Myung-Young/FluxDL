@@ -151,3 +151,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M3.1
 
 - D66: Destination recovery without new channels. Real bug: `extractor`/`videoId` were dropped twice (queueController.pump + DesktopEngine.start rebuilds input), so playlist identity never reached main — fixed both with a carry-over regression test. Mojibake fallback is main-side only when the reported path contains U+FFFD and is missing on disk (directory scan ≤500 files, `[id]` match then newest recent media); otherwise the Missing badge + Locate still owns the miss, so no false re-attribution. Pure picker lives in core `destination.ts` (tested).
+
+## M3.2
+
+- D67: Retry visibility + bulk retry, no new engine methods. `retryInSeconds(job, now)` (pure, tested) drives a 1s-ticking "Retrying in Ns · attempt A" line on error cards (past-due shows "Attempt A"); the ticking interval only mounts while a future deadline exists. `QueueController.retryAll()` re-queues every error job FIFO via the existing `retry()` (attempts reset), exposed through the queue store and as a palette command + bulk button. Strings added EN+MS in parity (downloads.retryAll/retryIn/attempt, commands.retryAll).

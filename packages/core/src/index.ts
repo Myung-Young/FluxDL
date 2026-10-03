@@ -181,13 +181,13 @@ export {
   activeCount,
   selectNextToStart,
   shouldRetry,
+  retryInSeconds,
   makeJob,
   isFinished,
   searchHistory,
   pruneHistory,
   reorder,
-} from "./queue.js";
-export type { QueueEvent, TransitionOptions, EngineProgressLike } from "./queue.js";
+} from "./queue.js";export type { QueueEvent, TransitionOptions, EngineProgressLike } from "./queue.js";
 export { QueueController } from "./queueController.js";
 export type { QueueEngine, QueueClock, QueueControllerOptions } from "./queueController.js";
 export { DEFAULT_SETTINGS, mergeSettings } from "./settings.js";

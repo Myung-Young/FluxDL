@@ -5,6 +5,8 @@ import type { DownloadEngine } from "./engine.js";
 import type { DownloadJob } from "./types.js";
 import type { Strings } from "./strings.js";
 import { useStrings } from "./locale.js";
+import { formatStr } from "./locale.js";
+import { retryInSeconds } from "./queue.js";
 import { sendNotification } from "./notify.js";
 import { flipShift, pressScale, tweenProgress } from "./motion.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
@@ -59,6 +61,7 @@ function Card({
   queuePos,
   onMove,
   strings,
+  now,
 }: {
   job: DownloadJob;
   engine: DownloadEngine;
@@ -71,6 +74,7 @@ function Card({
   queuePos: { index: number; total: number } | null;
   onMove: (id: string, toIndex: number) => void;
   strings: Strings;
+  now: number;
 }): React.JSX.Element {
   const actions = queue.getState();
   const run = (fn: () => Promise<void>): void => {
@@ -110,6 +114,19 @@ function Card({
           {job.error}
         </p>
       )}
+      {job.status === "error" &&
+        (() => {
+          const secs = retryInSeconds(job, now);
+          const text =
+            secs !== null
+              ? formatStr(strings.downloads.retryIn, { n: secs, a: job.attempts })
+              : formatStr(strings.downloads.attempt, { a: job.attempts });
+          return (
+            <p className="muted" role="status">
+              {text}
+            </p>
+          );
+        })()}
       {job.status === "error" && (
         <ErrorActionButtons
           job={job}
@@ -246,6 +263,20 @@ export function Downloads({
   } | null>(null);
 
   const queuedIds = jobs.filter((j) => j.status === "queued").map((j) => j.id);
+
+  const hasCountdown = jobs.some(
+    (j) => j.status === "error" && j.nextRetryAt !== null && j.nextRetryAt > Date.now(),
+  );
+  const [now, setNow] = useState<number>(() => Date.now());
+  useEffect(() => {
+    if (!hasCountdown) return;
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [hasCountdown]);
 
   const moveJob = (id: string, toIndex: number): void => {
     queue.getState().reorder(id, toIndex).catch(() => undefined);
@@ -507,6 +538,16 @@ export function Downloads({
             className="btn btn-small"
             disabled={!hasErrors}
             onClick={() => {
+              queue.getState().retryAll().catch(failBulk);
+            }}
+          >
+            {S.downloads.retryAll}
+          </button>
+          <button
+            type="button"
+            className="btn btn-small"
+            disabled={!hasErrors}
+            onClick={() => {
               queue.getState().clearFinished().catch(failBulk);
             }}
           >
@@ -543,6 +584,7 @@ export function Downloads({
                 toast={toast}
                 navigate={navigate}
                 strings={S}
+                now={now}
                 onMenu={(target, x, y) => {
                   setMenu({ job: target, x, y });
                 }}

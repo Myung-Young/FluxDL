@@ -193,6 +193,15 @@ export const BUILTIN_COMMANDS: readonly CommandDef[] = [
     },
   },
   {
+    id: "retry-all",
+    labelKey: "retryAll",
+    keywords: ["retry", "all", "failed", "errors", "cuba", "semula", "semua", "gagal"],
+    available: (ctx) => ctx.jobs.some((j) => j.status === "error"),
+    run: (ctx) => {
+      void ctx.queue.getState().retryAll();
+    },
+  },
+  {
     id: "clear-finished",
     labelKey: "clearFinished",
     keywords: ["clear", "finished", "done", "errors", "kosong", "siap"],
