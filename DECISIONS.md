@@ -103,3 +103,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M1.8
 
 - D54: Diagnostics report is pure (`buildDiagnostics` + redaction unit-tested against proxy creds, secret params, usernames-in-paths, cookie basenames). Secrets-in-URLs are masked ALWAYS; whole URLs only with the opt-in toggle. Platform details ride optional `EngineVersions` fields (no new channel; old mocks show "unknown"). Report headers come from strings.ts (localizable in v1.2); values are dynamic. Save uses a Blob download (no channel, no Node). E2E caught mock drift: the mock settings missed `cookiesFile` and crashed the builder — mock now mirrors DEFAULT_SETTINGS with a comment pointing at it.
+
+## M1.9
+
+- D55: Release v1.1.0. All gates green at tag time: typecheck, lint (0 warnings), 128 core + 30 desktop tests (incl. live-binary integration: analyze, kill/resume, Compatible ffprobe, selector proof, archive skip), build, 6/6 Playwright smoke. `pnpm dist` produced FluxDL-Setup-1.1.0.exe + FluxDL-Portable-1.1.0.exe (~198MB each, same class as 0.1.0). Gap (rule 12): the portable-from-spaces-path GUI pass did not complete in-session — the portable extract+boot exceeded automation timeouts repeatedly, so launch → analyze → real download on the packaged portable is UNVERIFIED; same code paths are live-tested, but run the portable once manually before distributing.

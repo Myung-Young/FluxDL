@@ -1,8 +1,10 @@
 # FluxDL
 
-Premium dark-UI GUI for the yt-dlp CLI. Phase 1 delivers a Windows `.exe`
-(per-user NSIS installer + single portable exe) with queueing, themes,
-self-updating engine binaries, and persisted settings/history.
+Premium dark-UI GUI for the yt-dlp CLI. Windows `.exe` (per-user NSIS
+installer + single portable exe) with queueing, themes, codec-aware presets,
+batch paste, duplicate guard + download archive, actionable errors, taskbar
+progress, context menus, bulk queue control, diagnostics, self-updating
+engine binaries, and persisted settings/history.
 
 > You are responsible for respecting copyright and each site's terms.
 > Only download content you own or are allowed to keep.
@@ -44,8 +46,8 @@ pnpm dist            # NSIS + portable into /release (also gitignored)
 
 Artifacts (`/release`):
 
-- `FluxDL-Setup-0.1.0.exe` — per-user NSIS wizard, no admin, install dir changeable
-- `FluxDL-Portable-0.1.0.exe` — single exe, runs from any folder (even with spaces)
+- `FluxDL-Setup-1.1.0.exe` — per-user NSIS wizard, no admin, install dir changeable
+- `FluxDL-Portable-1.1.0.exe` — single exe, runs from any folder (even with spaces)
 
 First run copies `yt-dlp.exe` into userData so self-update (`-U`) works under
 Program Files; `ffmpeg`/`ffprobe` resolve from the bundled copy with a PATH
@@ -60,31 +62,35 @@ packages/core/        shared UI + state, talks ONLY to DownloadEngine
   src/types.ts        MediaInfo, FormatOption, DownloadJob, JobStatus, AppSettings
   src/engine.ts       DownloadEngine interface + IPC_CHANNELS (single map)
   src/url|args|progress|errors|media.ts   pure engine logic, unit-tested
-  src/queue.ts        state machine (FIFO, concurrency 1–5, backoff)
+  src/batch|identity|aggregate|menu|diagnostics.ts  batch, dup guard, status, menu, diag
+  src/queue.ts        state machine (FIFO, concurrency 1–5, backoff, reorder)
   src/queueController.ts  engine-agnostic orchestrator (injected clock/engine)
   src/settings.ts     defaults + sanitizing merge
   src/stores.ts       zustand queue/settings stores over DownloadEngine
   src/Home|Downloads|Library|SettingsScreen|Logs.tsx  the five screens
+  src/BatchPanel|DuplicatePrompt|ErrorActions|ContextMenu|JobMenu  feature UI
   src/Shell.tsx       frameless titlebar, sidebar, themes, shortcuts, toasts
   src/motion.ts       GSAP helpers (reduced-motion safe)
   src/strings.ts      every user-facing string, EN
   src/tokens.css      design tokens + 3 [data-theme]s
   src/assets/fonts/   self-hosted Inter Variable (OFL)
 apps/desktop/         Electron shell + DesktopEngine (child_process, args arrays only)
-  src/main/           window/CSP/tray, binaries resolve, engine, persist, IPC
+  src/main/           window/CSP/tray/taskbar, binaries resolve+repair, engine, persist, IPC
   src/preload/        typed window.grabber bridge (CJS for the sandbox)
   src/renderer/       thin mount of core App
-  e2e/smoke.e2e.ts    Playwright: launch → mocked analyze → queue item
-scripts/              fetch-binaries.mjs, make-tray-icon.mjs, make-app-icon.mjs
+  e2e/smoke.e2e.ts    Playwright: launch → analyze → queue → batch → guard → repair → menu → bulk
+  fixtures/v1.0/      v1.0 settings/queue/history samples (back-compat contract)
+scripts/              fetch-binaries.mjs, make-tray-icon.mjs, make-app-icon.mjs,
+                      make-overlay-dot.mjs
 ```
 
 Further reading: `AGENTS.md` (working rules), `CLAUDE.md` (conventions/commands/map),
-`DECISIONS.md` (why things are the way they are), `PHASE2_NOTES.md` (mobile contract).
+`DECISIONS.md` (why things are the way they are), `CHANGELOG.md` (release notes).
 
 ## Conventions (short)
 
 - TypeScript strict, no `any`; conventional commits; surgical edits only.
 - Zero Electron/Node imports in `packages/core` (eslint-enforced).
 - Never spawn with `shell: true`; every URL validated before the engine.
-- After every milestone: gates green → ≤5-line summary → commit. No mobile
-  scaffolding until someone types `GO PHASE 2`.
+- After every milestone: gates green → ≤5-line summary → commit. Mobile is
+  out of scope (cancelled permanently).
