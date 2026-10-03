@@ -30,6 +30,7 @@ async function installMock(page: Page): Promise<void> {
       codecPreference: "auto",
       skipArchived: true,
       density: "comfortable",
+      accentOverride: null,
       onboardingDone: true,
       defaultPreset: { kind: "video", videoPreset: "1080", audioPreset: "MP3", rawFormat: null },
       theme: "obsidian",

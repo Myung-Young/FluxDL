@@ -59,9 +59,14 @@ describe("mergeSettings", () => {
   it("defaults comfortable density and sanitizes it", () => {
     expect(DEFAULT_SETTINGS.density).toBe("comfortable");
     expect(DEFAULT_SETTINGS.thumbnailAccent).toBe(true);
+    expect(DEFAULT_SETTINGS.accentOverride).toBeNull();
     expect(mergeSettings(DEFAULT_SETTINGS, { density: "compact" }).density).toBe("compact");
     expect(mergeSettings(DEFAULT_SETTINGS, { density: "cozy" as never }).density).toBe(
       "comfortable",
     );
+    expect(mergeSettings(DEFAULT_SETTINGS, { accentOverride: "#818CF8" }).accentOverride).toBe(
+      "#818cf8",
+    );
+    expect(mergeSettings(DEFAULT_SETTINGS, { accentOverride: "red" }).accentOverride).toBeNull();
   });
 });

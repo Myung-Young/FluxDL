@@ -127,3 +127,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M2.5
 
 - D60: Density is a spacing/typography token switch (`[data-density]`) plus a horizontal list-row layout for Downloads/Library cards in compact; Shell sets the dataset like theme. Palette toggle-density command + Settings segmented control. Default comfortable; sanitized like other enums.
+
+## M2.6
+
+- D61: Accent picker. `deriveAccentScale` builds base/hover/active/ghost/on-accent from one hex; on-accent (white/black, higher contrast wins) is enforced to 4.5:1 by shifting lightness, `adjusted` marks auto-changes, `warning` flags the still-failing. 8 swatches + validated custom hex + reset-to-theme; Shell applies --accent/--accent-fg/--accent-soft/--accent-hover/--accent-active (primary buttons consume hover/active). User accent vs theme grounds is NOT second-guessed — only the on-accent text pair is enforced.

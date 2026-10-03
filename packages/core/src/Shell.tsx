@@ -24,6 +24,7 @@ import {
   formatSpeedBps,
   shouldSendAggregate,
 } from "./aggregate.js";
+import { deriveAccentScale } from "./color.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 import type { ToastStoreState } from "./toast.js";
 import "./tokens.css";
@@ -72,6 +73,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   const jobs = useStore(queue, (s) => s.jobs);
   const theme = useStore(settings, (s) => s.settings.theme);
   const density = useStore(settings, (s) => s.settings.density);
+  const accentOverride = useStore(settings, (s) => s.settings.accentOverride);
   const navRef = useRef<HTMLElement | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
 
@@ -93,6 +95,26 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   useEffect(() => {
     document.documentElement.dataset["density"] = density;
   }, [density]);
+
+  // User accent override (M2.6): re-checked pairs, applied as CSS vars.
+  useEffect(() => {
+    const root = document.documentElement;
+    const vars = ["--accent", "--accent-fg", "--accent-soft", "--accent-hover", "--accent-active"];
+    if (accentOverride === null) {
+      for (const v of vars) root.style.removeProperty(v);
+      return;
+    }
+    const scale = deriveAccentScale(accentOverride);
+    if (scale === null) {
+      for (const v of vars) root.style.removeProperty(v);
+      return;
+    }
+    root.style.setProperty("--accent", scale.base);
+    root.style.setProperty("--accent-fg", scale.onAccent);
+    root.style.setProperty("--accent-soft", scale.ghost);
+    root.style.setProperty("--accent-hover", scale.hover);
+    root.style.setProperty("--accent-active", scale.active);
+  }, [accentOverride]);
 
   useEffect(() => {
     if (navRef.current !== null) staggerIn(navRef.current, "[data-nav]");

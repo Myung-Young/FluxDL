@@ -188,8 +188,7 @@ function minContrast(hex: string, grounds: readonly string[]): number {
  * lightness for the variant closest to the source that still reaches 4.5:1
  * against every ground (best effort when unreachable).
  */
-export function deriveAccent(rgb: Rgb, grounds: readonly string[]): string {
-  const { h, s, l } = rgbToHsl(rgb);
+export function deriveAccent(rgb: Rgb, grounds: readonly string[]): string {  const { h, s, l } = rgbToHsl(rgb);
   const sat = clamp(s, 0.35, 0.8);
   const origL = clamp(l, 0.45, 0.65);
   let bestHex = rgbToHex(hslToRgb({ h, s: sat, l: origL }));
@@ -213,4 +212,62 @@ export function deriveAccent(rgb: Rgb, grounds: readonly string[]): string {
     }
   }
   return bestDist === Number.POSITIVE_INFINITY ? fallbackHex : bestHex;
+}
+
+export interface AccentScale {
+  readonly base: string;
+  readonly hover: string;
+  readonly active: string;
+  /** Base at ~15% alpha for ghost fills (hex with alpha). */
+  readonly ghost: string;
+  /** Text colour for use on the accent (contrast-enforced). */
+  readonly onAccent: string;
+  /** True when the base lightness was auto-adjusted for contrast. */
+  readonly adjusted: boolean;
+  /** True when on-accent contrast is still below 4.5:1 after adjustment. */
+  readonly warning: boolean;
+}
+
+function shiftLightness(hsl: Hsl, delta: number): Hsl {
+  return { h: hsl.h, s: hsl.s, l: clamp(hsl.l + delta, 0, 1) };
+}
+
+/**
+ * Build a full accent scale from a user hex colour. The on-accent text
+ * colour (white/black, whichever contrasts more) is enforced to 4.5:1 by
+ * shifting the base lightness away from the text; `warning` flags colours
+ * that still fail. Returns null for invalid input.
+ */
+export function deriveAccentScale(hex: string): AccentScale | null {
+  const parsed = hexToRgb(hex);
+  if (parsed === null) return null;
+  const start = rgbToHsl(parsed);
+  const whiteOnStart = contrastRatio("#ffffff", rgbToHex(parsed));
+  const blackOnStart = contrastRatio("#000000", rgbToHex(parsed));
+  const text: "#ffffff" | "#000000" = whiteOnStart >= blackOnStart ? "#ffffff" : "#000000";
+  const finish = (hsl: Hsl, wasAdjusted: boolean): AccentScale => {
+    const base = rgbToHex(hslToRgb(hsl));
+    return {
+      base,
+      hover: rgbToHex(hslToRgb(shiftLightness(hsl, 0.07))),
+      active: rgbToHex(hslToRgb(shiftLightness(hsl, -0.07))),
+      ghost: `${base}26`,
+      onAccent: text,
+      adjusted: wasAdjusted,
+      warning: contrastRatio(text, base) < 4.5,
+    };
+  };
+  if (Math.max(whiteOnStart, blackOnStart) >= 4.5) {
+    return finish(start, false);
+  }
+  // Move away from the text colour: darken under white text, lighten under black.
+  const direction = text === "#ffffff" ? -1 : 1;
+  let hsl = { ...start, l: clamp(start.l, 0.12, 0.88) };
+  for (let i = 0; i < 40; i += 1) {
+    if (contrastRatio(text, rgbToHex(hslToRgb(hsl))) >= 4.5) break;
+    const next = clamp(hsl.l + direction * 0.02, 0.05, 0.95);
+    if (next === hsl.l) break;
+    hsl = { ...hsl, l: next };
+  }
+  return finish(hsl, true);
 }

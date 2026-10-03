@@ -447,8 +447,11 @@ select.input {
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent);
-  filter: brightness(1.08);
+  background: var(--accent-hover, var(--accent));
+}
+
+.btn-primary:active:not(:disabled) {
+  background: var(--accent-active, var(--accent));
 }
 
 .btn-small {
@@ -859,6 +862,18 @@ select.input {
   background: var(--accent-soft);
   color: var(--fg-0);
   border-color: var(--accent);
+}
+
+.chip.swatch {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.chip.swatch[aria-pressed="true"] {
+  outline: 2px solid var(--fg-0);
+  outline-offset: 2px;
 }
 
 .toast {

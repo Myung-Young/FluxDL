@@ -4,7 +4,19 @@ import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
 import type { AppSettings, Density, ThemeName } from "./types.js";
 import { STRINGS } from "./strings.js";
+import { deriveAccentScale } from "./color.js";
 import type { SettingsStoreState } from "./stores.js";
+
+const ACCENT_SWATCHES: readonly string[] = [
+  "#818cf8",
+  "#fb923c",
+  "#e4e4e7",
+  "#34d399",
+  "#38bdf8",
+  "#f472b6",
+  "#facc15",
+  "#a78bfa",
+];
 
 export interface SettingsScreenProps {
   readonly engine: DownloadEngine;
@@ -348,8 +360,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
 
         <span className="field-label" id="set-density-label">
           {STRINGS.settings.density}
-        </span>
-        <div className="chip-row" role="group" aria-labelledby="set-density-label">
+        </span>        <div className="chip-row" role="group" aria-labelledby="set-density-label">
           {(
             [
               ["comfortable", STRINGS.settings.densityComfortable],
@@ -369,6 +380,60 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
             </button>
           ))}
         </div>
+
+        <span className="field-label" id="set-accent-label">
+          {STRINGS.settings.accent}
+        </span>
+        <div className="chip-row" role="group" aria-labelledby="set-accent-label">
+          {ACCENT_SWATCHES.map((hex) => (
+            <button
+              key={hex}
+              type="button"
+              className="chip swatch"
+              aria-pressed={saved.accentOverride === hex}
+              aria-label={hex}
+              title={hex}
+              style={{ background: hex }}
+              onClick={() => {
+                save({ accentOverride: hex });
+              }}
+            />
+          ))}
+        </div>
+        <div className="url-row">
+          <input
+            id="set-accent-custom"
+            key={saved.accentOverride ?? "none"}
+            className="input"
+            defaultValue={saved.accentOverride ?? ""}
+            placeholder={STRINGS.settings.accentCustom}
+            spellCheck={false}
+            aria-label={STRINGS.settings.accentCustom}
+            onBlur={(e) => {
+              const v = e.target.value.trim().toLowerCase();
+              if (v.length === 0) {
+                save({ accentOverride: null });
+              } else if (/^#[0-9a-f]{6}$/.test(v)) {
+                save({ accentOverride: v });
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              save({ accentOverride: null });
+            }}
+          >
+            {STRINGS.settings.accentReset}
+          </button>
+        </div>
+        {saved.accentOverride !== null &&
+          (deriveAccentScale(saved.accentOverride)?.warning ?? false) && (
+            <p className="note" role="status">
+              {STRINGS.settings.accentWarning}
+            </p>
+          )}
 
         <label className="field-label" htmlFor="set-post">
           {STRINGS.settings.postAction}

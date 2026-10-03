@@ -34,6 +34,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   analyzeTimeoutSec: 60,
   thumbnailAccent: true,
   density: "comfortable",
+  accentOverride: null,
 };
 
 const THEMES: readonly ThemeName[] = ["obsidian", "midnight", "ember"];
@@ -68,6 +69,12 @@ function cleanBool(value: unknown, fallback: boolean): boolean {
 function clampTimeoutSec(n: unknown): number {
   if (typeof n !== "number" || !Number.isFinite(n)) return 60;
   return Math.min(300, Math.max(10, Math.floor(n)));
+}
+
+function cleanAccentOverride(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const t = value.trim();
+  return /^#[0-9a-f]{6}$/i.test(t) ? t.toLowerCase() : null;
 }
 
 function cleanPreset(
@@ -147,5 +154,9 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
         : clampTimeoutSec(patch.analyzeTimeoutSec),
     thumbnailAccent: cleanBool(patch.thumbnailAccent, base.thumbnailAccent),
     density: DENSITIES.includes(densityRaw) ? densityRaw : base.density,
+    accentOverride:
+      patch.accentOverride === undefined
+        ? base.accentOverride
+        : cleanAccentOverride(patch.accentOverride),
   };
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   contrastRatio,
   deriveAccent,
+  deriveAccentScale,
   dominantColor,
   hexToRgb,
   hslToRgb,
@@ -9,7 +10,6 @@ import {
   rgbToHsl,
   type Rgb,
 } from "./color.js";
-
 const DARK_GROUNDS = ["#121214", "#0a0a0b"];
 
 function solid(rgb: Rgb, n: number): number[] {
@@ -72,5 +72,43 @@ describe("contrast", () => {
     const hex = deriveAccent({ r: 128, g: 128, b: 128 }, DARK_GROUNDS);
     const { s } = rgbToHsl(hexToRgb(hex) ?? { r: 0, g: 0, b: 0 });
     expect(s).toBeGreaterThan(0.3);
+  });
+});
+
+describe("deriveAccentScale", () => {
+  it("builds a full scale with enforced on-accent contrast", () => {
+    const scale = deriveAccentScale("#818cf8");
+    expect(scale).not.toBeNull();
+    expect(scale?.adjusted).toBe(false);
+    expect(scale?.warning).toBe(false);
+    expect(scale?.ghost).toMatch(/^#[0-9a-f]{8}$/);
+    expect(scale?.hover).not.toBe(scale?.base);
+    expect(scale?.active).not.toBe(scale?.base);
+    expect(contrastRatio(scale?.onAccent ?? "#fff", scale?.base ?? "#000")).toBeGreaterThanOrEqual(
+      4.5,
+    );
+  });
+
+  it("auto-adjusts low-contrast colours and flags the hopeless ones", () => {
+    const mid = deriveAccentScale("#767676");
+    expect(mid).not.toBeNull();
+    expect(contrastRatio(mid?.onAccent ?? "#fff", mid?.base ?? "#000")).toBeGreaterThanOrEqual(
+      4.5,
+    );
+    // Property: every curated swatch either passes or warns.
+    const swatches = ["#818cf8", "#fb923c", "#e4e4e7", "#34d399", "#38bdf8", "#f472b6", "#facc15", "#a78bfa"];
+    for (const hex of swatches) {
+      const scale = deriveAccentScale(hex);
+      expect(scale).not.toBeNull();
+      const ratio = contrastRatio(scale?.onAccent ?? "#fff", scale?.base ?? "#000");
+      expect(ratio >= 4.5 || scale?.warning === true).toBe(true);
+    }
+  });
+
+  it("rejects invalid input", () => {
+    expect(deriveAccentScale("nope")).toBeNull();
+    expect(deriveAccentScale("#12")).toBeNull();
+    expect(deriveAccentScale("")).toBeNull();
+    expect(deriveAccentScale("#gggggg")).toBeNull();
   });
 });

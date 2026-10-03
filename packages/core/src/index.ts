@@ -95,13 +95,14 @@ export { readClipboardText, writeClipboardText } from "./clipboard.js";
 export {
   contrastRatio,
   deriveAccent,
+  deriveAccentScale,
   dominantColor,
   hexToRgb,
   hslToRgb,
   rgbToHex,
   rgbToHsl,
 } from "./color.js";
-export type { Hsl, Rgb } from "./color.js";
+export type { AccentScale, Hsl, Rgb } from "./color.js";
 export { LruCache } from "./cache.js";
 export type { CacheClock } from "./cache.js";
 export {

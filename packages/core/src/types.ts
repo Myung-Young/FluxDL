@@ -144,4 +144,6 @@ export interface AppSettings {
   readonly thumbnailAccent: boolean;
   /** Spacing/typography density (M2.5). */
   readonly density: Density;
+  /** User accent override hex (#rrggbb) or null for theme default (M2.6). */
+  readonly accentOverride: string | null;
 }
