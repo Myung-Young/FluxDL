@@ -3,6 +3,59 @@
 All notable changes to FluxDL are documented here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.0] — 2026-10-03
+
+UX and UI polish: command palette, onboarding, faster analyze, dynamic
+accents, density, accent picker, smarter playlists, Malay language,
+library health.
+
+### Added
+
+- Command palette (Ctrl+K): fuzzy search with recency boost over paste/
+  analyze, per-view navigation, theme switching, engine update, downloads
+  folder, pause/resume all, clear finished, and Settings deep links.
+  Combobox/listbox pattern, ignored inside text fields.
+- First-run onboarding: 3 steps (folder, theme, default preset) with an
+  engine status check; skippable, never blocking, re-runnable from
+  Settings. New `defaultPreset` setting (Compatible MP4 out of the box).
+- Faster-feeling analyze: LRU MediaInfo cache (30 entries, 10-min TTL),
+  CSS skeleton shimmer, cancel (button/Esc, process killed), configurable
+  timeout (default 60 s), manual Re-analyze bypass.
+- Dynamic thumbnail accent: dominant colour extracted main-side (median-cut,
+  BGRA order verified empirically), contrast-clamped to 4.5:1, scoped to
+  the preview card with a smooth tween. Toggleable, default ON.
+- Density toggle: comfortable/compact via tokens plus a horizontal list-row
+  layout for Downloads/Library in compact. Palette command + Settings.
+- Accent colour picker: 8 swatches + validated custom hex on top of the 3
+  themes, full hover/active/ghost/on-accent scale with auto-adjust and a
+  low-contrast warning. Reset to theme default.
+- Smarter playlists: already-downloaded badges (archive + disk, bulk
+  checked), hide toggle, title filter, per-entry preset overrides,
+  automatic subfolders with Windows-sanitized names, virtualized entry
+  lists at 200+.
+- Bahasa Melayu + English: full locale dictionaries with key-parity
+  typecheck, interpolation, plural helper, Intl dates/numbers, auto (system)
+  language setting, localized error messages (main resolves via OS locale).
+- Library health: bulk file checks in chunks on open, Missing badges with
+  Locate (file picker, record updated) / Remove / Re-download, virtualized
+  list at 200 rows, ~100 ms debounced search, keep-last-N history prune
+  (default 500).
+
+### Fixed
+
+- Resume after pause now recovers on progress/done events (was: stuck
+  "paused" forever).
+- Merged/extracted destinations, trust-boundary path checks, and e2e mock
+  fidelity (unique engine ids, pause/resume events, full settings mirror).
+
+### Known limitations
+
+- yt-dlp prints non-ASCII path segments as mojibake (verified no-ops for
+  the UTF-8 env overrides): reported destinations may not resolve there.
+- Portable spaces-path GUI pass not completed in-session again (packaging
+  verified, same code live-tested); run the portable once manually before
+  distributing.
+
 ## [1.1.0] — 2026-10-03
 
 Quick wins: codec-aware downloads, batch queueing, duplicate protection,

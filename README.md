@@ -3,8 +3,10 @@
 Premium dark-UI GUI for the yt-dlp CLI. Windows `.exe` (per-user NSIS
 installer + single portable exe) with queueing, themes, codec-aware presets,
 batch paste, duplicate guard + download archive, actionable errors, taskbar
-progress, context menus, bulk queue control, diagnostics, self-updating
-engine binaries, and persisted settings/history.
+progress, context menus, bulk queue control, diagnostics, command palette,
+onboarding, thumbnail accents, density + accent options, smart playlists,
+English + Bahasa Melayu, library health, self-updating engine binaries, and
+persisted settings/history.
 
 > You are responsible for respecting copyright and each site's terms.
 > Only download content you own or are allowed to keep.
@@ -46,8 +48,8 @@ pnpm dist            # NSIS + portable into /release (also gitignored)
 
 Artifacts (`/release`):
 
-- `FluxDL-Setup-1.1.0.exe` — per-user NSIS wizard, no admin, install dir changeable
-- `FluxDL-Portable-1.1.0.exe` — single exe, runs from any folder (even with spaces)
+- `FluxDL-Setup-1.2.0.exe` — per-user NSIS wizard, no admin, install dir changeable
+- `FluxDL-Portable-1.2.0.exe` — single exe, runs from any folder (even with spaces)
 
 First run copies `yt-dlp.exe` into userData so self-update (`-U`) works under
 Program Files; `ffmpeg`/`ffprobe` resolve from the bundled copy with a PATH
@@ -63,12 +65,14 @@ packages/core/        shared UI + state, talks ONLY to DownloadEngine
   src/engine.ts       DownloadEngine interface + IPC_CHANNELS (single map)
   src/url|args|progress|errors|media.ts   pure engine logic, unit-tested
   src/batch|identity|aggregate|menu|diagnostics.ts  batch, dup guard, status, menu, diag
+  src/cache|color|playlist|health|locale.ts  analyze LRU, colour, playlists, health, i18n
   src/queue.ts        state machine (FIFO, concurrency 1–5, backoff, reorder)
   src/queueController.ts  engine-agnostic orchestrator (injected clock/engine)
   src/settings.ts     defaults + sanitizing merge
   src/stores.ts       zustand queue/settings stores over DownloadEngine
   src/Home|Downloads|Library|SettingsScreen|Logs.tsx  the five screens
   src/BatchPanel|DuplicatePrompt|ErrorActions|ContextMenu|JobMenu  feature UI
+  src/CommandPalette|Onboarding|VirtualList  palette, wizard, virtual list
   src/Shell.tsx       frameless titlebar, sidebar, themes, shortcuts, toasts
   src/motion.ts       GSAP helpers (reduced-motion safe)
   src/strings.ts      every user-facing string, EN

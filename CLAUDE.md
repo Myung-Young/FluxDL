@@ -53,11 +53,11 @@
   `useArchive`/`extractor`/`videoId`/`cookiesFromBrowser`/`errorCategory`/`fileDeleted`),
   `JobStatus`, `AppSettings` (+`embedSubs`, `codecPreference`, `skipArchived`,
   `cookiesFile`), `CodecPreference`, `VideoPreset` (+`"Compatible"`).
-- `packages/core/src/engine.ts` — `DownloadEngine` (26 methods),
-  `IPC_CHANNELS` (26 channels), `EngineProgress`
+- `packages/core/src/engine.ts` — `DownloadEngine` (31 methods),
+  `IPC_CHANNELS` (31 channels), `EngineProgress`
   (+`destination`/`errorMessage`/`errorCategory`), `EngineVersions`
   (+optional `os`/`arch`/`electron`/`node`), `RepairReport`,
-  `AggregateProgressState`.
+  `AggregateProgressState`, `ThumbnailColor`, `GetInfoInit`.
 - `packages/core/src/url|args|progress|errors|media.ts` — pure engine logic.
   `args.ts` owns the machine `--progress-template`, `--trim-filenames 200`,
   `--ignore-config` (every spawn), `-S` codec sorts, `--download-archive`,
@@ -72,8 +72,13 @@
   cancelQueued, clearFinished.
 - `packages/core/src/{batch,identity,aggregate,menu,diagnostics}.ts` — batch
   parse/state, duplicate guard, aggregate status, menu matrix, diagnostics.
+- `packages/core/src/{cache,color,playlist,health,locale}.ts` — analyze LRU,
+  colour/contrast scales, playlist sanitize + entry states, library health,
+  locale resolution/formatting.
 - `packages/core/src/{BatchPanel,DuplicatePrompt,ErrorActions,ContextMenu,JobMenu}.tsx` —
   batch UI, guard dialog, error buttons, themed menu, menu builder.
+- `packages/core/src/{CommandPalette,Onboarding,VirtualList}.tsx` — palette,
+  first-run wizard (+ step machine), virtualized list.
 - `packages/core/src/settings.ts` — `DEFAULT_SETTINGS`, sanitizing `mergeSettings`.
 - `packages/core/src/stores.ts` — zustand stores bound to a `DownloadEngine`.
 - `packages/core/src/Home|Downloads|Library|SettingsScreen|Logs.tsx` — screens.
@@ -95,6 +100,7 @@
   Merger/ExtractAudio, `isAllowedPath` trust boundary, archive/cookies plumbing,
   update-blocked-while-active, `repairEngine`).
 - `apps/desktop/src/main/taskbar.ts` — pure taskbar mode resolver.
+- `apps/desktop/src/main/thumbnail.ts` — guarded thumbnail fetch + BGRA decode.
 - `apps/desktop/src/main/persist.ts` — electron-store settings, atomic
   `queue.json`, `history.jsonl` (corrupt lines skipped), history update.
 - `apps/desktop/src/main/ipc.ts` — typed handlers with arg validation.
@@ -133,3 +139,6 @@
   still cannot use `node:*` — eslint has no test exemption).
 - Interface callback props use property style (`onClose: () => void`), never
   method shorthand — `unbound-method` flags the latter.
+- Windows filename collisions (never `X.tsx` + `x.ts` in one dir):
+  `SettingsScreen`, `Onboarding` (machine inside the component),
+  `health` (not `library`).

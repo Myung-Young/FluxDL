@@ -143,3 +143,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M2.9
 
 - D64: Library health. `deriveMissingIds` (destinations explicitly reported missing) + `chunkDestinations` (40/chunk, UI yields between) are pure and tested; the screen bulk-checks on open with a progress line. Missing badge + Locate (new pickFile engine method, 30 → 31 channels; record updated via updateHistory, fileDeleted cleared) + Remove + Re-download. VirtualList (shared with M2.7) kicks in at 200 rows with fixed 140px rows; search debounces 100 ms. History prune is enforced main-side in appendHistoryToDisk (keep last N, default 500, clamp 10–5000) with a round-trip trim test. (Note: health.ts, not library.ts — Library.tsx collides on Windows per D26.)
+
+## M2.10
+
+- D65: Release v1.2.0. Gates at tag: typecheck, lint (0 warnings), 171 core + 35 desktop tests (live-binary incl.), build, 9/9 Playwright smoke (palette, onboarding, Malay switch covered). Engine 26 → 31 methods/channels across v1.2 (cancelAnalyze, thumbnailColor, fileExistsBulk, archiveHas, pickFile). `pnpm dist` artifacts verified by size + resources; portable spaces-path GUI pass again deferred (same documented gap as v1.1 — long extraction exceeds automation budgets).
