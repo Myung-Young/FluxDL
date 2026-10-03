@@ -183,3 +183,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M3.9
 
 - D74: Small a11y pass, zero new strings. Progress bars expose `aria-valuetext` (`42%`); empty states (Downloads, Library incl. no-match, Batch, palette no-match) announce via `role=status`; the palette combobox declares `aria-keyshortcuts="Control+k"`. Motion audit: all six GSAP helpers already no-op/set-directly under `prefers-reduced-motion` (verified in `motion.ts`, no change). Global `:focus-visible` ring + skip-link + dialog focus traps already covered the rest.
+
+## M3.10
+
+- D75: Release v1.3.0. Gates at tag: typecheck, lint (0 warnings), 194 core + 36 desktop tests (live-binary incl.), build, 10/10 Playwright smoke (settings search, `?` dialog, log search covered). Engine stays at 31 methods/channels across v1.3 (no new IPC — all features rode existing channels). `pnpm dist` artifacts verified by size + resources; portable spaces-path GUI pass again deferred (same documented gap — long extraction exceeds automation budgets).

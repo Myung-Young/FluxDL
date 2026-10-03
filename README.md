@@ -5,8 +5,9 @@ installer + single portable exe) with queueing, themes, codec-aware presets,
 batch paste, duplicate guard + download archive, actionable errors, taskbar
 progress, context menus, bulk queue control, diagnostics, command palette,
 onboarding, thumbnail accents, density + accent options, smart playlists,
-English + Bahasa Melayu, library health, self-updating engine binaries, and
-persisted settings/history.
+English + Bahasa Melayu, library health, destination recovery, retry
+countdown, settings search, shortcut help, log triage, template validation,
+self-updating engine binaries, and persisted settings/history.
 
 > You are responsible for respecting copyright and each site's terms.
 > Only download content you own or are allowed to keep.
@@ -48,8 +49,8 @@ pnpm dist            # NSIS + portable into /release (also gitignored)
 
 Artifacts (`/release`):
 
-- `FluxDL-Setup-1.2.0.exe` — per-user NSIS wizard, no admin, install dir changeable
-- `FluxDL-Portable-1.2.0.exe` — single exe, runs from any folder (even with spaces)
+- `FluxDL-Setup-1.3.0.exe` — per-user NSIS wizard, no admin, install dir changeable
+- `FluxDL-Portable-1.3.0.exe` — single exe, runs from any folder (even with spaces)
 
 First run copies `yt-dlp.exe` into userData so self-update (`-U`) works under
 Program Files; `ffmpeg`/`ffprobe` resolve from the bundled copy with a PATH
@@ -66,6 +67,7 @@ packages/core/        shared UI + state, talks ONLY to DownloadEngine
   src/url|args|progress|errors|media.ts   pure engine logic, unit-tested
   src/batch|identity|aggregate|menu|diagnostics.ts  batch, dup guard, status, menu, diag
   src/cache|color|playlist|health|locale.ts  analyze LRU, colour, playlists, health, i18n
+  src/destination|settingsFilter|logFilter|validate.ts  dest recovery, settings/log filters, validation
   src/queue.ts        state machine (FIFO, concurrency 1–5, backoff, reorder)
   src/queueController.ts  engine-agnostic orchestrator (injected clock/engine)
   src/settings.ts     defaults + sanitizing merge

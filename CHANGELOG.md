@@ -3,6 +3,50 @@
 All notable changes to FluxDL are documented here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3.0] — 2026-10-03
+
+Bug fixes, quality of life, and polish: destination recovery, visible
+retries, a drift-proof mock, settings search, shortcut help, log triage,
+template validation, title count, and an accessibility pass.
+
+### Added
+
+- Destination recovery for non-ASCII folders: when yt-dlp reports a
+  mojibake path, the engine scans the output dir (`[id]` match, else
+  newest recent media) instead of leaving a dead destination.
+- Retry countdown (`Retrying in Ns · attempt A`) with a 1 s tick on error
+  cards, plus bulk Retry-all (button + palette command).
+- Settings search: instant multi-word filter over labels/ids/keywords with
+  match count, empty state, and hidden rows (anchors keep working).
+- Shortcut help dialog (`?`, focus-trapped) listing every global shortcut,
+  also openable from the palette.
+- Log triage: text search + errors-only toggle + match counts, Refresh,
+  Copy log, and a follow-live pin.
+- Filename template preview with sample metadata plus inline hints for bad
+  templates and speed limits (hints only, never blocking).
+- Window title shows the active count (`(N) FluxDL`); finished toasts carry
+  an Open-file action.
+- Accessibility pass: progress `aria-valuetext`, live-region empty states,
+  palette `aria-keyshortcuts`, verified reduced-motion guards.
+
+### Fixed
+
+- `extractor`/`videoId` no longer dropped on the queue→engine handoff
+  (both rebuild sites), so playlist identity reaches the engine again.
+- Settings inputs shared one React key (`""`) and multiplied into ghost
+  copies after re-renders; every input now has a stable unique key.
+- E2E mock drift fixed (4 missing settings fields + `cancelAnalyze`) with
+  a pinned settings-shape test that fails loudly on the next drift.
+
+### Known limitations
+
+- yt-dlp prints non-ASCII path segments as mojibake (verified no-ops for
+  the UTF-8 env overrides): the new recovery scan covers the common case,
+  but genuinely unresolvable destinations still fall back to Locate.
+- Portable spaces-path GUI pass not completed in-session again (packaging
+  verified, same code live-tested); run the portable once manually before
+  distributing.
+
 ## [1.2.0] — 2026-10-03
 
 UX and UI polish: command palette, onboarding, faster analyze, dynamic
