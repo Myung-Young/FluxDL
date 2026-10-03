@@ -142,6 +142,10 @@ export { ContextMenu } from "./ContextMenu.js";
 export type { ContextMenuProps, MenuItemDef } from "./ContextMenu.js";
 export { buildJobMenu } from "./JobMenu.js";
 export type { JobMenuHandlers } from "./JobMenu.js";
+export { VirtualList, visibleRange } from "./VirtualList.js";
+export type { VirtualListProps } from "./VirtualList.js";
+export { deriveEntryStates, sanitizePlaylistTitle } from "./playlist.js";
+export type { EntryState } from "./playlist.js";
 export { normalizeUrl, isValidUrl, UrlValidationError } from "./url.js";
 export {
   buildDownloadArgs,

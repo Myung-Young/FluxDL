@@ -131,3 +131,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M2.6
 
 - D61: Accent picker. `deriveAccentScale` builds base/hover/active/ghost/on-accent from one hex; on-accent (white/black, higher contrast wins) is enforced to 4.5:1 by shifting lightness, `adjusted` marks auto-changes, `warning` flags the still-failing. 8 swatches + validated custom hex + reset-to-theme; Shell applies --accent/--accent-fg/--accent-soft/--accent-hover/--accent-active (primary buttons consume hover/active). User accent vs theme grounds is NOT second-guessed — only the on-accent text pair is enforced.
+
+## M2.7
+
+- D62: Smarter playlists. Archive format verified live (`youtube <id>` CRLF). Entry identity = parent extractor + entry id (flat-playlist ids ARE video ids), so archive/history matching works; legacy URL fallback retained. New engine methods fileExistsBulk + archiveHas (28 → 30); entries enqueued with extractor/videoId for future matches. Subfolders via sanitized `playlistSubdir` (UI-side sanitize, args-side traversal strip, --trim-filenames kept). Shared VirtualList (fixed rows, overscan, pure window maths) for entry lists and Library ≥200. Per-entry preset overrides, title filter, hide-downloaded toggle; shift range-select kept (operates on the filtered list).

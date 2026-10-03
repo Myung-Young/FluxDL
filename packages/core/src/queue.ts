@@ -279,6 +279,9 @@ export function shouldRetry(job: DownloadJob, maxRetries: number, now: number): 
     ...(typeof input.cookiesFromBrowser === "string" && input.cookiesFromBrowser.length > 0
       ? { cookiesFromBrowser: input.cookiesFromBrowser }
       : {}),
+    ...(typeof input.playlistSubdir === "string" && input.playlistSubdir.length > 0
+      ? { playlistSubdir: input.playlistSubdir }
+      : {}),
   };
 }
 

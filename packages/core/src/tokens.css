@@ -854,6 +854,29 @@ select.input {
   padding-left: var(--space-4);
 }
 
+.badge {
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--success);
+  background: rgb(52 211 153 / 0.12);
+  border-radius: 999px;
+  padding: 2px var(--space-2);
+  white-space: nowrap;
+}
+
+.entry-row {
+  min-height: 44px;
+}
+
+.entry-row .entry-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .cmd-option {
   cursor: pointer;
 }

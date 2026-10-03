@@ -95,6 +95,8 @@ export interface DownloadJob {
   readonly videoId?: string | null;
   /** Per-job cookie browser override (this download only). */
   readonly cookiesFromBrowser?: string | null;
+  /** Sanitized playlist subfolder for this job (restart parity). */
+  readonly playlistSubdir?: string;
   /** Stored failure category for actionable error cards (optional). */
   readonly errorCategory?: ErrorCategory | null;
   /** Set when the output file was trashed (history keeps the record). */
@@ -106,6 +108,8 @@ export interface DownloadJobInput extends Pick<
   "url" | "title" | "preset" | "outputDir" | "extractor" | "videoId" | "cookiesFromBrowser"
 > {
   readonly useArchive?: boolean;
+  /** Sanitized playlist subfolder (UI-side, when the setting is on). */
+  readonly playlistSubdir?: string | null;
 }
 
 export type ThemeName = "obsidian" | "midnight" | "ember";
@@ -146,4 +150,6 @@ export interface AppSettings {
   readonly density: Density;
   /** User accent override hex (#rrggbb) or null for theme default (M2.6). */
   readonly accentOverride: string | null;
+  /** Playlist jobs download into a subfolder (M2.7, default ON). */
+  readonly playlistSubfolder: boolean;
 }

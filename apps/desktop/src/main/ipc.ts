@@ -57,6 +57,9 @@ function parseJobInput(raw: unknown): DownloadJobInput {
     ...(typeof raw["cookiesFromBrowser"] === "string" && raw["cookiesFromBrowser"].length > 0
       ? { cookiesFromBrowser: raw["cookiesFromBrowser"] }
       : {}),
+    ...(typeof raw["playlistSubdir"] === "string" && raw["playlistSubdir"].length > 0
+      ? { playlistSubdir: raw["playlistSubdir"] }
+      : {}),
   };
 }
 
@@ -136,6 +139,14 @@ export function registerEngineIpc(engine: DesktopEngine): void {
     const p = asNonEmptyString(rawPath);
     if (p === null) throw new Error("Missing path.");
     return engine.fileExists(p);
+  });
+  ipcMain.handle(IPC_CHANNELS.fileExistsBulk, async (_event, rawPaths: unknown) => {
+    if (!Array.isArray(rawPaths)) throw new Error("Invalid paths.");
+    return engine.fileExistsBulk(rawPaths.filter((p): p is string => typeof p === "string"));
+  });
+  ipcMain.handle(IPC_CHANNELS.archiveHas, async (_event, rawKeys: unknown) => {
+    if (!Array.isArray(rawKeys)) throw new Error("Invalid keys.");
+    return engine.archiveHas(rawKeys.filter((k): k is string => typeof k === "string"));
   });
   ipcMain.handle(IPC_CHANNELS.trashFile, async (_event, rawPath: unknown) => {
     const p = asNonEmptyString(rawPath);

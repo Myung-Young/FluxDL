@@ -93,6 +93,10 @@ export interface DownloadEngine {
   revealInFolder(path: string): Promise<void>;
   /** True when a job/history destination still exists on disk (guard-checked). */
   fileExists(path: string): Promise<boolean>;
+  /** Bulk existence check (each path guard-checked; invalid entries read false). */
+  fileExistsBulk(paths: string[]): Promise<boolean[]>;
+  /** Which extractor::id keys appear in the download archive. */
+  archiveHas(keys: string[]): Promise<boolean[]>;
   /** Move a finished file to the Recycle Bin (guard-checked, never unlink). */
   trashFile(path: string): Promise<void>;
   /** Replace one history record (e.g. mark "file deleted"). */
@@ -135,6 +139,8 @@ export const IPC_CHANNELS = {
   openPath: "engine:openPath",
   revealInFolder: "engine:reveal",
   fileExists: "engine:fileExists",
+  fileExistsBulk: "engine:fileExistsBulk",
+  archiveHas: "engine:archiveHas",
   trashFile: "engine:trashFile",
   updateHistory: "store:updateHistory",
   clearArchive: "engine:clearArchive",

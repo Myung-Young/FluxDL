@@ -27,6 +27,7 @@ function base(over: Partial<DownloadArgsInput> = {}): DownloadArgsInput {
     cookiesFile: null,
     codecPreference: "auto",
     archivePath: null,
+    playlistSubdir: null,
     noPlaylist: true,
     ...over,
   };
@@ -175,5 +176,16 @@ describe("arg builder", () => {
     expect(i).toBeGreaterThan(-1);
     expect(args[i + 1]).toBe("C:\\me\\cookies.txt");
     expect(args.indexOf("--cookies")).toBeLessThan(args.indexOf("--cookies-from-browser"));
+  });
+
+  it("nests playlist output in a sanitized subfolder", () => {
+    const args = buildDownloadArgs(base({ playlistSubdir: 'Mix: "Best"?' }));
+    const i = args.indexOf("--output");
+    expect(args[i + 1]).toContain("Mix_ _Best__");
+    expect(args.join(" ")).not.toContain("..");
+    const flat = buildDownloadArgs(base());
+    expect(flat[flat.indexOf("--output") + 1]).toBe(
+      "C:\\Users\\P\\Videos\\Grabber/%(title)s [%(id)s].%(ext)s",
+    );
   });
 });

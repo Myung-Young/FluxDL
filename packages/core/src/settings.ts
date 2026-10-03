@@ -35,6 +35,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   thumbnailAccent: true,
   density: "comfortable",
   accentOverride: null,
+  playlistSubfolder: true,
 };
 
 const THEMES: readonly ThemeName[] = ["obsidian", "midnight", "ember"];
@@ -158,5 +159,6 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
       patch.accentOverride === undefined
         ? base.accentOverride
         : cleanAccentOverride(patch.accentOverride),
+    playlistSubfolder: cleanBool(patch.playlistSubfolder, base.playlistSubfolder),
   };
 }

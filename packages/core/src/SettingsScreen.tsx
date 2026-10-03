@@ -268,6 +268,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
               ["embedSubs", STRINGS.settings.embedSubs],
               ["sponsorBlock", STRINGS.settings.sponsorBlock],
               ["skipArchived", STRINGS.settings.skipArchived],
+              ["playlistSubfolder", STRINGS.settings.playlistSubfolder],
               ["thumbnailAccent", STRINGS.settings.thumbnailAccent],
               ["autoCheckUpdate", STRINGS.settings.autoCheckUpdate],
             ] as const

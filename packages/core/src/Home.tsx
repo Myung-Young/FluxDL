@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
@@ -9,6 +9,7 @@ import type {
   DownloadPreset,
   MediaInfo,
   MediaKind,
+  PlaylistEntry,
   VideoPreset,
 } from "./types.js";
 import { isValidUrl, normalizeUrl } from "./url.js";
@@ -21,6 +22,9 @@ import { pressScale, tweenAccentVar } from "./motion.js";
 import { BatchPanel } from "./BatchPanel.js";
 import { useDuplicateGuard } from "./DuplicatePrompt.js";
 import type { GuardInput } from "./identity.js";
+import { identityKey } from "./identity.js";
+import { deriveEntryStates, sanitizePlaylistTitle, type EntryState } from "./playlist.js";
+import { VirtualList } from "./VirtualList.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 
 export interface HomeProps {
@@ -92,6 +96,11 @@ export function Home({
   const [selected, setSelected] = useState<readonly string[]>([]);
   const [watchClipboard, setWatchClipboard] = useState<boolean>(false);
   const [queuedNote, setQueuedNote] = useState<string | null>(null);
+  const [hideDownloaded, setHideDownloaded] = useState<boolean>(false);
+  const [entryFilter, setEntryFilter] = useState<string>("");
+  const [entryStates, setEntryStates] = useState<Map<string, EntryState> | null>(null);
+  const [checkingEntries, setCheckingEntries] = useState<boolean>(false);
+  const [entryPresets, setEntryPresets] = useState<Record<string, DownloadPreset>>({});
   const { guard, dialog: duplicateDialog } = useDuplicateGuard();
   const analyzeCache = useRef(new LruCache<MediaInfo>(30, 10 * 60 * 1000));
   const analyzeReq = useRef<string | null>(null);
@@ -161,6 +170,52 @@ export function Home({
     });
   };
 
+  const refreshEntryStates = useCallback(
+    async (media: MediaInfo): Promise<void> => {
+      if (!media.isPlaylist || media.entries.length === 0) {
+        setEntryStates(null);
+        return;
+      }
+      setCheckingEntries(true);
+      try {
+        const keys = media.entries.map((e) => {
+          try {
+            return identityKey({ url: e.url, extractor: media.extractor, videoId: e.id });
+          } catch {
+            return e.url;
+          }
+        });
+        const [archivedArr, history] = await Promise.all([
+          engine.archiveHas(keys).catch(() => keys.map(() => false)),
+          engine.loadHistory().catch(() => [] as DownloadJob[]),
+        ]);
+        const archived = new Set<string>();
+        keys.forEach((k, i) => {
+          if (archivedArr[i] === true) archived.add(k);
+        });
+        const dests = [
+          ...new Set(
+            history.map((h) => h.destination).filter((d): d is string => d !== null),
+          ),
+        ];
+        const existsArr =
+          dests.length > 0
+            ? await engine.fileExistsBulk(dests).catch(() => dests.map(() => false))
+            : [];
+        const existsByDestination = new Map<string, boolean>();
+        dests.forEach((d, i) => {
+          existsByDestination.set(d, existsArr[i] ?? false);
+        });
+        setEntryStates(
+          deriveEntryStates(media.entries, media.extractor, archived, history, existsByDestination),
+        );
+      } finally {
+        setCheckingEntries(false);
+      }
+    },
+    [engine],
+  );
+
   const analyzeValue = useCallback(
     async (value: string, opts: { force?: boolean } = {}): Promise<void> => {
       setError(null);
@@ -178,8 +233,11 @@ export function Home({
           setInfo(cached);
           setSelected(cached.entries.map((e) => e.id));
           setRawFormat(null);
+          setEntryStates(null);
+          setEntryPresets({});
           lastIndex.current = null;
           void applyThumbAccent(cached.thumbnail);
+          void refreshEntryStates(cached);
           return;
         }
       } else {
@@ -198,8 +256,11 @@ export function Home({
         setInfo(media);
         setSelected(media.entries.map((e) => e.id));
         setRawFormat(null);
+        setEntryStates(null);
+        setEntryPresets({});
         lastIndex.current = null;
         void applyThumbAccent(media.thumbnail);
+        void refreshEntryStates(media);
       } catch (err) {
         if (analyzeReq.current !== requestId) return;
         if (cancelledReqs.current.has(requestId)) {
@@ -218,7 +279,7 @@ export function Home({
         }
       }
     },
-    [engine, applyThumbAccent],
+    [engine, applyThumbAccent, refreshEntryStates],
   );
 
   const cancelAnalyze = useCallback((): void => {
@@ -241,17 +302,101 @@ export function Home({
     void analyzeValue(pendingPaste);
   }, [pendingPaste, analyzeValue, onPasteConsumed]);
 
+  const visibleEntries = useMemo(() => {
+    if (info === null || !info.isPlaylist) return [];
+    const q = entryFilter.trim().toLowerCase();
+    return info.entries.filter((e) => {
+      if (q.length > 0 && !e.title.toLowerCase().includes(q)) return false;
+      if (hideDownloaded) {
+        const st = entryStates?.get(e.id);
+        if (st !== undefined && (st.archived || st.exists)) return false;
+      }
+      return true;
+    });
+  }, [info, entryFilter, hideDownloaded, entryStates]);
+
   const toggleEntry = (id: string, index: number, additive: boolean): void => {
     if (!info) return;
+    const pool = visibleEntries;
     if (additive && lastIndex.current !== null) {
       const [a, b] =
         lastIndex.current < index ? [lastIndex.current, index] : [index, lastIndex.current];
-      const range = info.entries.slice(a, b + 1).map((e) => e.id);
+      const range = pool.slice(a, b + 1).map((e) => e.id);
       setSelected((prev) => [...new Set([...prev, ...range])]);
     } else {
       setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
     }
     lastIndex.current = index;
+  };
+
+  const renderEntryRow = (e: PlaylistEntry, i: number): React.JSX.Element => {
+    const st = entryStates?.get(e.id);
+    const downloaded = st !== undefined && (st.archived || st.exists);
+    const override = entryPresets[e.id] ?? null;
+    const overrideValue =
+      override === null
+        ? "global"
+        : override.kind === "video"
+          ? `v:${override.videoPreset}`
+          : `a:${override.audioPreset}`;
+    return (
+      <label className="format-row entry-row">
+        <input
+          type="checkbox"
+          checked={selected.includes(e.id)}
+          onChange={() => undefined}
+          onClick={(ev) => {
+            toggleEntry(e.id, i, ev.shiftKey);
+          }}
+        />
+        <span className="entry-title" title={e.title}>
+          {e.title}
+        </span>
+        {downloaded && <span className="badge">{STRINGS.playlist.downloaded}</span>}
+        <select
+          className="input"
+          aria-label={STRINGS.batch.presetLabel}
+          value={overrideValue}
+          onChange={(sel) => {
+            const v = sel.target.value;
+            if (v === "global") {
+              setEntryPresets((prev) => {
+                const next: Record<string, DownloadPreset> = {};
+                for (const [pid, p] of Object.entries(prev)) {
+                  if (pid !== e.id) next[pid] = p;
+                }
+                return next;
+              });
+              return;
+            }
+            const [kkind, name] = v.split(":");
+            if (kkind === "v" && name !== undefined) {
+              setEntryPresets((prev) => ({
+                ...prev,
+                [e.id]: { kind: "video", videoPreset: name as VideoPreset, audioPreset: "MP3", rawFormat: null },
+              }));
+            } else if (kkind === "a" && name !== undefined) {
+              setEntryPresets((prev) => ({
+                ...prev,
+                [e.id]: { kind: "audio", videoPreset: "Best", audioPreset: name as AudioPreset, rawFormat: null },
+              }));
+            }
+          }}
+        >
+          <option value="global">{STRINGS.batch.useGlobalPreset}</option>
+          {VIDEO_PRESETS.map((p) => (
+            <option key={`v:${p}`} value={`v:${p}`}>
+              {p}
+            </option>
+          ))}
+          {AUDIO_PRESETS.map((p) => (
+            <option key={`a:${p}`} value={`a:${p}`}>
+              {p}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
   };
 
   const enqueueAll = async (): Promise<void> => {
@@ -263,17 +408,20 @@ export function Home({
       const preset: DownloadPreset = { kind, videoPreset, audioPreset, rawFormat };
       const outputDir = settingsState.downloadDir;
       const playlist = info.isPlaylist && info.entries.length > 0;
-      const rawTargets =
-        playlist
-          ? info.entries
-              .filter((e) => selected.includes(e.id))
-              .map((e) => ({ url: e.url, title: e.title }))
-          : [{ url: info.url, title: info.title }];
+      const subdir =
+        playlist && settingsState.playlistSubfolder
+          ? sanitizePlaylistTitle(info.title)
+          : null;
+      const rawTargets = playlist
+        ? info.entries
+            .filter((e) => selected.includes(e.id))
+            .map((e) => ({ url: e.url, title: e.title, entryId: e.id }))
+        : [{ url: info.url, title: info.title, entryId: null as string | null }];
       const inputs: GuardInput[] = rawTargets.map((t) => ({
         url: t.url,
         title: t.title,
-        extractor: playlist ? null : info.extractor,
-        videoId: playlist ? null : info.videoId,
+        extractor: info.extractor,
+        videoId: playlist ? t.entryId : info.videoId,
         fromPlaylist: playlist,
       }));
       let history: DownloadJob[] = [];
@@ -290,16 +438,22 @@ export function Home({
       });
       let count = 0;
       for (const t of guarded) {
+        const entryId = playlist
+          ? (info.entries.find((e) => e.url === t.url)?.id ?? null)
+          : null;
+        const rowPreset =
+          entryId !== null ? (entryPresets[entryId] ?? preset) : preset;
         await queue.getState().enqueue({
           url: t.url,
           title: t.title,
-          preset,
+          preset: rowPreset,
           outputDir,
           extractor: t.extractor,
           videoId: t.videoId,
           ...(t.fromPlaylist && settingsState.skipArchived && !t.forceFresh
             ? { useArchive: true as const }
             : {}),
+          ...(subdir !== null ? { playlistSubdir: subdir } : {}),
         });
         count += 1;
       }
@@ -565,23 +719,45 @@ export function Home({
                   {STRINGS.home.selectNone}
                 </button>
               </div>
-              <ul className="entries">
-                {info.entries.map((e, i) => (
-                  <li key={e.id}>
-                    <label className="format-row">
-                      <input
-                        type="checkbox"
-                        checked={selected.includes(e.id)}
-                        onChange={() => undefined}
-                        onClick={(ev) => {
-                          toggleEntry(e.id, i, ev.shiftKey);
-                        }}
-                      />
-                      <span>{e.title}</span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
+              <div className="chip-row">
+                <input
+                  className="input"
+                  placeholder={STRINGS.playlist.filterPlaceholder}
+                  aria-label={STRINGS.playlist.filterPlaceholder}
+                  value={entryFilter}
+                  spellCheck={false}
+                  onChange={(e) => {
+                    setEntryFilter(e.target.value);
+                  }}
+                />
+                <label className="check-row">
+                  <input
+                    type="checkbox"
+                    checked={hideDownloaded}
+                    onChange={(e) => {
+                      setHideDownloaded(e.target.checked);
+                    }}
+                  />
+                  {STRINGS.playlist.hideDownloaded}
+                </label>
+                {checkingEntries && <span className="muted">{STRINGS.playlist.checking}</span>}
+              </div>
+              {visibleEntries.length >= 200 ? (
+                <VirtualList
+                  items={visibleEntries}
+                  rowHeight={44}
+                  height={440}
+                  ariaLabel={STRINGS.home.entriesSelected}
+                  keyOf={(e) => e.id}
+                  renderRow={(e, i) => renderEntryRow(e, i)}
+                />
+              ) : (
+                <ul className="entries">
+                  {visibleEntries.map((e, i) => (
+                    <li key={e.id}>{renderEntryRow(e, i)}</li>
+                  ))}
+                </ul>
+              )}
               <p className="hint">{STRINGS.home.playlistPresetNote}</p>
             </div>
           )}

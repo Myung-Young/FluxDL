@@ -34,6 +34,8 @@ export interface GrabberApi {
   openPath(path: string): Promise<void>;
   revealInFolder(path: string): Promise<void>;
   fileExists(path: string): Promise<boolean>;
+  fileExistsBulk(paths: string[]): Promise<boolean[]>;
+  archiveHas(keys: string[]): Promise<boolean[]>;
   trashFile(path: string): Promise<void>;
   updateHistory(job: DownloadJob): Promise<void>;
   clearArchive(): Promise<void>;
@@ -80,6 +82,10 @@ const api: GrabberApi = {
   revealInFolder: (path) => ipcRenderer.invoke(IPC_CHANNELS.revealInFolder, path) as Promise<void>,
   fileExists: (path) =>
     ipcRenderer.invoke(IPC_CHANNELS.fileExists, path) as Promise<boolean>,
+  fileExistsBulk: (paths) =>
+    ipcRenderer.invoke(IPC_CHANNELS.fileExistsBulk, paths) as Promise<boolean[]>,
+  archiveHas: (keys) =>
+    ipcRenderer.invoke(IPC_CHANNELS.archiveHas, keys) as Promise<boolean[]>,
   trashFile: (path) => ipcRenderer.invoke(IPC_CHANNELS.trashFile, path) as Promise<void>,
   updateHistory: (job) =>
     ipcRenderer.invoke(IPC_CHANNELS.updateHistory, job) as Promise<void>,

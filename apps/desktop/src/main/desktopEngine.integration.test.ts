@@ -192,6 +192,7 @@ describe.skipIf(!HAS_YTDLP)("desktop engine live (real yt-dlp)", () => {
       cookiesFile: null,
       codecPreference: "auto",
       archivePath: null,
+      playlistSubdir: null,
       noPlaylist: true,
     });
     const target = full[full.length - 1] ?? "";

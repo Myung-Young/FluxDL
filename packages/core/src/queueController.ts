@@ -292,6 +292,9 @@ export class QueueController {
           ...(typeof next.cookiesFromBrowser === "string" && next.cookiesFromBrowser.length > 0
             ? { cookiesFromBrowser: next.cookiesFromBrowser }
             : {}),
+          ...(typeof next.playlistSubdir === "string" && next.playlistSubdir.length > 0
+            ? { playlistSubdir: next.playlistSubdir }
+            : {}),
         });
         const current = this.jobs.get(next.id);
         if (current === undefined) {

@@ -51,8 +51,7 @@ export const STRINGS = {
     playlistPresetNote: "The preset above applies to every selected entry.",
   },
   batch: {
-    title: "Batch",
-    description: "Paste many links at once, or drop a .txt file. One link per line.",
+    title: "Batch",    description: "Paste many links at once, or drop a .txt file. One link per line.",
     inputLabel: "Links (one per line)",
     inputPlaceholder: "https://…\nhttps://…",
     add: "Add",
@@ -78,6 +77,12 @@ export const STRINGS = {
     statusReady: "Ready",
     statusFailed: "Failed",
     queuedToast: "Queued.",
+  },
+  playlist: {
+    downloaded: "Downloaded",
+    hideDownloaded: "Hide downloaded",
+    filterPlaceholder: "Filter entries…",
+    checking: "Checking downloaded…",
   },
   duplicate: {
     title: "Already downloaded?",
@@ -142,6 +147,7 @@ export const STRINGS = {
     codecAv1: "AV1 (smaller files)",
     thumbnailAccent: "Tint preview with thumbnail colour",
     skipArchived: "Skip playlist videos already in the archive",
+    playlistSubfolder: "Download playlists into subfolders",
     clearArchive: "Clear archive…",
     archiveCleared: "Archive cleared.",
     archiveConfirm: "Forget every archived video? Playlists will download them again.",

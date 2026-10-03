@@ -13,6 +13,7 @@ import type {
 import { STRINGS } from "./strings.js";
 import { pressScale } from "./motion.js";
 import { LruCache } from "./cache.js";
+import { sanitizePlaylistTitle } from "./playlist.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 import { useDuplicateGuard } from "./DuplicatePrompt.js";
 import type { GuardInput } from "./identity.js";
@@ -226,7 +227,7 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
         inputs.push({
           url: e.url,
           title: e.info.title,
-          extractor: playlist ? null : e.info.extractor,
+          extractor: e.info.extractor,
           videoId: playlist ? null : e.info.videoId,
           fromPlaylist: playlist || e.fromPlaylist === true,
         });
@@ -250,20 +251,30 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
         if (row === undefined || info === null || info === undefined) continue;
         const preset = row.preset ?? globalPreset;
         const playlist = info.isPlaylist && info.entries.length > 0;
+        const subdir =
+          playlist && settingsState.playlistSubfolder
+            ? sanitizePlaylistTitle(info.title)
+            : null;
         const targets = playlist
-          ? info.entries.map((en) => ({ url: en.url, title: en.title }))
-          : [{ url: row.url, title: info.title }];
+          ? info.entries.map((en) => ({
+              url: en.url,
+              title: en.title,
+              extractor: info.extractor,
+              videoId: en.id,
+            }))
+          : [{ url: row.url, title: info.title, extractor: info.extractor, videoId: info.videoId }];
         for (const t of targets) {
           await queue.getState().enqueue({
             url: t.url,
             title: t.title,
             preset,
             outputDir,
-            extractor: playlist ? null : info.extractor,
-            videoId: playlist ? null : info.videoId,
+            extractor: t.extractor,
+            videoId: t.videoId,
             ...(g.fromPlaylist && settingsState.skipArchived && !g.forceFresh
               ? { useArchive: true as const }
               : {}),
+            ...(subdir !== null ? { playlistSubdir: subdir } : {}),
           });
           count += 1;
         }

@@ -1,6 +1,7 @@
 import type { CodecPreference, DownloadPreset } from "./types.js";
 import { PROGRESS_TEMPLATE } from "./progress.js";
 import { normalizeUrl } from "./url.js";
+import { sanitizePlaylistTitle } from "./playlist.js";
 
 /**
  * yt-dlp arg builder. Always returns an args array (never a shell string).
@@ -32,12 +33,30 @@ export interface DownloadArgsInput {
   readonly codecPreference: CodecPreference;
   /** yt-dlp --download-archive path, or null to not use one. */
   readonly archivePath: string | null;
+  /** Sanitized playlist subfolder (joined under the output dir). */
+  readonly playlistSubdir: string | null;
   readonly noPlaylist: boolean;
 }
 
-function joinOutputTemplate(outputDir: string, filenameTemplate: string): string {
+function joinOutputTemplate(
+  outputDir: string,
+  filenameTemplate: string,
+  playlistSubdir: string | null,
+): string {
   const dir = outputDir.replace(/[/\\]+$/, "");
-  return `${dir}/${filenameTemplate}`;
+  if (playlistSubdir === null) return `${dir}/${filenameTemplate}`;
+  const segs = sanitizePlaylistSubdir(playlistSubdir);
+  if (segs === null) return `${dir}/${filenameTemplate}`;
+  return `${dir}/${segs}/${filenameTemplate}`;
+}
+
+function sanitizePlaylistSubdir(raw: string): string | null {
+  const cleaned = sanitizePlaylistTitle(raw);
+  const segs = cleaned
+    .split("/")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && s !== "." && s !== "..");
+  return segs.length > 0 ? segs.join("/") : null;
 }
 
 function audioFormatOf(preset: DownloadPreset): string {
@@ -122,7 +141,10 @@ export function buildDownloadArgs(input: DownloadArgsInput): string[] {
     "200",
   ];
 
-  args.push("--output", joinOutputTemplate(input.outputDir, input.filenameTemplate));
+  args.push(
+    "--output",
+    joinOutputTemplate(input.outputDir, input.filenameTemplate, input.playlistSubdir),
+  );
 
   if (input.preset.rawFormat !== null && input.preset.rawFormat.trim().length > 0) {
     args.push("--format", input.preset.rawFormat.trim());

@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { rm, stat, unlink } from "node:fs/promises";
+import { readFile, rm, stat, unlink } from "node:fs/promises";
 import { platform as osPlatform, release as osRelease } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { dialog, shell } from "electron";
@@ -342,6 +342,9 @@ export class DesktopEngine implements DownloadEngine {
       ...(typeof job.cookiesFromBrowser === "string" && job.cookiesFromBrowser.length > 0
         ? { cookiesFromBrowser: job.cookiesFromBrowser }
         : {}),
+      ...(typeof job.playlistSubdir === "string" && job.playlistSubdir.length > 0
+        ? { playlistSubdir: job.playlistSubdir }
+        : {}),
     };
     const id = randomUUID();
     // User settings live on disk (main side) so every download honors them
@@ -371,6 +374,7 @@ export class DesktopEngine implements DownloadEngine {
       cookiesFromBrowser: input.cookiesFromBrowser ?? s.cookiesFromBrowser,
       cookiesFile,
       codecPreference: s.codecPreference,
+      playlistSubdir: input.playlistSubdir ?? null,
       archivePath:
         s.skipArchived && input.useArchive === true
           ? archivePathFor(this.deps.userDataDir)
@@ -687,6 +691,39 @@ export class DesktopEngine implements DownloadEngine {
     } catch {
       return false;
     }
+  }
+
+  async fileExistsBulk(paths: string[]): Promise<boolean[]> {
+    const out: boolean[] = [];
+    for (const p of paths.slice(0, 2000)) {
+      out.push(typeof p === "string" ? await this.fileExists(p) : false);
+    }
+    return out;
+  }
+
+  async archiveHas(keys: string[]): Promise<boolean[]> {
+    const known = await this.readArchiveKeys();
+    return keys
+      .slice(0, 2000)
+      .map((k) => typeof k === "string" && !k.includes("://") && known.has(k.toLowerCase()));
+  }
+
+  /** Parse <userData>/archive.txt ("extractor id" lines) into identity keys. */
+  private async readArchiveKeys(): Promise<Set<string>> {
+    const found = new Set<string>();
+    let text = "";
+    try {
+      text = await readFile(archivePathFor(this.deps.userDataDir), "utf8");
+    } catch {
+      return found;
+    }
+    for (const line of text.split(/\r?\n/)) {
+      const tokens = line.trim().split(/\s+/).filter((t) => t.length > 0);
+      const ext = tokens[0];
+      if (ext === undefined || tokens.length < 2) continue;
+      found.add(`${ext.toLowerCase()}::${tokens.slice(1).join(" ")}`);
+    }
+    return found;
   }
 
   async trashFile(path: string): Promise<void> {
