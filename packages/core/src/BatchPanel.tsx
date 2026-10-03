@@ -407,7 +407,9 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
         ))}
       </div>
       {entries.length === 0 ? (
-        <p className="hint">{S.batch.empty}</p>
+        <p className="hint" role="status">
+          {S.batch.empty}
+        </p>
       ) : (
         <ul className="entries">
           {entries.map((e) => (

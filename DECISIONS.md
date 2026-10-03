@@ -179,3 +179,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M3.8
 
 - D73: Window title + finished-toast action. Pure `formatWindowTitle(active, APP_NAME)` (tested: `(N) App` when active, plain name when idle/NaN) applied by a tiny Shell effect over the aggregate count. Finished toasts now carry an Open-file action when a destination is known (ToastAction rendering already existed; the fail path already had Retry). No new channels, no new strings.
+
+## M3.9
+
+- D74: Small a11y pass, zero new strings. Progress bars expose `aria-valuetext` (`42%`); empty states (Downloads, Library incl. no-match, Batch, palette no-match) announce via `role=status`; the palette combobox declares `aria-keyshortcuts="Control+k"`. Motion audit: all six GSAP helpers already no-op/set-directly under `prefers-reduced-motion` (verified in `motion.ts`, no change). Global `:focus-visible` ring + skip-link + dialog focus traps already covered the rest.

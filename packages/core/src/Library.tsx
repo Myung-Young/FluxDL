@@ -280,7 +280,7 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
         </div>
       ) : visible.length === 0 ? (
         <div className="grabber-card">
-          <p className="muted">
+          <p className="muted" role="status">
             {query.trim().length > 0 ? S.library.emptySearch : S.library.empty}
           </p>
         </div>

@@ -36,6 +36,7 @@ function Bar({ ratio }: { ratio: number }): React.JSX.Element {
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round(ratio * 100)}
+      aria-valuetext={`${String(Math.round(ratio * 100))}%`}
     >
       <div ref={ref} className="dl-fill" style={{ width: "0%" }} />
     </div>
@@ -571,7 +572,9 @@ export function Downloads({
       )}
       {jobs.length === 0 ? (
         <div className="grabber-card">
-          <p className="muted">{S.downloads.empty}</p>
+          <p className="muted" role="status">
+            {S.downloads.empty}
+          </p>
         </div>
       ) : (
         <div

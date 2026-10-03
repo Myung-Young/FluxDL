@@ -136,6 +136,7 @@ export function CommandPalette({ open, context, onClose }: CommandPaletteProps):
           aria-controls="cmd-list"
           aria-autocomplete="list"
           aria-label={S.commands.title}
+          aria-keyshortcuts="Control+k"
           placeholder={S.commands.placeholder}
           value={query}
           spellCheck={false}
@@ -145,7 +146,9 @@ export function CommandPalette({ open, context, onClose }: CommandPaletteProps):
           onKeyDown={onKeyDown}
         />
         {ranked.length === 0 ? (
-          <p className="hint">{S.commands.empty}</p>
+          <p className="hint" role="status">
+            {S.commands.empty}
+          </p>
         ) : (
           <ul id="cmd-list" ref={listRef} role="listbox" className="entries">
             {ranked.map(({ def }, i) => (
