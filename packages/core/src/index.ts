@@ -22,6 +22,7 @@ export type {
   GetInfoInit,
   ProgressCallback,
   RepairReport,
+  ThumbnailColor,
   Unsubscribe,
 } from "./engine.js";
 export {
@@ -36,7 +37,7 @@ export type { IpcChannel } from "./engine.js";
 export { App } from "./App.js";
 export { Shell } from "./Shell.js";
 export type { ShellView, ShellProps } from "./Shell.js";
-export { flipShift, prefersReducedMotion, staggerIn, fadeSwap, pressScale, tweenProgress } from "./motion.js";
+export { flipShift, prefersReducedMotion, staggerIn, fadeSwap, pressScale, tweenProgress, tweenAccentVar } from "./motion.js";
 export { STRINGS } from "./strings.js";
 export type { Strings } from "./strings.js";
 export { Home, formatDuration } from "./Home.js";
@@ -90,6 +91,16 @@ export { ensureNotificationPermission, sendNotification } from "./notify.js";
 export { comboFromEvent, isEditableTarget, isOpenSettings, isPasteAnalyze, isCommandPalette } from "./shortcuts.js";
 export type { KeyCombo } from "./shortcuts.js";
 export { readClipboardText, writeClipboardText } from "./clipboard.js";
+export {
+  contrastRatio,
+  deriveAccent,
+  dominantColor,
+  hexToRgb,
+  hslToRgb,
+  rgbToHex,
+  rgbToHsl,
+} from "./color.js";
+export type { Hsl, Rgb } from "./color.js";
 export { LruCache } from "./cache.js";
 export type { CacheClock } from "./cache.js";
 export {

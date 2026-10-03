@@ -140,6 +140,7 @@ export const STRINGS = {
     codecH264: "H.264 (plays everywhere)",
     codecVp9: "VP9",
     codecAv1: "AV1 (smaller files)",
+    thumbnailAccent: "Tint preview with thumbnail colour",
     skipArchived: "Skip playlist videos already in the archive",
     clearArchive: "Clear archive…",
     archiveCleared: "Archive cleared.",

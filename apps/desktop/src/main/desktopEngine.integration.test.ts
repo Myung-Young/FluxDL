@@ -75,6 +75,18 @@ describe.skipIf(!HAS_YTDLP)("desktop engine live (real yt-dlp)", () => {
     expect(info.formats.length).toBeGreaterThan(0);
   });
 
+  it("extracts a dominant colour from the video thumbnail", async () => {
+    // Needs real Electron nativeImage (vitest node has only the path stub).
+    if (process.versions["electron"] === undefined) return;
+    const { engine } = makeEngine();
+    const rgb = await engine.getThumbnailColor("https://i.ytimg.com/vi/aqz-KE-bpKQ/hqdefault.jpg");
+    expect(rgb).not.toBeNull();
+    for (const channel of [rgb?.r, rgb?.g, rgb?.b]) {
+      expect(channel).toBeGreaterThanOrEqual(0);
+      expect(channel).toBeLessThanOrEqual(255);
+    }
+  });
+
   it("kills mid-download then resumes to a complete file", async () => {    const { engine, events, outputDir, base } = makeEngine();
     const unsub = engine.onProgress((e) => {
       events.push(e);

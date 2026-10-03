@@ -15,6 +15,7 @@ import type {
   GetInfoInit,
   ProgressCallback,
   RepairReport,
+  ThumbnailColor,
   Unsubscribe,
 } from "@grabber/core/engine.js";
 import type { ErrorCategory, MappedError } from "@grabber/core/errors.js";
@@ -49,6 +50,7 @@ import {
   saveSettingsToDisk,
   updateHistoryOnDisk,
 } from "./persist.js";
+import { thumbnailColor } from "./thumbnail.js";
 
 export class EngineError extends Error {
   readonly category: ErrorCategory;
@@ -631,7 +633,8 @@ export class DesktopEngine implements DownloadEngine {
     return this.getEngineVersion();
   }
 
-  async repairEngine(): Promise<RepairReport> {    const { repaired, failed } = await repairBinaries(
+  async repairEngine(): Promise<RepairReport> {
+    const { repaired, failed } = await repairBinaries(
       this.deps.userDataDir,
       this.deps.bundledBinDir,
     );
@@ -653,6 +656,10 @@ export class DesktopEngine implements DownloadEngine {
     const tooltip = typeof state.tooltip === "string" ? state.tooltip.slice(0, 200) : APP_NAME;
     this.deps.onAggregate({ active, percent, tooltip });
     return Promise.resolve();
+  }
+
+  getThumbnailColor(url: string): Promise<ThumbnailColor | null> {
+    return thumbnailColor(url);
   }
 
   async pickFolder(): Promise<string | null> {

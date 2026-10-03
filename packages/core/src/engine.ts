@@ -48,6 +48,13 @@ export interface AggregateProgressState {
   readonly tooltip: string;
 }
 
+/** Dominant thumbnail colour as 0-255 channels (null when unavailable). */
+export interface ThumbnailColor {
+  readonly r: number;
+  readonly g: number;
+  readonly b: number;
+}
+
 /**
  * Single abstraction every platform engine must implement.
  * - Desktop: child_process wrapping yt-dlp binary (apps/desktop/DesktopEngine).
@@ -79,6 +86,8 @@ export interface DownloadEngine {
   repairEngine(): Promise<RepairReport>;
   /** Throttled aggregate state (taskbar progress bar + tray tooltip). */
   setAggregateProgress(state: AggregateProgressState): Promise<void>;
+  /** Dominant colour of an https thumbnail (null when unavailable). */
+  getThumbnailColor(url: string): Promise<ThumbnailColor | null>;
   pickFolder(): Promise<string | null>;
   openPath(path: string): Promise<void>;
   revealInFolder(path: string): Promise<void>;
@@ -121,6 +130,7 @@ export const IPC_CHANNELS = {
   updateEngine: "engine:update",
   repairEngine: "engine:repair",
   setAggregateProgress: "engine:aggregate",
+  getThumbnailColor: "engine:thumbnailColor",
   pickFolder: "engine:pickFolder",
   openPath: "engine:openPath",
   revealInFolder: "engine:reveal",

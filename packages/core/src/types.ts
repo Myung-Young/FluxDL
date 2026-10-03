@@ -138,4 +138,6 @@ export interface AppSettings {
   readonly defaultPreset: DownloadPreset;
   /** Analyze timeout in seconds (M2.3). */
   readonly analyzeTimeoutSec: number;
+  /** Tint the preview card with the thumbnail colour (M2.4, default ON). */
+  readonly thumbnailAccent: boolean;
 }

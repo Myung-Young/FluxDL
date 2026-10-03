@@ -1,4 +1,5 @@
 import { gsap } from "gsap";
+import { hexToRgb, rgbToHex } from "./color.js";
 
 /**
  * Motion helpers over GSAP. Every helper is a no-op for state (never leaves
@@ -85,5 +86,41 @@ export function flipShift(element: Element, fromY: number): void {
     ease: "power2.out",
     overwrite: true,
     clearProps: "transform",
+  });
+}
+
+/**
+ * Tween a CSS colour variable between two hex values (thumbnail accent).
+ * Reduced motion (or unparseable colours) sets the target directly.
+ */
+export function tweenAccentVar(
+  element: HTMLElement,
+  name: string,
+  from: string | null,
+  to: string,
+): void {
+  const target = hexToRgb(to);
+  const start = from !== null ? hexToRgb(from) : null;
+  if (target === null) return;
+  if (start === null || prefersReducedMotion()) {
+    element.style.setProperty(name, to);
+    return;
+  }
+  const proxy = { t: 0 };
+  gsap.to(proxy, {
+    t: 1,
+    duration: 0.4,
+    ease: "power2.out",
+    overwrite: true,
+    onUpdate: () => {
+      element.style.setProperty(
+        name,
+        rgbToHex({
+          r: start.r + (target.r - start.r) * proxy.t,
+          g: start.g + (target.g - start.g) * proxy.t,
+          b: start.b + (target.b - start.b) * proxy.t,
+        }),
+      );
+    },
   });
 }

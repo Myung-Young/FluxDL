@@ -114,6 +114,11 @@ export function registerEngineIpc(engine: DesktopEngine): void {
     const tooltip = typeof raw["tooltip"] === "string" ? raw["tooltip"] : "";
     await engine.setAggregateProgress({ active, percent, tooltip });
   });
+  ipcMain.handle(IPC_CHANNELS.getThumbnailColor, async (_event, rawUrl: unknown) => {
+    const urlRaw = asNonEmptyString(rawUrl);
+    if (urlRaw === null) throw new Error("Missing URL.");
+    return engine.getThumbnailColor(urlRaw);
+  });
   ipcMain.handle(IPC_CHANNELS.pickFolder, async () => {
     return engine.pickFolder();
   });

@@ -9,6 +9,7 @@ import type {
   GetInfoInit,
   ProgressCallback,
   RepairReport,
+  ThumbnailColor,
   Unsubscribe,
 } from "@grabber/core/engine.js";
 
@@ -28,6 +29,7 @@ export interface GrabberApi {
   updateEngine(): Promise<EngineVersions>;
   repairEngine(): Promise<RepairReport>;
   setAggregateProgress(state: AggregateProgressState): Promise<void>;
+  getThumbnailColor(url: string): Promise<ThumbnailColor | null>;
   pickFolder(): Promise<string | null>;
   openPath(path: string): Promise<void>;
   revealInFolder(path: string): Promise<void>;
@@ -71,6 +73,8 @@ const api: GrabberApi = {
   repairEngine: () => ipcRenderer.invoke(IPC_CHANNELS.repairEngine) as Promise<RepairReport>,
   setAggregateProgress: (state: AggregateProgressState) =>
     ipcRenderer.invoke(IPC_CHANNELS.setAggregateProgress, state) as Promise<void>,
+  getThumbnailColor: (url: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.getThumbnailColor, url) as Promise<ThumbnailColor | null>,
   pickFolder: () => ipcRenderer.invoke(IPC_CHANNELS.pickFolder) as Promise<string | null>,
   openPath: (path) => ipcRenderer.invoke(IPC_CHANNELS.openPath, path) as Promise<void>,
   revealInFolder: (path) => ipcRenderer.invoke(IPC_CHANNELS.revealInFolder, path) as Promise<void>,

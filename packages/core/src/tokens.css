@@ -580,6 +580,13 @@ select.input {
   }
 }
 
+.grabber-card[data-accent="true"] {
+  border-color: var(--thumb-accent);
+  box-shadow:
+    0 0 0 1px var(--thumb-accent),
+    var(--shadow-1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .skeleton {
     animation: none;

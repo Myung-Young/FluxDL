@@ -31,6 +31,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   onboardingDone: false,
   defaultPreset: { kind: "video", videoPreset: "Compatible", audioPreset: "MP3", rawFormat: null },
   analyzeTimeoutSec: 60,
+  thumbnailAccent: true,
 };
 
 const THEMES: readonly ThemeName[] = ["obsidian", "midnight", "ember"];
@@ -140,5 +141,6 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
       patch.analyzeTimeoutSec === undefined
         ? base.analyzeTimeoutSec
         : clampTimeoutSec(patch.analyzeTimeoutSec),
+    thumbnailAccent: cleanBool(patch.thumbnailAccent, base.thumbnailAccent),
   };
 }

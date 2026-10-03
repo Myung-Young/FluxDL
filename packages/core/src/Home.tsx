@@ -13,10 +13,11 @@ import type {
 } from "./types.js";
 import { isValidUrl, normalizeUrl } from "./url.js";
 import { estimatePresetSize, formatSize } from "./media.js";
+import { deriveAccent } from "./color.js";
 import { LruCache } from "./cache.js";
 import { readClipboardText } from "./clipboard.js";
 import { STRINGS } from "./strings.js";
-import { pressScale } from "./motion.js";
+import { pressScale, tweenAccentVar } from "./motion.js";
 import { BatchPanel } from "./BatchPanel.js";
 import { useDuplicateGuard } from "./DuplicatePrompt.js";
 import type { GuardInput } from "./identity.js";
@@ -95,10 +96,44 @@ export function Home({
   const analyzeCache = useRef(new LruCache<MediaInfo>(30, 10 * 60 * 1000));
   const analyzeReq = useRef<string | null>(null);
   const cancelledReqs = useRef<Set<string>>(new Set());
+  const previewRef = useRef<HTMLDivElement | null>(null);
+  const lastAccent = useRef<string | null>(null);
+  const [thumbAccent, setThumbAccent] = useState<string | null>(null);
   const lastIndex = useRef<number | null>(null);
   const urlRef = useRef<string>(url);
   urlRef.current = url;
   const settingsState = useStore(settings, (s) => s.settings);
+
+  const cssVar = (name: string, fallback: string): string => {
+    if (typeof document === "undefined") return fallback;
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return value.length > 0 ? value : fallback;
+  };
+
+  const applyThumbAccent = useCallback(
+    async (thumbnail: string | null): Promise<void> => {
+      const el = previewRef.current;
+      if (thumbnail === null || !settingsState.thumbnailAccent || el === null) {
+        lastAccent.current = null;
+        setThumbAccent(null);
+        return;
+      }
+      try {
+        const rgb = await engine.getThumbnailColor(thumbnail);
+        if (rgb === null || previewRef.current !== el) {
+          return;
+        }
+        const hex = deriveAccent(rgb, [cssVar("--bg-1", "#121214"), cssVar("--bg-0", "#0a0a0b")]);
+        tweenAccentVar(el, "--thumb-accent", lastAccent.current, hex);
+        lastAccent.current = hex;
+        setThumbAccent(hex);
+      } catch {
+        lastAccent.current = null;
+        setThumbAccent(null);
+      }
+    },
+    [engine, settingsState.thumbnailAccent],
+  );
 
   useEffect(() => {
     if (!watchClipboard) return;
@@ -144,12 +179,15 @@ export function Home({
           setSelected(cached.entries.map((e) => e.id));
           setRawFormat(null);
           lastIndex.current = null;
+          void applyThumbAccent(cached.thumbnail);
           return;
         }
       } else {
         analyzeCache.current.delete(key);
       }
       setInfo(null);
+      lastAccent.current = null;
+      setThumbAccent(null);
       setAnalyzing(true);
       const requestId = crypto.randomUUID();
       analyzeReq.current = requestId;
@@ -161,6 +199,7 @@ export function Home({
         setSelected(media.entries.map((e) => e.id));
         setRawFormat(null);
         lastIndex.current = null;
+        void applyThumbAccent(media.thumbnail);
       } catch (err) {
         if (analyzeReq.current !== requestId) return;
         if (cancelledReqs.current.has(requestId)) {
@@ -179,7 +218,7 @@ export function Home({
         }
       }
     },
-    [engine],
+    [engine, applyThumbAccent],
   );
 
   const cancelAnalyze = useCallback((): void => {
@@ -385,7 +424,16 @@ export function Home({
       )}
 
       {info !== null && (
-        <div className="grabber-card">
+        <div
+          className="grabber-card"
+          ref={previewRef}
+          data-accent={thumbAccent !== null ? "true" : undefined}
+          style={
+            thumbAccent !== null
+              ? ({ "--thumb-accent": thumbAccent } as React.CSSProperties)
+              : undefined
+          }
+        >
           <div className="preview-row">
             {info.thumbnail !== null ? (
               <img

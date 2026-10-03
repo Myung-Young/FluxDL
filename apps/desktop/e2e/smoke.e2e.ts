@@ -125,6 +125,7 @@ async function installMock(page: Page): Promise<void> {
       fileExists: (): Promise<boolean> => Promise.resolve(false),
       trashFile: (): Promise<void> => Promise.resolve(),
       updateHistory: (): Promise<void> => Promise.resolve(),
+      getThumbnailColor: (): Promise<null> => Promise.resolve(null),
       clearArchive: (): Promise<void> => Promise.resolve(),
       setAggregateProgress: (): Promise<void> => Promise.resolve(),
       loadSettings: (): Promise<unknown> => Promise.resolve({ ...settings }),
