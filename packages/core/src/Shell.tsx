@@ -15,6 +15,7 @@ import type { CommandContext } from "./commands.js";
 import { Home } from "./Home.js";
 import { Downloads } from "./Downloads.js";
 import { Library } from "./Library.js";
+import { Stats } from "./StatsScreen.js";
 import { SettingsScreen } from "./SettingsScreen.js";
 import { Logs } from "./Logs.js";
 import { Toasts } from "./Toasts.js";
@@ -33,7 +34,7 @@ import type { ToastStoreState } from "./toast.js";
 import "./tokens.css";
 import "./fonts.css";
 
-export type ShellView = "home" | "downloads" | "library" | "settings" | "logs";
+export type ShellView = "home" | "downloads" | "library" | "stats" | "settings" | "logs";
 
 export interface ShellProps {
   readonly engine: DownloadEngine;
@@ -72,6 +73,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
       { id: "home", label: S.home.title },
       { id: "downloads", label: S.downloads.title },
       { id: "library", label: S.library.title },
+      { id: "stats", label: S.stats.title },
       { id: "settings", label: S.settings.title },
       { id: "logs", label: S.logs.title },
     ],
@@ -414,6 +416,9 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
           )}
           {!mini && view === "library" && (
             <Library engine={engine} queue={queue} settings={settings} toast={toast} />
+          )}
+          {!mini && view === "stats" && (
+            <Stats engine={engine} settings={settings} />
           )}
           {!mini && view === "settings" && (
             <SettingsScreen

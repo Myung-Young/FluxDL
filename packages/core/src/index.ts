@@ -82,6 +82,16 @@ export { Downloads } from "./Downloads.js";
 export type { DownloadsProps } from "./Downloads.js";
 export { MiniView } from "./MiniView.js";
 export type { MiniViewProps } from "./MiniView.js";
+export { Stats } from "./StatsScreen.js";
+export type { StatsProps } from "./StatsScreen.js";
+export {
+  computeStats,
+  formatTotalDuration,
+  startOfDay,
+  startOfWeek,
+  weekLabel,
+} from "./stats.js";
+export type { DownloadStats, PresetMixEntry, TopUploader, WeekBucket } from "./stats.js";
 export { Library } from "./Library.js";
 export type { LibraryProps } from "./Library.js";
 export { SettingsScreen } from "./SettingsScreen.js";

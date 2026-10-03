@@ -13,7 +13,7 @@ import { isValidUrl } from "./url.js";
  * live here (pure, tested); rendering lives in CommandPalette.
  */
 
-export type CommandView = "home" | "downloads" | "library" | "settings" | "logs";
+export type CommandView = "home" | "downloads" | "library" | "stats" | "settings" | "logs";
 
 export interface CommandContext {
   readonly engine: DownloadEngine;
@@ -90,6 +90,15 @@ export const BUILTIN_COMMANDS: readonly CommandDef[] = [
     available: () => true,
     run: (ctx) => {
       ctx.navigate("library");
+    },
+  },
+  {
+    id: "go-stats",
+    labelKey: "goStats",
+    keywords: ["go", "stats", "statistics", "history", "statistik"],
+    available: () => true,
+    run: (ctx) => {
+      ctx.navigate("stats");
     },
   },
   {

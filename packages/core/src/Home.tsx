@@ -497,6 +497,9 @@ export function Home({
           ...(isAudioPreset(rowPreset) && hasAudioMetadata(metaEditor)
             ? { audioMetadata: metaEditor }
             : {}),
+          // M4.5: uploader/duration ride along for the stats screen.
+          ...(info.uploader !== null ? { uploader: info.uploader } : {}),
+          ...(info.duration !== null ? { durationSec: info.duration } : {}),
         });
         count += 1;
       }

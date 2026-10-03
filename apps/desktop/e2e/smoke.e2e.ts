@@ -43,6 +43,7 @@ async function installMock(page: Page): Promise<void> {
       autoCheckUpdate: false,
     };
     const started: Array<unknown> = [];
+    const historyFixture: unknown[] = [];
     let chromeState = { mini: false, theme: "obsidian" };
     let chromeListeners: Array<(s: { mini: boolean; theme: string }) => void> = [];
     const fireProgress = (id: string): void => {
@@ -163,12 +164,16 @@ async function installMock(page: Page): Promise<void> {
       loadQueue: (): Promise<unknown[]> => Promise.resolve([]),
       saveQueue: (): Promise<void> => Promise.resolve(),
       appendHistory: (): Promise<void> => Promise.resolve(),
-      loadHistory: (): Promise<unknown[]> => Promise.resolve([]),
+      loadHistory: (): Promise<unknown[]> => Promise.resolve(historyFixture),
       removeHistory: (): Promise<void> => Promise.resolve(),
       clearHistory: (): Promise<void> => Promise.resolve(),
       getRawLog: (): Promise<string> => Promise.resolve("mock log"),
       _started: started,
       _chrome: () => chromeState,
+      _setHistory: (rows: unknown[]) => {
+        historyFixture.length = 0;
+        historyFixture.push(...rows);
+      },
       _emitChrome: (s: { mini: boolean; theme: string }) => {
         chromeState = s;
         for (const cb of chromeListeners) cb(s);
@@ -204,7 +209,8 @@ test("launch -> analyze mocked response -> queue item", async () => {
   });
 
   await expect(page.locator('[data-testid="grabber-shell"]')).toBeVisible({ timeout: 30000 });
-  await expect(page.locator(".grabber-nav-btn")).toHaveCount(5);
+  // Home, Downloads, Library, Stats, Settings, Logs.
+  await expect(page.locator(".grabber-nav-btn")).toHaveCount(6);
 
   await page.locator("#home-url").fill("https://example.com/mock-video");
   await page.locator(".url-row .btn").filter({ hasText: "Analyze" }).click();
@@ -571,5 +577,79 @@ test("mini mode: a tray-side chrome push switches the layout", async () => {
     mock?._emitChrome?.({ mini: false, theme: "obsidian" });
   });
   await expect(page.locator('[data-testid="mini-view"]')).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
+});
+
+test("stats: shows totals, weekly chart and uploaders from history", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+  await installMock(page);
+  await page.reload();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await expect(page.locator('[data-testid="grabber-shell"]')).toBeVisible({ timeout: 30000 });
+
+  // Empty history first.
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Stats" }).click();
+  await expect(page.locator('[data-testid="stats-empty"]')).toBeVisible({ timeout: 15000 });
+
+  // Mixed old/new records: a legacy record without size/uploader/finishedAt.
+  const applied = await page.evaluate(() => {
+    const mock = (
+      window as unknown as { __grabberOverride?: { _setHistory?: (rows: unknown[]) => void } }
+    ).__grabberOverride;
+    if (typeof mock?._setHistory !== "function") return false;
+    const base = {
+      url: "https://youtu.be/x",
+      title: "T",
+      preset: { kind: "video", videoPreset: "1080", audioPreset: "MP3", rawFormat: null },
+      outputDir: "C:\\Vids",
+      progress: 100,
+      speed: null,
+      eta: null,
+      downloadedBytes: null,
+      totalBytes: null,
+      stage: "done",
+      error: null,
+      attempts: 0,
+      nextRetryAt: null,
+      destination: null,
+    };
+    mock._setHistory([
+      {
+        ...base,
+        id: "old",
+        status: "done",
+        createdAt: Date.now() - 5 * 86_400_000,
+        totalBytes: 5_000_000,
+        durationSec: 120,
+        uploader: "Chan A",
+        finishedAt: Date.now(),
+      },
+      { ...base, id: "legacy", status: "done", createdAt: Date.now() - 3 * 86_400_000 },
+      { ...base, id: "bad", status: "error", createdAt: Date.now(), error: "boom" },
+    ]);
+    return true;
+  });
+  expect(applied).toBe(true);
+
+  // Leave and come back so the screen re-reads history (view swaps animate).
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Settings" }).click();
+  await expect(page.locator(".grabber-view h1")).toHaveText("Settings", { timeout: 15000 });
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Stats" }).click();
+  await expect(page.locator('[data-testid="stats-view"]')).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('[data-testid="stats-tiles"]')).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('[data-testid="stats-tiles"]')).toContainText("2");
+  await expect(page.locator('[data-testid="stats-weeks"]')).toBeVisible();
+  await expect(page.locator('[data-testid="stats-uploaders"]')).toContainText("Chan A");
+  // The legacy record has no size, so the note must surface.
+  await expect(page.locator('[data-testid="stats-unknown-size"]')).toContainText("1");
   expect(pageErrors).toEqual([]);
 });

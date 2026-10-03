@@ -150,6 +150,12 @@ export interface DownloadJob {
   readonly splitChapters?: boolean | null;
   /** Audio tag overrides for this job (M4.3), or null for none. */
   readonly audioMetadata?: AudioMetadata | null;
+  /** Completion time (ms epoch). Absent on records written before v1.4. */
+  readonly finishedAt?: number | null;
+  /** Uploader/channel captured at enqueue, for the stats screen (M4.5). */
+  readonly uploader?: string | null;
+  /** Media duration in seconds at enqueue (M4.5). */
+  readonly durationSec?: number | null;
 }
 
 export interface DownloadJobInput extends Pick<
@@ -166,6 +172,8 @@ export interface DownloadJobInput extends Pick<
   | "waitForVideo"
   | "splitChapters"
   | "audioMetadata"
+  | "uploader"
+  | "durationSec"
 > {
   readonly useArchive?: boolean;
   /** Sanitized playlist subfolder (UI-side, when the setting is on). */

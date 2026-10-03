@@ -376,7 +376,10 @@ export class QueueController {
       this.engineIds.delete(job.id);
       this.revEngineIds.delete(engineId);
     }
-    await this.engine.appendHistory(job).catch(() => undefined);
+    // M4.5: stamp the completion time so the stats screen can bucket by day.
+    // `createdAt` cannot be used: it is enqueue time and reorder() rewrites
+    // it to permute the queue.
+    await this.engine.appendHistory({ ...job, finishedAt: this.clock.now() }).catch(() => undefined);
     this.emit();
     await this.persist();
     await this.pump();

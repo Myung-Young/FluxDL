@@ -286,6 +286,8 @@ type StartOptions = Partial<
     | "waitForVideo"
     | "splitChapters"
     | "audioMetadata"
+    | "uploader"
+    | "durationSec"
   >
 >;
 
@@ -312,6 +314,12 @@ function pickJobOptions(source: DownloadJobInput): StartOptions {
     ...(source.splitChapters === true ? { splitChapters: true as const } : {}),
     ...(isAudioMetadata(source.audioMetadata)
       ? { audioMetadata: normalizeAudioMetadata(source.audioMetadata) }
+      : {}),
+    ...(typeof source.uploader === "string" && source.uploader.trim().length > 0
+      ? { uploader: source.uploader }
+      : {}),
+    ...(typeof source.durationSec === "number" && Number.isFinite(source.durationSec)
+      ? { durationSec: source.durationSec }
       : {}),
   };
 }
