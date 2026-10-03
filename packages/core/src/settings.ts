@@ -30,6 +30,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoCheckUpdate: true,
   onboardingDone: false,
   defaultPreset: { kind: "video", videoPreset: "Compatible", audioPreset: "MP3", rawFormat: null },
+  analyzeTimeoutSec: 60,
 };
 
 const THEMES: readonly ThemeName[] = ["obsidian", "midnight", "ember"];
@@ -60,7 +61,15 @@ function cleanBool(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
-function cleanPreset(value: unknown, fallback: AppSettings["defaultPreset"]): AppSettings["defaultPreset"] {
+function clampTimeoutSec(n: unknown): number {
+  if (typeof n !== "number" || !Number.isFinite(n)) return 60;
+  return Math.min(300, Math.max(10, Math.floor(n)));
+}
+
+function cleanPreset(
+  value: unknown,
+  fallback: AppSettings["defaultPreset"],
+): AppSettings["defaultPreset"] {
   if (typeof value !== "object" || value === null) return fallback;
   const rec = value as Record<string, unknown>;
   const kind = rec["kind"];
@@ -127,5 +136,9 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
       patch.defaultPreset ?? base.defaultPreset,
       base.defaultPreset,
     ),
+    analyzeTimeoutSec:
+      patch.analyzeTimeoutSec === undefined
+        ? base.analyzeTimeoutSec
+        : clampTimeoutSec(patch.analyzeTimeoutSec),
   };
 }

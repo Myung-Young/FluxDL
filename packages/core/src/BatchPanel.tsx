@@ -6,11 +6,13 @@ import type {
   AudioPreset,
   DownloadJob,
   DownloadPreset,
+  MediaInfo,
   MediaKind,
   VideoPreset,
 } from "./types.js";
 import { STRINGS } from "./strings.js";
 import { pressScale } from "./motion.js";
+import { LruCache } from "./cache.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 import { useDuplicateGuard } from "./DuplicatePrompt.js";
 import type { GuardInput } from "./identity.js";
@@ -27,7 +29,10 @@ import {
 } from "./batch.js";
 
 export interface BatchPanelProps {
-  readonly engine: Pick<DownloadEngine, "getInfo" | "loadHistory" | "fileExists" | "openPath">;
+  readonly engine: Pick<
+    DownloadEngine,
+    "getInfo" | "cancelAnalyze" | "loadHistory" | "fileExists" | "openPath"
+  >;
   readonly queue: StoreApi<QueueStoreState>;
   readonly settings: StoreApi<SettingsStoreState>;
 }
@@ -95,6 +100,9 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
   const fileRef = useRef<HTMLInputElement | null>(null);
   const settingsState = useStore(settings, (s) => s.settings);
   const { guard, dialog: duplicateDialog } = useDuplicateGuard();
+  const analyzeCache = useRef(new LruCache<MediaInfo>(30, 10 * 60 * 1000));
+  const inFlight = useRef(new Map<string, string>());
+  const cancelledReqs = useRef<Set<string>>(new Set());
 
   const setEntries = (next: readonly BatchEntry[]): void => {
     entriesRef.current = next;
@@ -143,15 +151,41 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
           const key = keys[next];
           next += 1;
           if (key === undefined) return;
-          setEntries(updateBatchEntry(entriesRef.current, key, { status: "analyzing" }));
           const entry = entriesRef.current.find((e) => e.key === key);
           if (entry === undefined) continue;
+          const cached = analyzeCache.current.get(entry.url);
+          if (cached !== null) {
+            setEntries(
+              updateBatchEntry(entriesRef.current, key, {
+                status: "ready",
+                info: cached,
+                error: null,
+              }),
+            );
+            continue;
+          }
+          setEntries(updateBatchEntry(entriesRef.current, key, { status: "analyzing" }));
+          const requestId = crypto.randomUUID();
+          inFlight.current.set(key, requestId);
           try {
-            const info = await engine.getInfo(entry.url);
+            const info = await engine.getInfo(entry.url, { requestId });
+            inFlight.current.delete(key);
+            if (cancelledReqs.current.has(requestId)) {
+              cancelledReqs.current.delete(requestId);
+              setEntries(updateBatchEntry(entriesRef.current, key, { status: "pending" }));
+              continue;
+            }
+            analyzeCache.current.set(entry.url, info);
             setEntries(
               updateBatchEntry(entriesRef.current, key, { status: "ready", info, error: null }),
             );
           } catch {
+            inFlight.current.delete(key);
+            if (cancelledReqs.current.has(requestId)) {
+              cancelledReqs.current.delete(requestId);
+              setEntries(updateBatchEntry(entriesRef.current, key, { status: "pending" }));
+              continue;
+            }
             setEntries(
               updateBatchEntry(entriesRef.current, key, {
                 status: "failed",
@@ -165,6 +199,16 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
     } finally {
       setBusy(false);
     }
+  };
+
+  const stopAnalyze = (): void => {
+    for (const [key, requestId] of inFlight.current) {
+      cancelledReqs.current.add(requestId);
+      void engine.cancelAnalyze(requestId).catch(() => undefined);
+      setEntries(updateBatchEntry(entriesRef.current, key, { status: "pending" }));
+    }
+    inFlight.current.clear();
+    setBusy(false);
   };
 
   const queueAll = async (): Promise<void> => {
@@ -422,6 +466,17 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
         >
           {busy ? STRINGS.batch.analyzing : STRINGS.batch.analyzeAll}
         </button>
+        {busy && (
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              stopAnalyze();
+            }}
+          >
+            {STRINGS.batch.stop}
+          </button>
+        )}
         <button
           id="batch-queue"
           type="button"

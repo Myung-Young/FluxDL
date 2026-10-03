@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionsFor, mapDownloadError } from "./errors.js";
+import { actionsFor, cancelledMapped, mapDownloadError, timeoutMapped } from "./errors.js";
 
 describe("mapDownloadError", () => {
   it.each([
@@ -81,5 +81,14 @@ describe("actionable errors (M1.4)", () => {
   it("actionsFor falls back to retry+logs for unknown categories", () => {
     expect(actionsFor(undefined).map((a) => a.id)).toEqual(["retry", "logs"]);
     expect(actionsFor("network").map((a) => a.id)).toEqual(["retry", "logs"]);
+  });
+
+  it("builds cancelled/timeout mappings", () => {
+    expect(cancelledMapped().category).toBe("cancelled");
+    expect(cancelledMapped().actions).toEqual([]);
+    const t = timeoutMapped(60);
+    expect(t.category).toBe("timeout");
+    expect(t.message).toContain("60");
+    expect(t.actions.map((a) => a.id)).toEqual(["retry", "logs"]);
   });
 });

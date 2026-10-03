@@ -57,9 +57,16 @@ export interface AggregateProgressState {
  * - Implementations must validate/normalize URLs before touching the binary.
  * - Never spawn with shell:true (desktop); always pass an args array.
  */
+export interface GetInfoInit {
+  /** Client-generated id enabling cancelAnalyze() for this call. */
+  readonly requestId?: string;
+}
+
 export interface DownloadEngine {
   /** Fetch metadata without downloading. Must not write files. */
-  getInfo(url: string): Promise<MediaInfo>;
+  getInfo(url: string, init?: GetInfoInit): Promise<MediaInfo>;
+  /** Abort an in-flight getInfo by requestId (unknown ids are a no-op). */
+  cancelAnalyze(requestId: string): Promise<void>;
   /** Enqueue + start a download. Resolves with the job id. */
   start(job: DownloadJobInput): Promise<string>;
   pause(id: string): Promise<void>;
@@ -104,6 +111,7 @@ export interface DownloadEngine {
  */
 export const IPC_CHANNELS = {
   getInfo: "engine:getInfo",
+  cancelAnalyze: "engine:cancelAnalyze",
   start: "engine:start",
   pause: "engine:pause",
   resume: "engine:resume",

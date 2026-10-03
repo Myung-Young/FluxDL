@@ -115,3 +115,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M2.2
 
 - D57: Onboarding adds `onboardingDone` + `defaultPreset` settings (sanitized; Compatible MP4 is the default default). Wizard is non-blocking (Skip discards, Done commits), re-runnable from Settings, engine status shown on the preset step. Home/BatchPanel initialize their presets from the setting. Step machine lives in Onboarding.tsx — NOT onboarding.ts, which collides on Windows (walked straight into D26 and merged). E2E covers replay+skip; mock settings gained the new fields.
+
+## M2.3
+
+- D58: Analyze UX. LRU MediaInfo cache (30 entries, 10-min TTL, injected clock, tested) keyed by normalized URL in Home + BatchPanel; per-row/row-level "Re-analyze" bypasses it. Cancel via requestId: `getInfo(url, {requestId})` (optional — old callers untouched) + `engine.cancelAnalyze()` kills the proc (27 methods/channels); cancellations resolve silently via a cancelled-ids set (IPC only carries message text, so no string-matching on "cancelled"). Timeout is engine-side from `analyzeTimeoutSec` (default 60, clamped 10–300 in Settings). Skeleton is CSS-only shimmer with a reduced-motion kill. No partial/fake results — yt-dlp returns metadata at once. Timeout kill-path shares the cancel mechanism (live-tested via cancel); live timeout left out as flaky, noted here.

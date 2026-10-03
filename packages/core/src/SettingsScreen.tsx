@@ -160,8 +160,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
 
         <label className="field-label" htmlFor="set-concurrency">
           {STRINGS.settings.concurrency}
-        </label>
-        <input
+        </label>        <input
           id="set-concurrency"
           key={String(saved.concurrency)}
           className="input"
@@ -171,6 +170,22 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
           defaultValue={saved.concurrency}
           onBlur={(e) => {
             save({ concurrency: Number(e.target.value) });
+          }}
+        />
+
+        <label className="field-label" htmlFor="set-timeout">
+          {STRINGS.settings.analyzeTimeout}
+        </label>
+        <input
+          id="set-timeout"
+          key={String(saved.analyzeTimeoutSec)}
+          className="input"
+          type="number"
+          min={10}
+          max={300}
+          defaultValue={saved.analyzeTimeoutSec}
+          onBlur={(e) => {
+            save({ analyzeTimeoutSec: Number(e.target.value) });
           }}
         />
 

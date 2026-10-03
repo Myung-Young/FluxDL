@@ -62,10 +62,22 @@ function parseJobInput(raw: unknown): DownloadJobInput {
 
 /** Wire typed IPC handlers (single channel map from core) to the engine. */
 export function registerEngineIpc(engine: DesktopEngine): void {
-  ipcMain.handle(IPC_CHANNELS.getInfo, async (_event, rawUrl: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.getInfo, async (_event, rawUrl: unknown, rawInit: unknown) => {
     const urlRaw = asNonEmptyString(rawUrl);
     if (urlRaw === null) throw new Error("Missing URL.");
-    return engine.getInfo(normalizeUrl(urlRaw));
+    let requestId: string | undefined;
+    if (isRecord(rawInit) && typeof rawInit["requestId"] === "string") {
+      requestId = rawInit["requestId"];
+    }
+    return engine.getInfo(
+      normalizeUrl(urlRaw),
+      requestId === undefined ? undefined : { requestId },
+    );
+  });
+  ipcMain.handle(IPC_CHANNELS.cancelAnalyze, async (_event, rawId: unknown) => {
+    const id = asNonEmptyString(rawId);
+    if (id === null) throw new Error("Missing request id.");
+    await engine.cancelAnalyze(id);
   });
   ipcMain.handle(IPC_CHANNELS.start, async (_event, rawJob: unknown) => {
     return engine.start(parseJobInput(rawJob));

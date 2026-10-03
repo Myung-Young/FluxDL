@@ -193,6 +193,18 @@ describe.skipIf(!HAS_YTDLP)("desktop engine live (real yt-dlp)", () => {
     expect(picked).toContain("mp4a");
   }, 120_000);
 
+  it("cancels an in-flight analyze by request id", async () => {
+    const { engine } = makeEngine();
+    const requestId = "m23-cancel-probe";
+    const pending = engine.getInfo("https://www.youtube.com/watch?v=aqz-KE-bpKQ", {
+      requestId,
+    });
+    await new Promise((r) => setTimeout(r, 500));
+    await engine.cancelAnalyze(requestId);
+    await expect(pending).rejects.toThrow("Analyze cancelled.");
+    await engine.cancelAnalyze("unknown-id");
+  }, 60_000);
+
   it("second run with --download-archive skips the fetched video", async () => {
     const { engine, events, outputDir, userData, base } = makeEngine(true);
     const unsub = engine.onProgress((e) => {

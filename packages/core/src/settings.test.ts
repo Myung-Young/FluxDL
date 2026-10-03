@@ -24,8 +24,7 @@ describe("mergeSettings", () => {
     expect(m.proxy).toBeNull();
     expect(m.embedThumbnail).toBe(false);
   });
-  it("defaults codec/archived preferences and sanitizes them", () => {
-    expect(DEFAULT_SETTINGS.codecPreference).toBe("auto");
+  it("defaults codec/archived preferences and sanitizes them", () => {    expect(DEFAULT_SETTINGS.codecPreference).toBe("auto");
     expect(DEFAULT_SETTINGS.skipArchived).toBe(true);
     const m = mergeSettings(DEFAULT_SETTINGS, {
       codecPreference: "vorbis" as never,
@@ -44,5 +43,16 @@ describe("mergeSettings", () => {
     expect(m.downloadDir).toBe("C:\\My Videos\\münchen");
     expect(m.subtitles).toBe(true);
     expect(m.mergeContainer).toBe("mp4");
+  });
+
+  it("clamps the analyze timeout to 10–300 seconds", () => {
+    expect(DEFAULT_SETTINGS.analyzeTimeoutSec).toBe(60);
+    expect(mergeSettings(DEFAULT_SETTINGS, { analyzeTimeoutSec: 5 }).analyzeTimeoutSec).toBe(10);
+    expect(mergeSettings(DEFAULT_SETTINGS, { analyzeTimeoutSec: 999 }).analyzeTimeoutSec).toBe(
+      300,
+    );
+    expect(
+      mergeSettings(DEFAULT_SETTINGS, { analyzeTimeoutSec: Number.NaN }).analyzeTimeoutSec,
+    ).toBe(60);
   });
 });

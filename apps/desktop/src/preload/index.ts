@@ -6,6 +6,7 @@ import type {
   AggregateProgressState,
   EngineProgress,
   EngineVersions,
+  GetInfoInit,
   ProgressCallback,
   RepairReport,
   Unsubscribe,
@@ -16,7 +17,8 @@ import type {
  * Renderer talks to DownloadEngine through `window.grabber` only.
  */
 export interface GrabberApi {
-  getInfo(url: string): Promise<MediaInfo>;
+  getInfo(url: string, init?: GetInfoInit): Promise<MediaInfo>;
+  cancelAnalyze(requestId: string): Promise<void>;
   start(job: DownloadJobInput): Promise<string>;
   pause(id: string): Promise<void>;
   resume(id: string): Promise<void>;
@@ -45,7 +47,10 @@ export interface GrabberApi {
 }
 
 const api: GrabberApi = {
-  getInfo: (url) => ipcRenderer.invoke(IPC_CHANNELS.getInfo, url) as Promise<MediaInfo>,
+  getInfo: (url, init) =>
+    ipcRenderer.invoke(IPC_CHANNELS.getInfo, url, init) as Promise<MediaInfo>,
+  cancelAnalyze: (requestId) =>
+    ipcRenderer.invoke(IPC_CHANNELS.cancelAnalyze, requestId) as Promise<void>,
   start: (job) => ipcRenderer.invoke(IPC_CHANNELS.start, job) as Promise<string>,
   pause: (id) => ipcRenderer.invoke(IPC_CHANNELS.pause, id) as Promise<void>,
   resume: (id) => ipcRenderer.invoke(IPC_CHANNELS.resume, id) as Promise<void>,

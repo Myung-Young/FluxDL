@@ -16,6 +16,8 @@ export type ErrorCategory =
   | "extractor-failed"
   | "unsupported-url"
   | "rate-limited"
+  | "timeout"
+  | "cancelled"
   | "unknown";
 
 export type ErrorActionId =
@@ -177,4 +179,26 @@ export function actionsFor(category: ErrorCategory | null | undefined): readonly
     if (rule.category === category) return rule.actions;
   }
   return [RETRY, LOGS];
+}
+
+/** Synthetic mapping for user-cancelled analyzes (no buttons). */
+export function cancelledMapped(): MappedError {
+  return {
+    category: "cancelled",
+    message: "Analyze cancelled.",
+    raw: "",
+    suggestCookies: false,
+    actions: [],
+  };
+}
+
+/** Synthetic mapping for analyze timeouts. */
+export function timeoutMapped(seconds: number): MappedError {
+  return {
+    category: "timeout",
+    message: `Analyze timed out after ${String(seconds)} seconds.`,
+    raw: "",
+    suggestCookies: false,
+    actions: [RETRY, LOGS],
+  };
 }

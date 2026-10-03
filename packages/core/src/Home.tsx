@@ -11,8 +11,9 @@ import type {
   MediaKind,
   VideoPreset,
 } from "./types.js";
-import { isValidUrl } from "./url.js";
+import { isValidUrl, normalizeUrl } from "./url.js";
 import { estimatePresetSize, formatSize } from "./media.js";
+import { LruCache } from "./cache.js";
 import { readClipboardText } from "./clipboard.js";
 import { STRINGS } from "./strings.js";
 import { pressScale } from "./motion.js";
@@ -91,6 +92,9 @@ export function Home({
   const [watchClipboard, setWatchClipboard] = useState<boolean>(false);
   const [queuedNote, setQueuedNote] = useState<string | null>(null);
   const { guard, dialog: duplicateDialog } = useDuplicateGuard();
+  const analyzeCache = useRef(new LruCache<MediaInfo>(30, 10 * 60 * 1000));
+  const analyzeReq = useRef<string | null>(null);
+  const cancelledReqs = useRef<Set<string>>(new Set());
   const lastIndex = useRef<number | null>(null);
   const urlRef = useRef<string>(url);
   urlRef.current = url;
@@ -123,29 +127,69 @@ export function Home({
   };
 
   const analyzeValue = useCallback(
-    async (value: string): Promise<void> => {
+    async (value: string, opts: { force?: boolean } = {}): Promise<void> => {
       setError(null);
-      setInfo(null);
       setQueuedNote(null);
-      if (!isValidUrl(value)) {
+      let key: string;
+      try {
+        key = normalizeUrl(value);
+      } catch {
         setError(STRINGS.home.invalidUrl);
         return;
       }
+      if (!opts.force) {
+        const cached = analyzeCache.current.get(key);
+        if (cached !== null) {
+          setInfo(cached);
+          setSelected(cached.entries.map((e) => e.id));
+          setRawFormat(null);
+          lastIndex.current = null;
+          return;
+        }
+      } else {
+        analyzeCache.current.delete(key);
+      }
+      setInfo(null);
       setAnalyzing(true);
+      const requestId = crypto.randomUUID();
+      analyzeReq.current = requestId;
       try {
-        const media = await engine.getInfo(value);
+        const media = await engine.getInfo(value, { requestId });
+        if (analyzeReq.current !== requestId) return;
+        analyzeCache.current.set(key, media);
         setInfo(media);
         setSelected(media.entries.map((e) => e.id));
         setRawFormat(null);
         lastIndex.current = null;
-      } catch {
-        setError(STRINGS.home.analyzeFailed);
+      } catch (err) {
+        if (analyzeReq.current !== requestId) return;
+        if (cancelledReqs.current.has(requestId)) {
+          cancelledReqs.current.delete(requestId);
+          return;
+        }
+        setError(
+          err instanceof Error && err.message.length > 0
+            ? err.message
+            : STRINGS.home.analyzeFailed,
+        );
       } finally {
-        setAnalyzing(false);
+        if (analyzeReq.current === requestId) {
+          analyzeReq.current = null;
+          setAnalyzing(false);
+        }
       }
     },
     [engine],
   );
+
+  const cancelAnalyze = useCallback((): void => {
+    const id = analyzeReq.current;
+    if (id === null) return;
+    cancelledReqs.current.add(id);
+    analyzeReq.current = null;
+    setAnalyzing(false);
+    void engine.cancelAnalyze(id).catch(() => undefined);
+  }, [engine]);
 
   const analyze = async (): Promise<void> => {
     await analyzeValue(url);
@@ -268,6 +312,7 @@ export function Home({
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter") void analyze();
+              if (e.key === "Escape") cancelAnalyze();
             }}
             spellCheck={false}
           />
@@ -294,6 +339,17 @@ export function Home({
           >
             {analyzing ? STRINGS.home.analyzing : STRINGS.home.analyze}
           </button>
+          {analyzing && (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                cancelAnalyze();
+              }}
+            >
+              {STRINGS.home.cancelAnalyze}
+            </button>
+          )}
         </div>
         <label className="check-row">
           <input
@@ -315,6 +371,18 @@ export function Home({
       </div>
 
       <BatchPanel engine={engine} queue={queue} settings={settings} />
+
+      {analyzing && info === null && (
+        <div className="grabber-card" aria-busy="true">
+          <p className="muted" role="status">
+            {STRINGS.home.analyzing}
+          </p>
+          <div className="skeleton skeleton-title" aria-hidden="true" />
+          <div className="skeleton skeleton-line" aria-hidden="true" />
+          <div className="skeleton skeleton-line" aria-hidden="true" />
+          <div className="skeleton skeleton-chips" aria-hidden="true" />
+        </div>
+      )}
 
       {info !== null && (
         <div className="grabber-card">
@@ -484,6 +552,16 @@ export function Home({
             {info.isPlaylist && info.entries.length > 0
               ? STRINGS.home.queueSelected
               : STRINGS.home.queueSingle}
+          </button>
+          <button
+            type="button"
+            className="btn btn-small"
+            disabled={analyzing}
+            onClick={() => {
+              void analyzeValue(url, { force: true });
+            }}
+          >
+            {STRINGS.home.reanalyze}
           </button>
           {queuedNote !== null && (
             <p className="note" role="status">

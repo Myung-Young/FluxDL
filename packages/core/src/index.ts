@@ -19,6 +19,7 @@ export type {
   EngineProgress,
   EngineVersions,
   AggregateProgressState,
+  GetInfoInit,
   ProgressCallback,
   RepairReport,
   Unsubscribe,
@@ -89,6 +90,8 @@ export { ensureNotificationPermission, sendNotification } from "./notify.js";
 export { comboFromEvent, isEditableTarget, isOpenSettings, isPasteAnalyze, isCommandPalette } from "./shortcuts.js";
 export type { KeyCombo } from "./shortcuts.js";
 export { readClipboardText, writeClipboardText } from "./clipboard.js";
+export { LruCache } from "./cache.js";
+export type { CacheClock } from "./cache.js";
 export {
   BUILTIN_COMMANDS,
   availableCommands,
@@ -138,7 +141,7 @@ export {
 export type { DownloadArgsInput } from "./args.js";
 export { parseProgressLine, PROGRESS_TEMPLATE, parseSpeedBps } from "./progress.js";
 export type { ParsedProgress } from "./progress.js";
-export { mapDownloadError, actionsFor } from "./errors.js";
+export { mapDownloadError, actionsFor, cancelledMapped, timeoutMapped } from "./errors.js";
 export type { ErrorAction, ErrorActionId, ErrorCategory, MappedError } from "./errors.js";
 export { ErrorActionButtons } from "./ErrorActions.js";
 export type { ErrorActionButtonsProps, ErrorNavigate } from "./ErrorActions.js";

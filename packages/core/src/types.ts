@@ -136,4 +136,6 @@ export interface AppSettings {
   readonly onboardingDone: boolean;
   /** Default preset for new analyses (chosen in onboarding). */
   readonly defaultPreset: DownloadPreset;
+  /** Analyze timeout in seconds (M2.3). */
+  readonly analyzeTimeoutSec: number;
 }

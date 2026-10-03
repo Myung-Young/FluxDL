@@ -12,6 +12,7 @@ import type {
   DownloadEngine,
   EngineProgress,
   EngineVersions,
+  GetInfoInit,
   ProgressCallback,
   RepairReport,
   Unsubscribe,
@@ -25,7 +26,7 @@ import {
   buildUpdateArgs,
   buildVersionArgs,
 } from "@grabber/core/args.js";
-import { mapDownloadError } from "@grabber/core/errors.js";
+import { cancelledMapped, mapDownloadError, timeoutMapped } from "@grabber/core/errors.js";
 import { normalizeUrl } from "@grabber/core/url.js";
 import { parseMediaInfo } from "@grabber/core/media.js";
 import { parseProgressLine } from "@grabber/core/progress.js";
@@ -202,38 +203,126 @@ export class DesktopEngine implements DownloadEngine {
     }
   }
 
+  private readonly analyses = new Map<
+    string,
+    {
+      proc: ChildProcess | null;
+      timer: NodeJS.Timeout | null;
+      settled: boolean;
+      cancelled: boolean;
+      timedOut: boolean;
+    }
+  >();
+
   /** Raw console access for the Logs screen (M4 wires it to IPC). */
   getRawLog(id: string): Promise<string | null> {
     return Promise.resolve(this.jobs.get(id)?.rawLog ?? this.finishedLogs.get(id) ?? null);
   }
 
-  async getInfo(url: string): Promise<MediaInfo> {
+  async getInfo(url: string, init?: GetInfoInit): Promise<MediaInfo> {
     const normalized = normalizeUrl(url);
     const args = buildInfoArgs(normalized);
-    let out: { stdout: string; stderr: string; code: number | null };
-    try {
-      out = await runBinary(this.ytDlp(), args);
-    } catch (err) {
-      throw new EngineError(mapDownloadError(err instanceof Error ? err.message : String(err)));
-    }
-    if (out.code !== 0) {
-      throw new EngineError(mapDownloadError(out.stderr));
-    }
-    let data: unknown;
-    try {
-      data = JSON.parse(out.stdout) as unknown;
-    } catch {
-      throw new EngineError(
-        mapDownloadError(`Unsupported URL: metadata was not JSON.\n${out.stderr}`),
-      );
-    }
-    try {
-      return parseMediaInfo(normalized, data);
-    } catch (err) {
-      throw new EngineError(
-        mapDownloadError(err instanceof Error ? err.message : "Invalid metadata payload."),
-      );
-    }
+    const requestId =
+      init?.requestId !== undefined && init.requestId.length > 0 ? init.requestId : randomUUID();
+    const timeoutSec = loadSettingsFromDisk(this.deps.userDataDir).analyzeTimeoutSec;
+    return new Promise<MediaInfo>((resolve, reject) => {
+      const entry = {
+        proc: null as ChildProcess | null,
+        timer: null as NodeJS.Timeout | null,
+        settled: false,
+        cancelled: false,
+        timedOut: false,
+      };
+      this.analyses.set(requestId, entry);
+      const settle = (fn: () => void): void => {
+        if (entry.settled) return;
+        entry.settled = true;
+        if (entry.timer !== null) clearTimeout(entry.timer);
+        this.analyses.delete(requestId);
+        fn();
+      };
+      // NEVER shell:true — always an args array.
+      const proc = spawn(this.ytDlp(), [...args], {
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+        shell: false,
+      });
+      entry.proc = proc;
+      entry.timer = setTimeout(() => {
+        entry.timedOut = true;
+        proc.kill();
+      }, timeoutSec * 1000);
+      let stdout = "";
+      let stderr = "";
+      proc.stdout.on("data", (chunk: Buffer) => {
+        stdout += chunk.toString("utf8");
+      });
+      proc.stderr.on("data", (chunk: Buffer) => {
+        stderr += chunk.toString("utf8");
+      });
+      proc.on("error", (err: Error) => {
+        settle(() => {
+          reject(
+            new EngineError(mapDownloadError(err instanceof Error ? err.message : String(err))),
+          );
+        });
+      });
+      proc.on("close", (code: number | null) => {
+        if (entry.cancelled) {
+          settle(() => {
+            reject(new EngineError(cancelledMapped()));
+          });
+          return;
+        }
+        if (entry.timedOut) {
+          settle(() => {
+            reject(new EngineError(timeoutMapped(timeoutSec)));
+          });
+          return;
+        }
+        if (code !== 0) {
+          settle(() => {
+            reject(new EngineError(mapDownloadError(stderr)));
+          });
+          return;
+        }
+        let data: unknown;
+        try {
+          data = JSON.parse(stdout) as unknown;
+        } catch {
+          settle(() => {
+            reject(
+              new EngineError(
+                mapDownloadError(`Unsupported URL: metadata was not JSON.\n${stderr}`),
+              ),
+            );
+          });
+          return;
+        }
+        try {
+          const info = parseMediaInfo(normalized, data);
+          settle(() => {
+            resolve(info);
+          });
+        } catch (err) {
+          settle(() => {
+            reject(
+              new EngineError(
+                mapDownloadError(err instanceof Error ? err.message : "Invalid metadata payload."),
+              ),
+            );
+          });
+        }
+      });
+    });
+  }
+
+  cancelAnalyze(requestId: string): Promise<void> {
+    const entry = this.analyses.get(requestId);
+    if (entry === undefined || entry.settled) return Promise.resolve();
+    entry.cancelled = true;
+    entry.proc?.kill();
+    return Promise.resolve();
   }
 
   start(job: DownloadJobInput): Promise<string> {
