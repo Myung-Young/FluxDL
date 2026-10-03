@@ -427,4 +427,19 @@ describe("QueueController", () => {
     ctrl.dispose();
     ctrl2.dispose();
   });
+
+  it("carries extractor/videoId through to engine.start (M3.1)", async () => {
+    const fake = makeFake();
+    let n = 0;
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 1,
+      maxRetries: 3,
+      createId: () => `q${String((n += 1))}`,
+    });
+    await ctrl.enqueue({ ...input, extractor: "youtube", videoId: "abc123" });
+    expect(fake.started[0]?.extractor).toBe("youtube");
+    expect(fake.started[0]?.videoId).toBe("abc123");
+    ctrl.dispose();
+  });
 });

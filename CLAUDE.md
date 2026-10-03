@@ -75,6 +75,8 @@
 - `packages/core/src/{cache,color,playlist,health,locale}.ts` — analyze LRU,
   colour/contrast scales, playlist sanitize + entry states, library health,
   locale resolution/formatting.
+- `packages/core/src/destination.ts` — mojibake detector + fallback picker
+  (video-id match, else newest recent media).
 - `packages/core/src/{BatchPanel,DuplicatePrompt,ErrorActions,ContextMenu,JobMenu}.tsx` —
   batch UI, guard dialog, error buttons, themed menu, menu builder.
 - `packages/core/src/{CommandPalette,Onboarding,VirtualList}.tsx` — palette,

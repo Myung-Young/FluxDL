@@ -147,6 +147,8 @@ export type { VirtualListProps } from "./VirtualList.js";
 export { deriveEntryStates, sanitizePlaylistTitle } from "./playlist.js";
 export type { EntryState } from "./playlist.js";
 export { chunkDestinations, deriveMissingIds } from "./health.js";
+export { hasMojibake, isMediaFile, pickFallbackFile } from "./destination.js";
+export type { DirEntry } from "./destination.js";
 export { normalizeUrl, isValidUrl, UrlValidationError } from "./url.js";
 export {
   buildDownloadArgs,

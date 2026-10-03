@@ -289,6 +289,12 @@ export class QueueController {
           preset: next.preset,
           outputDir: next.outputDir,
           ...(next.useArchive === true ? { useArchive: true as const } : {}),
+          ...(typeof next.extractor === "string" && next.extractor.length > 0
+            ? { extractor: next.extractor }
+            : {}),
+          ...(typeof next.videoId === "string" && next.videoId.length > 0
+            ? { videoId: next.videoId }
+            : {}),
           ...(typeof next.cookiesFromBrowser === "string" && next.cookiesFromBrowser.length > 0
             ? { cookiesFromBrowser: next.cookiesFromBrowser }
             : {}),

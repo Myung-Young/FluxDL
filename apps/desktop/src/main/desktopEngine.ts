@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { readFile, rm, stat, unlink } from "node:fs/promises";
+import { readFile, readdir, rm, stat, unlink } from "node:fs/promises";
 import { platform as osPlatform, release as osRelease } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { dialog, shell, app } from "electron";
@@ -28,6 +28,7 @@ import {
   buildVersionArgs,
 } from "@grabber/core/args.js";
 import { cancelledMapped, mapDownloadError, timeoutMapped } from "@grabber/core/errors.js";
+import { hasMojibake, pickFallbackFile } from "@grabber/core/destination.js";
 import { normalizeUrl } from "@grabber/core/url.js";
 import { parseMediaInfo } from "@grabber/core/media.js";
 import { parseProgressLine } from "@grabber/core/progress.js";
@@ -362,6 +363,12 @@ export class DesktopEngine implements DownloadEngine {
       preset: job.preset,
       outputDir,
       ...(job.useArchive === true ? { useArchive: true as const } : {}),
+      ...(typeof job.extractor === "string" && job.extractor.length > 0
+        ? { extractor: job.extractor }
+        : {}),
+      ...(typeof job.videoId === "string" && job.videoId.length > 0
+        ? { videoId: job.videoId }
+        : {}),
       ...(typeof job.cookiesFromBrowser === "string" && job.cookiesFromBrowser.length > 0
         ? { cookiesFromBrowser: job.cookiesFromBrowser }
         : {}),
@@ -511,18 +518,21 @@ export class DesktopEngine implements DownloadEngine {
         return;
       }
       if (code === 0) {
-        this.finishedLogs.set(id, current.rawLog);
-        this.jobs.delete(id);
-        this.emit({
-          id,
-          percent: 100,
-          speed: null,
-          eta: null,
-          downloadedBytes: null,
-          totalBytes: null,
-          stage: "done",
-          destination: current.destination,
-        });
+        void (async (): Promise<void> => {
+          await this.repairDestination(current).catch(() => undefined);
+          this.finishedLogs.set(id, current.rawLog);
+          this.jobs.delete(id);
+          this.emit({
+            id,
+            percent: 100,
+            speed: null,
+            eta: null,
+            downloadedBytes: null,
+            totalBytes: null,
+            stage: "done",
+            destination: current.destination,
+          });
+        })();
         return;
       }
       this.finishWithError(id, mapDownloadError(current.rawLog, this.errorLang()));
@@ -549,6 +559,48 @@ export class DesktopEngine implements DownloadEngine {
       errorMessage: mapped.message,
       errorCategory: mapped.category,
     });
+  }
+
+  /**
+   * Mojibake recovery (M3.1): when yt-dlp reports a destination containing
+   * U+FFFD that does not exist on disk, scan the output dir for the most
+   * likely real file (video-id match, else newest recent media). Silent
+   * no-op otherwise — the Missing badge + Locate still covers the miss.
+   */
+  private async repairDestination(job: ActiveJob): Promise<void> {
+    const dest = job.destination;
+    if (dest === null || dest.length === 0 || !hasMojibake(dest)) return;
+    try {
+      await stat(dest);
+      return;
+    } catch {
+      // Missing — fall through to the directory scan.
+    }
+    const dir =
+      typeof job.input.playlistSubdir === "string" && job.input.playlistSubdir.length > 0
+        ? join(job.input.outputDir, job.input.playlistSubdir)
+        : job.input.outputDir;
+    let names: string[];
+    try {
+      names = await readdir(dir);
+    } catch {
+      return;
+    }
+    const entries: { name: string; mtimeMs: number }[] = [];
+    for (const name of names.slice(0, 500)) {
+      try {
+        const st = await stat(join(dir, name));
+        if (st.isFile()) entries.push({ name, mtimeMs: st.mtimeMs });
+      } catch {
+        // Skip unreadable entries.
+      }
+    }
+    const videoId =
+      typeof job.input.videoId === "string" && job.input.videoId.length > 0
+        ? job.input.videoId
+        : null;
+    const fallback = pickFallbackFile(videoId, entries, Date.now());
+    if (fallback !== null) job.destination = join(dir, fallback);
   }
 
   private async cleanupPartFiles(destination: string | null): Promise<void> {

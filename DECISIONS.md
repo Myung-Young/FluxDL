@@ -147,3 +147,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M2.10
 
 - D65: Release v1.2.0. Gates at tag: typecheck, lint (0 warnings), 171 core + 35 desktop tests (live-binary incl.), build, 9/9 Playwright smoke (palette, onboarding, Malay switch covered). Engine 26 → 31 methods/channels across v1.2 (cancelAnalyze, thumbnailColor, fileExistsBulk, archiveHas, pickFile). `pnpm dist` artifacts verified by size + resources; portable spaces-path GUI pass again deferred (same documented gap as v1.1 — long extraction exceeds automation budgets).
+
+## M3.1
+
+- D66: Destination recovery without new channels. Real bug: `extractor`/`videoId` were dropped twice (queueController.pump + DesktopEngine.start rebuilds input), so playlist identity never reached main — fixed both with a carry-over regression test. Mojibake fallback is main-side only when the reported path contains U+FFFD and is missing on disk (directory scan ≤500 files, `[id]` match then newest recent media); otherwise the Missing badge + Locate still owns the miss, so no false re-attribution. Pure picker lives in core `destination.ts` (tested).
