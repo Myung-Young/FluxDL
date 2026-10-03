@@ -69,3 +69,9 @@ export const AGGREGATE_SEND_MS = 250;
 export function shouldSendAggregate(lastSentAt: number | null, now: number): boolean {
   return lastSentAt === null || now - lastSentAt >= AGGREGATE_SEND_MS;
 }
+
+/** Window title with the active-download count (M3.8): `(N) App` or `App`. */
+export function formatWindowTitle(active: number, appName: string): string {
+  const n = Number.isFinite(active) ? Math.max(0, Math.floor(active)) : 0;
+  return n > 0 ? `(${String(n)}) ${appName}` : appName;
+}

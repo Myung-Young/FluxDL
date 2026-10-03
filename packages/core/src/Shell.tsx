@@ -23,6 +23,7 @@ import {
   AGGREGATE_SEND_MS,
   aggregateStatus,
   formatSpeedBps,
+  formatWindowTitle,
   shouldSendAggregate,
 } from "./aggregate.js";
 import { deriveAccentScale } from "./color.js";
@@ -138,8 +139,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
 
   // Aggregate status: sidebar footer + throttled taskbar/tray updates.
   useEffect(() => {
-    const agg = aggregateStatus(jobs);
-    const speed = agg.speedBps > 0 ? ` · ${formatSpeedBps(agg.speedBps, locale)}` : "";
+    const agg = aggregateStatus(jobs);    const speed = agg.speedBps > 0 ? ` · ${formatSpeedBps(agg.speedBps, locale)}` : "";
     const text =
       agg.active > 0 ? `${formatStr(S.status.activeCount, { count: agg.active })}${speed}` : S.status.ready;
     setAggregateText(text);
@@ -159,6 +159,11 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
       if (aggTimer.current !== null) clearTimeout(aggTimer.current);
     };
   }, [jobs, engine, S, locale]);
+
+  // Window title carries the active count (M3.8): `(N) FluxDL` or `FluxDL`.
+  useEffect(() => {
+    document.title = formatWindowTitle(aggregateStatus(jobs).active, APP_NAME);
+  }, [jobs]);
 
   // Error-action deep links (settings section anchors).
   useEffect(() => {

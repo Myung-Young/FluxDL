@@ -175,3 +175,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M3.7
 
 - D72: Inline settings validation, hints only. Pure `validate.ts` (tested): template needs `%(ext)s`, speed accepts empty or `4.2M`-style rates, preview substitutes sample metadata. Settings shows a live preview line under the template (draft-tracked, committed on blur as before) and error hints for bad template/speed; nothing blocks saving — the sanitizing merge stays authoritative. Strings EN+MS in parity.
+
+## M3.8
+
+- D73: Window title + finished-toast action. Pure `formatWindowTitle(active, APP_NAME)` (tested: `(N) App` when active, plain name when idle/NaN) applied by a tiny Shell effect over the aggregate count. Finished toasts now carry an Open-file action when a destination is known (ToastAction rendering already existed; the fail path already had Retry). No new channels, no new strings.

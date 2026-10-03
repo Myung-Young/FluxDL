@@ -457,7 +457,21 @@ export function Downloads({
       for (const id of vanished) {
         const h = hist.find((x) => x.id === id);
         if (h?.status === "done") {
-          toast.getState().push(`${S.toast.finished}: ${h.title}`, "success");
+          const dest = h.destination;
+          toast
+            .getState()
+            .push(
+              `${S.toast.finished}: ${h.title}`,
+              "success",
+              dest === null
+                ? undefined
+                : {
+                    label: S.downloads.openFile,
+                    run: () => {
+                      engine.openPath(dest).catch(() => undefined);
+                    },
+                  },
+            );
           sendNotification(S.toast.finished, h.title);
           if (action !== "none" && h.destination !== null) {
             if (action === "open-file") {

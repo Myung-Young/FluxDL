@@ -67,6 +67,8 @@
   history search/prune, `reorder()` (createdAt permutation, queued only).
   Illegal transitions throw. `paused` accepts progress/done (resume lands).
   `retryInSeconds()` reports the live backoff countdown.
+- `packages/core/src/aggregate.ts` — aggregate status, speed formatting,
+  taskbar gate, `formatWindowTitle()` for the `(N) App` title.
 - `packages/core/src/queueController.ts` — FIFO orchestrator, injected
   engine + clock, no internal timers (`pump()` drives starts/retries);
   per-job cookie/preset overrides, remove/reorder, pauseAll/resumeAll,

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { aggregateStatus, formatSpeedBps, shouldSendAggregate } from "./aggregate.js";
+import {
+  aggregateStatus,
+  formatSpeedBps,
+  formatWindowTitle,
+  shouldSendAggregate,
+} from "./aggregate.js";
 import { parseSpeedBps } from "./progress.js";
 import type { DownloadJob } from "./types.js";
 
@@ -89,5 +94,14 @@ describe("shouldSendAggregate", () => {
     expect(shouldSendAggregate(1000, 1000)).toBe(false);
     expect(shouldSendAggregate(1000, 1249)).toBe(false);
     expect(shouldSendAggregate(1000, 1250)).toBe(true);
+  });
+});
+
+describe("formatWindowTitle", () => {
+  it("prefixes the active count, plain name when idle", () => {
+    expect(formatWindowTitle(0, "FluxDL")).toBe("FluxDL");
+    expect(formatWindowTitle(3, "FluxDL")).toBe("(3) FluxDL");
+    expect(formatWindowTitle(-2, "FluxDL")).toBe("FluxDL");
+    expect(formatWindowTitle(Number.NaN, "FluxDL")).toBe("FluxDL");
   });
 });

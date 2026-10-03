@@ -29,6 +29,7 @@ export type {
 export {
   aggregateStatus,
   formatSpeedBps,
+  formatWindowTitle,
   shouldSendAggregate,
   AGGREGATE_SEND_MS,
 } from "./aggregate.js";
