@@ -2,6 +2,7 @@ import { create, type StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
 import type { AppSettings, DownloadJob, DownloadJobInput } from "./types.js";
 import { QueueController } from "./queueController.js";
+import { jobsEqual } from "./queue.js";
 import { DEFAULT_SETTINGS, mergeSettings } from "./settings.js";
 
 export type QueueStoreEngine = Pick<
@@ -43,14 +44,16 @@ export function createQueueStore(
   opts: { concurrency?: number; maxRetries?: number } = {},
 ): StoreApi<QueueStoreState> {
   let controller: QueueController | null = null;
-  const getController = (set: (p: Partial<QueueStoreState>) => void): QueueController => {
+  const getController = (set: StoreApi<QueueStoreState>["setState"]): QueueController => {
     if (controller === null) {
       controller = new QueueController({
         engine,
         concurrency: opts.concurrency ?? 2,
         maxRetries: opts.maxRetries ?? 3,
         onChange: (jobs) => {
-          set({ jobs: [...jobs] });
+          // Keep the array identity when nothing changed: an unconditional
+          // `set` here re-rendered the shell once per second while idle (M4.8).
+          set((prev) => (jobsEqual(prev.jobs, jobs) ? prev : { jobs: [...jobs] }));
         },
       });
     }

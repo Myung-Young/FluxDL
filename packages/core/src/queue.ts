@@ -372,6 +372,25 @@ export function isFinished(job: DownloadJob): boolean {
   return job.status === "done" || job.status === "error" || job.status === "cancelled";
 }
 
+/**
+ * True when two snapshots hold the same job objects in the same order.
+ *
+ * The controller only replaces the objects it actually changed, so identity
+ * comparison is enough — and keeping the previous array identity lets React
+ * bail out of re-rendering instead of re-rendering once per queue pump (M4.8).
+ */
+export function jobsEqual(
+  a: readonly DownloadJob[],
+  b: readonly DownloadJob[],
+): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 export function searchHistory(history: readonly DownloadJob[], query: string): DownloadJob[] {
   const q = query.trim().toLowerCase();
   if (q.length === 0) return [...history];

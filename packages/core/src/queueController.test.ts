@@ -525,3 +525,97 @@ describe("QueueController", () => {
     ctrl.dispose();
   });
 });
+
+describe("idle pumping (M4.8)", () => {
+  it("neither emits nor persists when a pump finds nothing to do", async () => {
+    const fake = makeFake();
+    const emits: (readonly DownloadJob[])[] = [];
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 2,
+      maxRetries: 3,
+      onChange: (jobs) => {
+        emits.push(jobs);
+      },
+    });
+    // Stand in for the 1 s Shell tick firing 60 times with an idle queue.
+    for (let i = 0; i < 60; i += 1) {
+      await ctrl.pump();
+    }
+    expect(emits).toHaveLength(0);
+    expect(fake.saved).toHaveLength(0);
+    ctrl.dispose();
+  });
+
+  it("stays silent while a paused job waits", async () => {
+    const fake = makeFake();
+    let n = 0;
+    const emits: (readonly DownloadJob[])[] = [];
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 1,
+      maxRetries: 3,
+      createId: () => `q${String((n += 1))}`,
+      onChange: (jobs) => {
+        emits.push(jobs);
+      },
+    });
+    const id = await ctrl.enqueue(input);
+    await ctrl.pause(id);
+    const settled = emits.length;
+    const saved = fake.saved.length;
+    for (let i = 0; i < 30; i += 1) {
+      await ctrl.pump();
+    }
+    expect(emits.length).toBe(settled);
+    expect(fake.saved.length).toBe(saved);
+    ctrl.dispose();
+  });
+
+  it("still emits and persists when work actually happens", async () => {
+    const fake = makeFake();
+    let n = 0;
+    const emits: (readonly DownloadJob[])[] = [];
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 1,
+      maxRetries: 3,
+      createId: () => `q${String((n += 1))}`,
+      onChange: (jobs) => {
+        emits.push(jobs);
+      },
+    });
+    await ctrl.enqueue({ ...input, useArchive: false });
+    expect(emits.length).toBeGreaterThan(0);
+    expect(fake.saved.length).toBeGreaterThan(0);
+    ctrl.dispose();
+  });
+
+  it("persists when a paused job fails and is retried", async () => {
+    const fake = makeFake();
+    let now = 1_000;
+    let n = 0;
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 1,
+      maxRetries: 3,
+      clock: { now: () => now },
+      createId: () => `q${String((n += 1))}`,
+    });
+    const id = await ctrl.enqueue(input);
+    await ctrl.pause(id);
+    const before = fake.saved.length;
+    // Make the paused job eligible for a backoff retry.
+    fake.fire({
+      ...downloading("eng-1"),
+      id: "eng-1",
+      stage: "error",
+      errorMessage: "boom",
+    });
+    now += 5_000;
+    await ctrl.pump();
+    expect(fake.started.length).toBeGreaterThan(1);
+    expect(fake.saved.length).toBeGreaterThan(before);
+    ctrl.dispose();
+  });
+});

@@ -300,12 +300,18 @@ export class QueueController {
 
   private async pumpInner(): Promise<void> {
     const now = this.clock.now();
+    // The 1 s Shell tick calls this constantly, including when nothing is
+    // happening. Emitting and persisting unconditionally meant a fresh array
+    // identity (React re-render) plus a queue.json write every second while
+    // idle, so both are now gated on an actual change (M4.8).
+    let changed = false;
     for (const job of this.getJobs()) {
       if (shouldRetry(job, this.maxRetries, now)) {
         this.jobs.set(job.id, transition(job, "retry"));
+        changed = true;
       }
     }
-    this.emit();
+    if (changed) this.emit();
     for (;;) {
       const next = selectNextToStart(this.getJobs(), this.concurrency, this.clock.now());
       if (next === null) break;
@@ -319,6 +325,7 @@ export class QueueController {
         this.engineIds.set(next.id, engineId);
         this.revEngineIds.set(engineId, next.id);
         this.jobs.set(next.id, transition(current, "start"));
+        changed = true;
         this.emit();
       } catch (err) {
         const current = this.jobs.get(next.id);
@@ -331,12 +338,13 @@ export class QueueController {
           await this.finish(failed);
         } else {
           this.jobs.set(next.id, failed);
+          changed = true;
           this.emit();
         }
         break;
       }
     }
-    await this.persist();
+    if (changed) await this.persist();
   }
 
   private async handleEngineProgress(p: EngineProgress): Promise<void> {

@@ -6,6 +6,7 @@ import {
   clampConcurrency,
   computeBackoffMs,
   isFinished,
+  jobsEqual,
   makeJob,
   pruneHistory,
   reorder,
@@ -286,3 +287,24 @@ describe("toStartInput", () => {
   });
 });
 
+
+describe("jobsEqual", () => {
+  it("is true for the same objects in the same order", () => {
+    const a = [makeJob("a", input, 1), makeJob("b", input, 2)];
+    expect(jobsEqual(a, a)).toBe(true);
+    expect(jobsEqual(a, [...a])).toBe(true);
+  });
+
+  it("is false when a job object was replaced", () => {
+    const a = [makeJob("a", input, 1)];
+    const b = [transition(a[0] as DownloadJob, "start")];
+    expect(jobsEqual(a, b)).toBe(false);
+  });
+
+  it("is false when the order or length differs", () => {
+    const a = [makeJob("a", input, 1), makeJob("b", input, 2)];
+    expect(jobsEqual(a, [a[1] as DownloadJob, a[0] as DownloadJob])).toBe(false);
+    expect(jobsEqual(a, [])).toBe(false);
+    expect(jobsEqual([], [])).toBe(true);
+  });
+});
