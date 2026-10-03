@@ -184,6 +184,10 @@ const EN = {
     historyLimit: "Keep history entries (10–5000)",
     autoCheckUpdate: "Check engine updates on launch",
     saved: "Saved.",
+    search: "Search settings…",
+    clearSearch: "Clear search",
+    noMatch: "No settings match.",
+    matchCount: "{n} of {t} settings",
   },
   logs: {
     title: "Logs & About",
@@ -485,6 +489,10 @@ const MS: Parity<Strings> = {
     historyLimit: "Simpan entri sejarah (10–5000)",
     autoCheckUpdate: "Semak kemas kini enjin semasa mula",
     saved: "Disimpan.",
+    search: "Cari tetapan…",
+    clearSearch: "Padam carian",
+    noMatch: "Tiada tetapan sepadan.",
+    matchCount: "{n} daripada {t} tetapan",
   },
   logs: {
     title: "Log & Perihal",

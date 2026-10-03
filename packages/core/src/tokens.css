@@ -756,6 +756,12 @@ select.input {
   gap: var(--space-3);
 }
 
+/* M3.4: author display rules (.field-label/.url-row/.chip-row) beat the
+   UA [hidden] style, so filtered-out settings rows need an explicit kill. */
+.settings-grid [hidden] {
+  display: none !important;
+}
+
 /* ---- M5: skip link, toasts ---- */
 
 .skip-link {

@@ -191,6 +191,8 @@ export {
 export { QueueController } from "./queueController.js";
 export type { QueueEngine, QueueClock, QueueControllerOptions } from "./queueController.js";
 export { DEFAULT_SETTINGS, mergeSettings } from "./settings.js";
+export { filterSettingIds, matchSettingField } from "./settingsFilter.js";
+export type { FilterableField } from "./settingsFilter.js";
 export { createQueueStore, createSettingsStore } from "./stores.js";
 export type {
   QueueStoreEngine,

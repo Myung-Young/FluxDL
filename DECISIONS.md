@@ -159,3 +159,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M3.3
 
 - D68: Mock-drift guard + spaces-path hardening. Real drift found: the e2e mock was missing 4 settings fields (`analyzeTimeoutSec`, `thumbnailAccent`, `playlistSubfolder`, `historyLimit`) and the `cancelAnalyze` method — fixed both. A pinned `DEFAULT_SETTINGS` key-list test now fails the suite the moment a new setting lands (comment points at the e2e mirror). Spaces-path: `--output` stays one argv element (new single-argv subfolder test) and the trust boundary explicitly allows spaces+unicode roots; the packaged-portable-from-spaces GUI pass stays a manual pre-distribute step (extraction exceeds automation budgets).
+
+## M3.4
+
+- D69: Settings search + a real duplicate-key bug it exposed. Filter is a pure matcher (`settingsFilter.ts`, tested: empty matches all, multi-word AND, label+id+English keywords so Malay labels still match "proxy") with a `hidden`-per-row UI, match count, and empty state. The new e2e caught ghost inputs: every empty setting shared React key `""` among siblings, so renders multiplied the inputs (5× `#set-proxy`); fixed with stable unique keys (`proxy:…`, `dir:…`, …). Also added a scoped `.settings-grid [hidden]` kill — author `display` rules (`.field-label`, `.url-row`) otherwise beat the UA hidden style and filtered rows stayed visible.

@@ -415,3 +415,31 @@ test("i18n: switching to Malay re-labels the shell", async () => {
   await expect(page.locator(".grabber-view h1")).toHaveText("Settings", { timeout: 15000 });
   expect(pageErrors).toEqual([]);
 });
+
+test("settings: search filters rows and clears", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+  await installMock(page);
+  await page.reload();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await expect(page.locator('[data-testid="grabber-shell"]')).toBeVisible({ timeout: 30000 });
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Settings" }).click();
+  await expect(page.locator('[data-testid="settings-search"]')).toBeVisible({ timeout: 15000 });
+  await page.locator('[data-testid="settings-search"]').fill("proxy");
+  await expect(page.locator("#set-proxy")).toBeVisible();
+  await expect(page.locator("#set-theme-label")).toBeHidden();
+  await expect(page.locator(".grabber-view")).toContainText("of 20 settings");
+  await page.locator('[data-testid="settings-search"]').fill("zzz-no-match");
+  await expect(page.locator(".grabber-view")).toContainText("No settings match.");
+  await page.locator('[data-testid="settings-search"]').fill("");
+  await expect(page.locator("#set-theme-label")).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
