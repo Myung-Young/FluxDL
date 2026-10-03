@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { rm, stat, unlink } from "node:fs/promises";
+import { platform as osPlatform, release as osRelease } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { dialog, shell } from "electron";
 import { APP_NAME } from "@grabber/core/branding.js";
@@ -510,7 +511,17 @@ export class DesktopEngine implements DownloadEngine {
     } catch {
       ffmpeg = null;
     }
-    return { ytdlp, ffmpeg, app: this.deps.appVersion };
+    // process.versions is typed string-only; Electron-only keys are absent in plain node.
+    const runtime = process.versions as Record<string, string | undefined>;
+    return {
+      ytdlp,
+      ffmpeg,
+      app: this.deps.appVersion,
+      os: `${osPlatform()} ${osRelease()}`,
+      arch: process.arch,
+      electron: runtime["electron"] ?? "unknown",
+      node: process.version,
+    };
   }
 
   async updateEngine(): Promise<EngineVersions> {

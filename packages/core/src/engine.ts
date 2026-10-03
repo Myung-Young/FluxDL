@@ -26,6 +26,11 @@ export interface EngineVersions {
   readonly ytdlp: string;
   readonly ffmpeg: string | null;
   readonly app: string;
+  /** Platform details for diagnostics (absent from old mocks). */
+  readonly os?: string;
+  readonly arch?: string;
+  readonly electron?: string;
+  readonly node?: string;
 }
 
 /** Result of repairEngine(): which binaries were restored vs still broken. */

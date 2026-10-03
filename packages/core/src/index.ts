@@ -89,6 +89,17 @@ export { ensureNotificationPermission, sendNotification } from "./notify.js";
 export { comboFromEvent, isEditableTarget, isOpenSettings, isPasteAnalyze } from "./shortcuts.js";
 export type { KeyCombo } from "./shortcuts.js";
 export { readClipboardText, writeClipboardText } from "./clipboard.js";
+export {
+  LOG_TAIL_CHARS,
+  MAX_ERROR_EVENTS,
+  baseName,
+  buildDiagnostics,
+  redactProxyCredentials,
+  redactUrlSecrets,
+  redactUserPaths,
+  stripUrls,
+} from "./diagnostics.js";
+export type { DiagnosticError, DiagnosticsData } from "./diagnostics.js";
 export { menuItemsFor, presetForMenu, MENU_AUDIO_PRESETS, MENU_VIDEO_PRESETS } from "./menu.js";
 export type { CardMenuId, MenuMove } from "./menu.js";
 export { ContextMenu } from "./ContextMenu.js";

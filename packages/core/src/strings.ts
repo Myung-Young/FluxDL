@@ -207,6 +207,21 @@ export const STRINGS = {
     fileDeleted: "File deleted",
     copyFailed: "Copy failed.",
   },
+  diagnostics: {
+    copy: "Copy diagnostics",
+    save: "Save .txt",
+    includeUrls: "Include URLs (they may contain private links)",
+    preview: "Report preview",
+    copied: "Diagnostics copied.",
+    saved: "Diagnostics saved.",
+    reportTitle: "FluxDL diagnostics",
+    reportVersions: "Versions",
+    reportSettings: "Settings (redacted)",
+    reportErrors: "Recent errors",
+    reportNoErrors: "(none)",
+    reportLog: "Log tail",
+    reportNoLog: "(no log selected)",
+  },
 } as const;
 
 export type Strings = typeof STRINGS;

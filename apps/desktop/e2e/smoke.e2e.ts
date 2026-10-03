@@ -10,6 +10,8 @@ import { expect, test, type ElectronApplication, type Page } from "@playwright/t
 async function installMock(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const listeners: Array<(e: unknown) => void> = [];
+    // Mirror DEFAULT_SETTINGS (packages/core/src/settings.ts): every new
+    // settings field must be added here or Logs/diagnostics crash on undefined.
     const settings = {
       downloadDir: "",
       filenameTemplate: "%(title)s [%(id)s].%(ext)s",
@@ -17,6 +19,7 @@ async function installMock(page: Page): Promise<void> {
       speedLimit: null,
       proxy: null,
       cookiesFromBrowser: null,
+      cookiesFile: null,
       embedThumbnail: false,
       embedMetadata: false,
       subtitles: false,
@@ -24,6 +27,8 @@ async function installMock(page: Page): Promise<void> {
       embedSubs: false,
       mergeContainer: "mp4",
       sponsorBlock: false,
+      codecPreference: "auto",
+      skipArchived: true,
       theme: "obsidian",
       postDownloadAction: "none",
       autoCheckUpdate: false,
@@ -274,6 +279,11 @@ test("logs: repair engine reports verified", async () => {
   await expect(page.locator(".grabber-view").getByText("Engine verified.")).toBeVisible({
     timeout: 15000,
   });
+  await page.locator('[data-testid="logs-diag-copy"]').click();
+  await expect(page.locator('[data-testid="diag-preview"]')).toContainText(
+    "FluxDL diagnostics",
+    { timeout: 15000 },
+  );
   expect(pageErrors).toEqual([]);
 });
 
