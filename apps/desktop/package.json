@@ -35,6 +35,7 @@
   "build": {
     "appId": "app.fluxdl.desktop",
     "productName": "FluxDL",
+    "forceCodeSigning": false,
     "directories": {
       "output": "../../release"
     },

@@ -57,6 +57,16 @@ Program Files; `ffmpeg`/`ffprobe` resolve from the bundled copy with a PATH
 fallback. Packaged `appId` (`app.fluxdl.desktop`) doubles as the Windows
 toast `appUserModelId`.
 
+### Windows SmartScreen warning
+
+**These builds are not code-signed.** SmartScreen shows *"Windows protected
+your PC"* for any executable without a publisher signature or reputation — it
+is not a malware verdict. Click **More info → Run anyway**.
+
+See [`docs/SIGNING.md`](docs/SIGNING.md) for the signing options (SignPath for
+OSS, Azure Trusted Signing, OV/EV), how electron-builder consumes
+`CSC_LINK` / `CSC_KEY_PASSWORD`, and how to verify a download with SHA-256.
+
 ## Layout
 
 ```text
@@ -91,7 +101,8 @@ scripts/              fetch-binaries.mjs, make-tray-icon.mjs, make-app-icon.mjs,
 ```
 
 Further reading: `AGENTS.md` (working rules), `CLAUDE.md` (conventions/commands/map),
-`DECISIONS.md` (why things are the way they are), `CHANGELOG.md` (release notes).
+`DECISIONS.md` (why things are the way they are), `CHANGELOG.md` (release notes),
+[`docs/SIGNING.md`](docs/SIGNING.md) (code signing + SmartScreen).
 
 ## Conventions (short)
 

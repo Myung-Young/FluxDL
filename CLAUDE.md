@@ -122,6 +122,8 @@
   `DEFAULT_SETTINGS` + unique engine ids + pause/resume events.
 - `apps/desktop/src/main/*.integration.test.ts` — live yt-dlp tests, skip
   without a PATH binary.
+- `docs/SIGNING.md` — unsigned-build/SmartScreen notes and how electron-builder
+  consumes CSC_LINK / CSC_KEY_PASSWORD (no certificate lives in the repo).
 - `scripts/` — `fetch-binaries.mjs` (bsdtar via System32, relative paths),
   `make-tray-icon.mjs`, `make-app-icon.mjs`, `make-overlay-dot.mjs`.
 
