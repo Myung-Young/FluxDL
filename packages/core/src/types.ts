@@ -35,6 +35,30 @@ export interface PlaylistEntry {
 
 export type LiveStatus = "is_live" | "is_upcoming" | "was_live" | "not_live" | "post_live";
 
+/**
+ * Runtime mirrors of the domain unions above, so validators (the IPC
+ * boundary) check against one source instead of a hand-copied list (R1).
+ */
+export const LIVE_STATUSES: readonly LiveStatus[] = [
+  "is_live",
+  "is_upcoming",
+  "was_live",
+  "not_live",
+  "post_live",
+];
+
+export const VIDEO_PRESETS: readonly VideoPreset[] = [
+  "Best",
+  "2160",
+  "1440",
+  "1080",
+  "720",
+  "480",
+  "Compatible",
+];
+
+export const AUDIO_PRESETS: readonly AudioPreset[] = ["MP3", "M4A", "Opus", "FLAC"];
+
 export interface ChapterInfo {
   readonly title: string;
   readonly startTime: number;

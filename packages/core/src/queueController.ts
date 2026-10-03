@@ -8,6 +8,7 @@ import {
   reorder as reorderJobs,
   selectNextToStart,
   shouldRetry,
+  toStartInput,
   transition,
 } from "./queue.js";
 import { normalizeUrl } from "./url.js";
@@ -309,25 +310,7 @@ export class QueueController {
       const next = selectNextToStart(this.getJobs(), this.concurrency, this.clock.now());
       if (next === null) break;
       try {
-        const engineId = await this.engine.start({
-          url: next.url,
-          title: next.title,
-          preset: next.preset,
-          outputDir: next.outputDir,
-          ...(next.useArchive === true ? { useArchive: true as const } : {}),
-          ...(typeof next.extractor === "string" && next.extractor.length > 0
-            ? { extractor: next.extractor }
-            : {}),
-          ...(typeof next.videoId === "string" && next.videoId.length > 0
-            ? { videoId: next.videoId }
-            : {}),
-          ...(typeof next.cookiesFromBrowser === "string" && next.cookiesFromBrowser.length > 0
-            ? { cookiesFromBrowser: next.cookiesFromBrowser }
-            : {}),
-          ...(typeof next.playlistSubdir === "string" && next.playlistSubdir.length > 0
-            ? { playlistSubdir: next.playlistSubdir }
-            : {}),
-        });
+        const engineId = await this.engine.start(toStartInput(next));
         const current = this.jobs.get(next.id);
         if (current === undefined) {
           await this.engine.cancel(engineId).catch(() => undefined);

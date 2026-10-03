@@ -1,7 +1,8 @@
 import { ipcMain } from "electron";
 import { IPC_CHANNELS } from "@grabber/core/engine.js";
 import { normalizeUrl } from "@grabber/core/url.js";
-import type { DownloadJobInput } from "@grabber/core/types.js";
+import type { AudioPreset, DownloadJobInput, LiveStatus, VideoPreset } from "@grabber/core/types.js";
+import { AUDIO_PRESETS, LIVE_STATUSES, VIDEO_PRESETS } from "@grabber/core/types.js";
 import type { DesktopEngine } from "./desktopEngine.js";
 import { isDownloadJob } from "./persist.js";
 
@@ -29,21 +30,24 @@ function parseJobInput(raw: unknown): DownloadJobInput {
       ? presetRaw["rawFormat"]
       : null;
   if (kind !== "video" && kind !== "audio") throw new Error("Invalid preset kind.");
-  const validVideo = ["Best", "2160", "1440", "1080", "720", "480", "Compatible"] as const;
-  const validAudio = ["MP3", "M4A", "Opus", "FLAC"] as const;
-  if (!validVideo.includes(videoPreset as (typeof validVideo)[number])) {
+  if (!VIDEO_PRESETS.includes(videoPreset as VideoPreset)) {
     throw new Error("Invalid video preset.");
   }
-  if (!validAudio.includes(audioPreset as (typeof validAudio)[number])) {
+  if (!AUDIO_PRESETS.includes(audioPreset as AudioPreset)) {
     throw new Error("Invalid audio preset.");
   }
+  const liveRaw = raw["liveStatus"];
+  const liveStatus =
+    typeof liveRaw === "string" && LIVE_STATUSES.includes(liveRaw as LiveStatus)
+      ? (liveRaw as LiveStatus)
+      : null;
   return {
     url,
     title: titleRaw,
     preset: {
       kind,
-      videoPreset: videoPreset as (typeof validVideo)[number],
-      audioPreset: audioPreset as (typeof validAudio)[number],
+      videoPreset: videoPreset as VideoPreset,
+      audioPreset: audioPreset as AudioPreset,
       rawFormat,
     },
     outputDir: outputDirRaw,
@@ -60,6 +64,13 @@ function parseJobInput(raw: unknown): DownloadJobInput {
     ...(typeof raw["playlistSubdir"] === "string" && raw["playlistSubdir"].length > 0
       ? { playlistSubdir: raw["playlistSubdir"] }
       : {}),
+    // Live + chapter flags (M4.1/M4.2). Invalid values are dropped rather
+    // than thrown: the UI owns these toggles, and a stale payload must not
+    // fail an otherwise valid download.
+    ...(liveStatus !== null ? { liveStatus } : {}),
+    ...(raw["liveFromStart"] === true ? { liveFromStart: true as const } : {}),
+    ...(raw["waitForVideo"] === true ? { waitForVideo: true as const } : {}),
+    ...(raw["splitChapters"] === true ? { splitChapters: true as const } : {}),
   };
 }
 

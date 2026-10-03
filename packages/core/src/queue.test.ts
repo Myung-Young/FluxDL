@@ -13,6 +13,7 @@ import {
   searchHistory,
   selectNextToStart,
   shouldRetry,
+  toStartInput,
   transition,
 } from "./queue.js";
 import type { DownloadJob, DownloadJobInput } from "./types.js";
@@ -218,6 +219,70 @@ describe("queue state machine", () => {
 
     const normal = makeJob("j-normal", input, 1);
     expect(normal.splitChapters).toBeUndefined();
+  });
+});
+
+/**
+ * R1 regression guard. The M4.1/M4.2 flags were built correctly by
+ * `buildDownloadArgs` but every job -> engine hop kept its own hand-written
+ * copy list, so `--live-from-start`, `--wait-for-video`, `--hls-use-mpegts`
+ * and `--split-chapters` never reached yt-dlp. These tests pin the round trip.
+ */
+describe("toStartInput", () => {
+  const full: DownloadJobInput = {
+    ...input,
+    useArchive: true,
+    extractor: "youtube",
+    videoId: "aqz-KE-bpKQ",
+    cookiesFromBrowser: "firefox",
+    playlistSubdir: "Playlist/Sub",
+    liveStatus: "is_live",
+    liveFromStart: true,
+    waitForVideo: true,
+    splitChapters: true,
+  };
+
+  it("carries every optional flag back out of a queued job (R1)", () => {
+    const projected = toStartInput(makeJob("j1", full, 1));
+    expect(projected).toEqual(full);
+  });
+
+  it("keeps makeJob and toStartInput on one allow-list (R1)", () => {
+    // Anything makeJob accepts must survive the projection, and vice versa.
+    expect(toStartInput(makeJob("j1", full, 1))).toEqual(full);
+    expect(toStartInput(makeJob("j2", input, 1))).toEqual(input);
+  });
+
+  it("drops unknown keys from the untrusted renderer payload (R1)", () => {
+    const smuggled = { ...input, evil: "rm -rf" } as unknown as DownloadJobInput;
+    expect(toStartInput(makeJob("j3", smuggled, 1))).toEqual(input);
+  });
+
+  it("omits flags that were never set (older snapshots stay clean)", () => {
+    const projected = toStartInput(makeJob("j4", input, 1));
+    expect(projected).not.toHaveProperty("splitChapters");
+    expect(projected).not.toHaveProperty("liveStatus");
+    expect(projected).not.toHaveProperty("useArchive");
+  });
+
+  it("treats empty strings and false flags as absent", () => {
+    const job = makeJob(
+      "j5",
+      {
+        ...input,
+        extractor: "",
+        videoId: "",
+        cookiesFromBrowser: "",
+        playlistSubdir: "",
+        liveStatus: null,
+        liveFromStart: false,
+        waitForVideo: false,
+        splitChapters: false,
+        useArchive: false,
+      },
+      1,
+    );
+    expect(toStartInput(job)).toEqual(input);
   });
 });
 

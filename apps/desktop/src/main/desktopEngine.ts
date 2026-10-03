@@ -21,12 +21,12 @@ import type {
 import type { ErrorCategory, ErrorLocale, MappedError } from "@grabber/core/errors.js";
 import { STRINGS, STRINGS_MS } from "@grabber/core/strings.js";
 import {
-  buildDownloadArgs,
   buildFfmpegVersionArgs,
   buildInfoArgs,
   buildUpdateArgs,
   buildVersionArgs,
 } from "@grabber/core/args.js";
+import { toStartInput } from "@grabber/core/queue.js";
 import { cancelledMapped, mapDownloadError, timeoutMapped } from "@grabber/core/errors.js";
 import { hasMojibake, pickFallbackFile } from "@grabber/core/destination.js";
 import { normalizeUrl } from "@grabber/core/url.js";
@@ -52,6 +52,7 @@ import {
   updateHistoryOnDisk,
 } from "./persist.js";
 import { thumbnailColor } from "./thumbnail.js";
+import { buildStartArgs } from "./jobArgs.js";
 
 export class EngineError extends Error {
   readonly category: ErrorCategory;
@@ -358,25 +359,7 @@ export class DesktopEngine implements DownloadEngine {
       throw new EngineError(mapDownloadError("Unsupported URL: missing title.", this.errorLang()));
     }
     const outputDir = job.outputDir.trim().length > 0 ? job.outputDir : this.deps.defaultOutputDir;
-    const input: DownloadJobInput = {
-      url: normalizedUrl,
-      title: job.title,
-      preset: job.preset,
-      outputDir,
-      ...(job.useArchive === true ? { useArchive: true as const } : {}),
-      ...(typeof job.extractor === "string" && job.extractor.length > 0
-        ? { extractor: job.extractor }
-        : {}),
-      ...(typeof job.videoId === "string" && job.videoId.length > 0
-        ? { videoId: job.videoId }
-        : {}),
-      ...(typeof job.cookiesFromBrowser === "string" && job.cookiesFromBrowser.length > 0
-        ? { cookiesFromBrowser: job.cookiesFromBrowser }
-        : {}),
-      ...(typeof job.playlistSubdir === "string" && job.playlistSubdir.length > 0
-        ? { playlistSubdir: job.playlistSubdir }
-        : {}),
-    };
+    const input: DownloadJobInput = { ...toStartInput(job), url: normalizedUrl, outputDir };
     const id = randomUUID();
     // User settings live on disk (main side) so every download honors them
     // without widening the DownloadJobInput interface.
@@ -386,31 +369,14 @@ export class DesktopEngine implements DownloadEngine {
       s.cookiesFile !== null && s.cookiesFile.trim().length > 0 && existsSync(s.cookiesFile)
         ? s.cookiesFile
         : null;
-    const args = buildDownloadArgs({
-      url: normalizedUrl,
-      preset: input.preset,
-      outputDir,
-      filenameTemplate:
-        s.filenameTemplate.trim().length > 0 ? s.filenameTemplate : "%(title)s [%(id)s].%(ext)s",
+    const args = buildStartArgs(input, {
+      settings: s,
       ffmpegDir: resolveFfmpegDir(this.deps.bundledBinDir),
-      mergeContainer: s.mergeContainer,
-      embedThumbnail: s.embedThumbnail,
-      embedMetadata: s.embedMetadata,
-      writeSubs: s.subtitles,
-      subLangs: s.subtitleLangs,
-      embedSubs: s.embedSubs,
-      sponsorBlock: s.sponsorBlock,
-      speedLimit: s.speedLimit,
-      proxy: s.proxy,
-      cookiesFromBrowser: input.cookiesFromBrowser ?? s.cookiesFromBrowser,
       cookiesFile,
-      codecPreference: s.codecPreference,
-      playlistSubdir: input.playlistSubdir ?? null,
       archivePath:
         s.skipArchived && input.useArchive === true
           ? archivePathFor(this.deps.userDataDir)
           : null,
-      noPlaylist: true,
     });
     this.jobs.set(id, {
       proc: null,

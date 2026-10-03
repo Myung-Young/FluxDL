@@ -7,6 +7,7 @@ import type {
   ThemeName,
   VideoPreset,
 } from "./types.js";
+import { AUDIO_PRESETS, VIDEO_PRESETS } from "./types.js";
 import { clampConcurrency } from "./queue.js";
 
 /** Defaults when no persisted settings exist yet. */
@@ -46,16 +47,6 @@ const DENSITIES: readonly Density[] = ["comfortable", "compact"];
 const LANGUAGES: readonly Language[] = ["auto", "en", "ms"];
 const CODECS: readonly CodecPreference[] = ["auto", "h264", "vp9", "av1"];
 const POST_ACTIONS: readonly AppSettings["postDownloadAction"][] = ["none", "open-file", "reveal"];
-const VIDEO_PRESETS: readonly VideoPreset[] = [
-  "Best",
-  "2160",
-  "1440",
-  "1080",
-  "720",
-  "480",
-  "Compatible",
-];
-const AUDIO_PRESETS: readonly AudioPreset[] = ["MP3", "M4A", "Opus", "FLAC"];
 
 function cleanString(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : fallback;

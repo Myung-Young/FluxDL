@@ -262,7 +262,77 @@ export function retryInSeconds(job: DownloadJob, now: number): number | null {
   return ms > 0 ? Math.ceil(ms / 1000) : null;
 }
 
-/** Factory for new queue entries (status queued, zero attempts). */export function makeJob(id: string, input: DownloadJobInput, createdAt: number): DownloadJob {
+/**
+ * Optional per-job fields carried between the UI, the queue and the engine.
+ *
+ * This allow-list is the single source of truth for BOTH directions:
+ * `makeJob()` copies these in (input -> job) and `toStartInput()` copies the
+ * same set back out (job -> input), so the two cannot drift. That is the whole
+ * point: the M4.1/M4.2 flags were silently dropped at the job -> engine hop
+ * because every hop kept its own hand-written copy list (R1 / D81).
+ * Unknown keys are dropped on purpose (the renderer is untrusted).
+ */
+type StartOptions = Partial<
+  Pick<
+    DownloadJob,
+    | "useArchive"
+    | "extractor"
+    | "videoId"
+    | "cookiesFromBrowser"
+    | "playlistSubdir"
+    | "liveStatus"
+    | "liveFromStart"
+    | "waitForVideo"
+    | "splitChapters"
+  >
+>;
+
+function pickJobOptions(source: DownloadJobInput): StartOptions {
+  return {
+    ...(source.useArchive === true ? { useArchive: true as const } : {}),
+    ...(typeof source.extractor === "string" && source.extractor.length > 0
+      ? { extractor: source.extractor }
+      : {}),
+    ...(typeof source.videoId === "string" && source.videoId.length > 0
+      ? { videoId: source.videoId }
+      : {}),
+    ...(typeof source.cookiesFromBrowser === "string" && source.cookiesFromBrowser.length > 0
+      ? { cookiesFromBrowser: source.cookiesFromBrowser }
+      : {}),
+    ...(typeof source.playlistSubdir === "string" && source.playlistSubdir.length > 0
+      ? { playlistSubdir: source.playlistSubdir }
+      : {}),
+    ...(source.liveStatus !== undefined && source.liveStatus !== null
+      ? { liveStatus: source.liveStatus }
+      : {}),
+    ...(source.liveFromStart === true ? { liveFromStart: true as const } : {}),
+    ...(source.waitForVideo === true ? { waitForVideo: true as const } : {}),
+    ...(source.splitChapters === true ? { splitChapters: true as const } : {}),
+  };
+}
+
+/**
+ * Project a download into the engine start input.
+ *
+ * Accepts a queued job or an already-shaped input (a `DownloadJob` is
+ * structurally assignable to `DownloadJobInput`, so the queue and the engine
+ * share this one projection). Every optional flag (live, chapters, cookies,
+ * archive, playlist subdir) survives, so `--live-from-start`,
+ * `--wait-for-video`, `--hls-use-mpegts` and `--split-chapters` actually reach
+ * yt-dlp (R1).
+ */
+export function toStartInput(source: DownloadJobInput): DownloadJobInput {
+  return {
+    url: source.url,
+    title: source.title,
+    preset: source.preset,
+    outputDir: source.outputDir,
+    ...pickJobOptions(source),
+  };
+}
+
+/** Factory for new queue entries (status queued, zero attempts). */
+export function makeJob(id: string, input: DownloadJobInput, createdAt: number): DownloadJob {
   return {
     id,
     url: input.url,
@@ -281,25 +351,7 @@ export function retryInSeconds(job: DownloadJob, now: number): number | null {
     attempts: 0,
     nextRetryAt: null,
     destination: null,
-    ...(input.useArchive === true ? { useArchive: true as const } : {}),
-    ...(typeof input.extractor === "string" && input.extractor.length > 0
-      ? { extractor: input.extractor }
-      : {}),
-    ...(typeof input.videoId === "string" && input.videoId.length > 0
-      ? { videoId: input.videoId }
-      : {}),
-    ...(typeof input.cookiesFromBrowser === "string" && input.cookiesFromBrowser.length > 0
-      ? { cookiesFromBrowser: input.cookiesFromBrowser }
-      : {}),
-    ...(typeof input.playlistSubdir === "string" && input.playlistSubdir.length > 0
-      ? { playlistSubdir: input.playlistSubdir }
-      : {}),
-    ...(input.liveStatus !== undefined && input.liveStatus !== null
-      ? { liveStatus: input.liveStatus }
-      : {}),
-    ...(input.liveFromStart === true ? { liveFromStart: true as const } : {}),
-    ...(input.waitForVideo === true ? { waitForVideo: true as const } : {}),
-    ...(input.splitChapters === true ? { splitChapters: true as const } : {}),
+    ...pickJobOptions(input),
   };
 }
 
