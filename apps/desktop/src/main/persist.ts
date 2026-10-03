@@ -1,19 +1,26 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import Store from "electron-store";
 import type { AppSettings, DownloadJob, JobStatus } from "@grabber/core/types.js";
 import { DEFAULT_SETTINGS, mergeSettings } from "@grabber/core/settings.js";
 
 /**
  * File persistence (main process only).
- * - Settings: electron-store (`<userData>/grabber-settings.json`).
+ * - Settings: atomic JSON (`<userData>/grabber-settings.json`).
  * - Queue snapshot: atomic JSON (`<userData>/queue.json`).
  * - History: JSON-lines (`<userData>/history.jsonl`, corrupt lines skipped).
  * All helpers take an explicit dir so tests can use temp dirs.
+ *
+ * Settings deliberately do NOT use electron-store: v11 is ESM-only, and the
+ * main bundle is CommonJS, so `new Store()` threw "Store is not a constructor"
+ * and *every* settings write silently failed in the packaged app (D94). The
+ * file format is unchanged — a flat JSON object — so existing userData keeps
+ * loading. We only ever used defaults + a sanitizing merge, both of which
+ * `mergeSettings` already does.
  */
 
-const SETTINGS_NAME = "grabber-settings";
+const SETTINGS_FILE = "grabber-settings.json";
+const SETTINGS_TMP = "grabber-settings.json.tmp";
 const QUEUE_FILE = "queue.json";
 const QUEUE_TMP = "queue.json.tmp";
 const HISTORY_FILE = "history.jsonl";
@@ -46,33 +53,35 @@ export function isDownloadJob(value: unknown): value is DownloadJob {
   return kind === "video" || kind === "audio";
 }
 
-const settingsStores = new Map<string, Store<AppSettings>>();
-
-function storeFor(userDataDir: string): Store<AppSettings> {
-  const existing = settingsStores.get(userDataDir);
-  if (existing !== undefined) return existing;
-  const store = new Store<AppSettings>({
-    cwd: userDataDir,
-    name: SETTINGS_NAME,
-    defaults: DEFAULT_SETTINGS,
-  });
-  settingsStores.set(userDataDir, store);
-  return store;
-}
-
+/**
+ * Settings are read synchronously: `DesktopEngine.start()` needs them in the
+ * middle of building argv, so an async API would force a signature change for
+ * no benefit. Writes are atomic (tmp + rename) like the queue snapshot.
+ */
 export function loadSettingsFromDisk(userDataDir: string): AppSettings {
   try {
-    const raw = storeFor(userDataDir).store as Partial<AppSettings>;
+    const file = join(userDataDir, SETTINGS_FILE);
+    if (!existsSync(file)) return DEFAULT_SETTINGS;
+    const raw: unknown = JSON.parse(readFileSync(file, "utf8"));
+    if (!isRecord(raw)) return DEFAULT_SETTINGS;
     return mergeSettings(DEFAULT_SETTINGS, raw);
   } catch {
+    // Corrupt/unreadable settings must never block startup.
     return DEFAULT_SETTINGS;
   }
 }
 
-export function saveSettingsToDisk(userDataDir: string, patch: Partial<AppSettings>): AppSettings {
+export function saveSettingsToDisk(
+  userDataDir: string,
+  patch: Partial<AppSettings>,
+): AppSettings {
   if (!isRecord(patch)) throw new Error("Invalid settings patch.");
   const merged = mergeSettings(loadSettingsFromDisk(userDataDir), patch);
-  storeFor(userDataDir).set(merged);
+  const file = join(userDataDir, SETTINGS_FILE);
+  const tmp = join(userDataDir, SETTINGS_TMP);
+  mkdirSync(userDataDir, { recursive: true });
+  writeFileSync(tmp, `${JSON.stringify(merged, null, 2)}\n`, "utf8");
+  renameSync(tmp, file);
   return merged;
 }
 

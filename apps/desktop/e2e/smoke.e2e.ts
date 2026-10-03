@@ -685,3 +685,103 @@ test("themes: the Paper light theme applies and persists to chrome", async () =>
   expect(chrome).toMatchObject({ theme: "paper" });
   expect(pageErrors).toEqual([]);
 });
+
+test("library: Download again asks first and then really re-downloads", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+  await installMock(page);
+  await page.reload();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  const record = {
+    id: "lib-1",
+    url: "https://youtu.be/aqz-KE-bpKQ",
+    title: "Re-download me",
+    preset: { kind: "video", videoPreset: "1080", audioPreset: "MP3", rawFormat: null },
+outputDir: "C:\\Vids",
+    status: "done",
+    progress: 100,
+    speed: null,
+    eta: null,
+    downloadedBytes: 10,
+    totalBytes: 10,
+    stage: "done",
+    error: null,
+    createdAt: Date.now() - 1000,
+    attempts: 0,
+    nextRetryAt: null,
+    destination: "C:\\Vids\\Re-download me.mp4",
+  };
+  await page.evaluate((row) => {
+    const mock = (
+      window as unknown as { __grabberOverride?: { _setHistory?: (rows: unknown[]) => void } }
+    ).__grabberOverride;
+    mock?._setHistory?.([row]);
+  }, record);
+
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Library" }).click();
+  await expect(page.locator(".grabber-card").filter({ hasText: "Re-download me" })).toBeVisible({
+    timeout: 15000,
+  });
+
+  // 1) Declining the confirmation must not queue anything.
+  page.once("dialog", (d) => {
+    void d.dismiss();
+  });
+  await page
+    .locator(".grabber-card")
+    .filter({ hasText: "Re-download me" })
+    .locator(".btn")
+    .filter({ hasText: "Download again" })
+    .click();
+  await page.waitForTimeout(500);
+  let started = await page.evaluate(() => {
+    const mock = (window as unknown as { __grabberOverride?: { _started?: unknown[] } })
+      .__grabberOverride;
+    return (mock?._started ?? []).length;
+  });
+  expect(started).toBe(0);
+
+  // 2) Accepting queues it, and the job carries forceOverwrite so yt-dlp
+  //    actually refetches instead of answering "has already been downloaded".
+  page.once("dialog", (d) => {
+    void d.accept();
+  });
+  await page
+    .locator(".grabber-card")
+    .filter({ hasText: "Re-download me" })
+    .locator(".btn")
+    .filter({ hasText: "Download again" })
+    .click();
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(() => {
+          const mock = (window as unknown as { __grabberOverride?: { _started?: unknown[] } })
+            .__grabberOverride;
+          return (mock?._started ?? []).length;
+        }),
+      { timeout: 10000 },
+    )
+    .toBe(1);
+  started = await page.evaluate(() => {
+    const mock = (window as unknown as { __grabberOverride?: { _started?: unknown[] } })
+      .__grabberOverride;
+    return (mock?._started ?? []).length;
+  });
+  expect(started).toBe(1);
+  const payload = await page.evaluate(() => {
+    const mock = (window as unknown as { __grabberOverride?: { _started?: unknown[] } })
+      .__grabberOverride;
+    return (mock?._started ?? [])[0] as { forceOverwrite?: boolean } | undefined;
+  });
+  expect(payload?.forceOverwrite).toBe(true);
+  expect(pageErrors).toEqual([]);
+});

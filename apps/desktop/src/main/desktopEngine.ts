@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { readFile, readdir, rm, stat, unlink } from "node:fs/promises";
 import { platform as osPlatform, release as osRelease } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -371,6 +371,10 @@ export class DesktopEngine implements DownloadEngine {
     const outputDir = job.outputDir.trim().length > 0 ? job.outputDir : this.deps.defaultOutputDir;
     const input: DownloadJobInput = { ...toStartInput(job), url: normalizedUrl, outputDir };
     const id = randomUUID();
+    // userData must exist before spawning: yt-dlp writes the download archive
+    // there directly and fails with ENOENT otherwise. Electron creates it in
+    // the real app, but nothing guarantees it for every caller (D95).
+    mkdirSync(this.deps.userDataDir, { recursive: true });
     // User settings live on disk (main side) so every download honors them
     // without widening the DownloadJobInput interface.
     const s = loadSettingsFromDisk(this.deps.userDataDir);

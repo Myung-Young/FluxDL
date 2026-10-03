@@ -281,6 +281,8 @@ describe.skipIf(!HAS_YTDLP)("desktop engine live (real yt-dlp)", () => {
   }, 240_000);
 
   it("second run with --download-archive skips the fetched video", async () => {
+    // Live-network test: give the first download more headroom on slow links.
+
     const { engine, events, outputDir, userData, base } = makeEngine(true);
     const unsub = engine.onProgress((e) => {
       events.push(e);
@@ -294,7 +296,7 @@ describe.skipIf(!HAS_YTDLP)("desktop engine live (real yt-dlp)", () => {
         useArchive: true,
       } as const;
       const first = await engine.start({ ...input });
-      await waitFor(events, (e) => e.id === first && e.stage === "done", 120_000, "first done");
+      await waitFor(events, (e) => e.id === first && e.stage === "done", 180_000, "first done");
       const archiveFile = join(userData, "archive.txt");
       expect(existsSync(archiveFile)).toBe(true);
       expect(readFileSync(archiveFile, "utf8")).toContain("jNQXAC9IVRw");
@@ -306,6 +308,48 @@ describe.skipIf(!HAS_YTDLP)("desktop engine live (real yt-dlp)", () => {
 
       await engine.clearArchive();
       expect(existsSync(archiveFile)).toBe(false);
+    } finally {
+      unsub();
+      rmSync(base, { recursive: true, force: true });
+    }
+  }, 240_000);
+});
+
+/**
+ * D95: yt-dlp writes the download archive straight into userData and fails
+ * with ENOENT when that directory does not exist. electron-store used to
+ * create it as a side effect of reading settings, so removing that dependency
+ * silently broke archive writes. `start()` now guarantees the directory.
+ */
+describe.skipIf(!HAS_YTDLP)("userData must exist before spawning", () => {
+  it("creates userData on start so --download-archive can write (D95)", async () => {
+    const base = mkdtempSync(join(tmpdir(), "fluxdl-userdata-"));
+    const userData = join(base, "deep", "nested", "userdata");
+    const outputDir = join(base, "out put");
+    expect(existsSync(userData)).toBe(false);
+    const events: EngineProgress[] = [];
+    const engine = new DesktopEngine({
+      userDataDir: userData,
+      bundledBinDir: join(base, "bundled-missing"),
+      appVersion: "0.0.0-userdata",
+      defaultOutputDir: outputDir,
+      broadcast: () => undefined,
+      onAggregate: () => undefined,
+    });
+    const unsub = engine.onProgress((e) => {
+      events.push(e);
+    });
+    try {
+      const id = await engine.start({
+        url: "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+        title: "D95 userData probe",
+        preset: { kind: "video", videoPreset: "Compatible", audioPreset: "MP3", rawFormat: null },
+        outputDir,
+        useArchive: true,
+      });
+      await waitFor(events, (e) => e.id === id && e.stage === "done", 180_000, "done");
+      // The archive file proves yt-dlp could write there.
+      expect(existsSync(join(userData, "archive.txt"))).toBe(true);
     } finally {
       unsub();
       rmSync(base, { recursive: true, force: true });

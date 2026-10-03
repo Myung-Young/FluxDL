@@ -156,6 +156,8 @@ export interface DownloadJob {
   readonly uploader?: string | null;
   /** Media duration in seconds at enqueue (M4.5). */
   readonly durationSec?: number | null;
+  /** Refetch even if the output file exists (M4.8). */
+  readonly forceOverwrite?: boolean;
 }
 
 export interface DownloadJobInput extends Pick<
@@ -174,6 +176,7 @@ export interface DownloadJobInput extends Pick<
   | "audioMetadata"
   | "uploader"
   | "durationSec"
+  | "forceOverwrite"
 > {
   readonly useArchive?: boolean;
   /** Sanitized playlist subfolder (UI-side, when the setting is on). */

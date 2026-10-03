@@ -329,3 +329,26 @@ describe("arg builder", () => {
   });
 });
 
+
+describe("forceOverwrite (M4.8)", () => {
+  const withFlag = (patch: Partial<DownloadArgsInput>): string[] => buildDownloadArgs(base(patch));
+
+  it("adds --force-overwrites for an explicit re-download", () => {
+    const args = withFlag({ forceOverwrite: true });
+    expect(args).toContain("--force-overwrites");
+  });
+
+  it("never adds it for ordinary downloads", () => {
+    expect(withFlag({})).not.toContain("--force-overwrites");
+    expect(withFlag({ forceOverwrite: false })).not.toContain("--force-overwrites");
+    // exactOptionalPropertyTypes: an explicit undefined is the same as absent.
+    expect(withFlag({ forceOverwrite: false })).not.toContain("--force-overwrites");
+  });
+
+  it("keeps --continue on normal jobs (resume must still work)", () => {
+    expect(withFlag({})).toContain("--continue");
+    // --force-overwrites implies --no-continue inside yt-dlp; that is intended
+    // for an explicit re-download and must not leak into normal downloads.
+    expect(withFlag({ forceOverwrite: true })).toContain("--continue");
+  });
+});

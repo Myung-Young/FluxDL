@@ -283,6 +283,7 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
             ...(g.fromPlaylist && settingsState.skipArchived && !g.forceFresh
               ? { useArchive: true as const }
               : {}),
+            ...(g.forceFresh ? { forceOverwrite: true as const } : {}),
             ...(subdir !== null ? { playlistSubdir: subdir } : {}),
           });
           count += 1;

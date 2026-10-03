@@ -41,6 +41,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
   const ready = useStore(settings, (s) => s.ready);
   const [flash, setFlash] = useState<boolean>(false);
   const [archiveNote, setArchiveNote] = useState<boolean>(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [query, setQuery] = useState<string>("");
   const [templateDraft, setTemplateDraft] = useState<string | null>(null);
   const [speedDraft, setSpeedDraft] = useState<string | null>(null);
@@ -48,12 +49,24 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
 
   const flashSaved = (): void => {
     setFlash(true);
+    setSaveError(null);
     setArchiveNote(false);
     if (flashTimer.current !== null) clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => {
       setFlash(false);
       setArchiveNote(false);
     }, 2000);
+  };
+
+  /**
+   * A failed save used to be swallowed here, which is how "settings do
+   * nothing" went unnoticed for five releases: the control looked clickable,
+   * nothing persisted, and no error appeared (D94). Surface it instead.
+   */
+  const flashSaveError = (err: unknown): void => {
+    setFlash(false);
+    setArchiveNote(false);
+    setSaveError(err instanceof Error && err.message.length > 0 ? err.message : S.settings.saveFailed);
   };
 
   const flashArchive = (): void => {
@@ -137,7 +150,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
       .then(() => {
         flashSaved();
       })
-      .catch(() => undefined);
+      .catch(flashSaveError);
   };
 
   const commitText = (
@@ -158,6 +171,11 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
       {flash && (
         <p className="note" role="status">
           {S.settings.saved}
+        </p>
+      )}
+      {saveError !== null && (
+        <p className="error-text" role="alert" data-testid="settings-save-error">
+          {formatStr(S.settings.saveFailed, { detail: saveError })}
         </p>
       )}
       {archiveNote && (

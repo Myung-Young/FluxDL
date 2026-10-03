@@ -47,6 +47,12 @@ export interface DownloadArgsInput {
   readonly splitChapters?: boolean | null;
   /** Per-job audio tag overrides (M4.3); forces --embed-metadata. */
   readonly audioMetadata?: AudioMetadata | null;
+  /**
+   * Re-download even when the output file already exists (M4.8). yt-dlp
+   * otherwise reports "has already been downloaded" and silently skips, which
+   * made Library > "Download again" a no-op.
+   */
+  readonly forceOverwrite?: boolean;
 }
 
 export function buildChapterOutputTemplate(
@@ -228,6 +234,13 @@ export function buildDownloadArgs(input: DownloadArgsInput): string[] {
   }
   if (input.archivePath !== null && input.archivePath.trim().length > 0) {
     args.push("--download-archive", input.archivePath.trim());
+  }
+  // Explicit re-download: yt-dlp otherwise reports "has already been
+  // downloaded" and exits 0, so the file is never refetched (M4.8).
+  // --force-overwrites implies --no-continue, which is what "download again"
+  // means; ordinary downloads keep --continue.
+  if (input.forceOverwrite === true) {
+    args.push("--force-overwrites");
   }
   if (input.liveFromStart === true) {
     args.push("--live-from-start");

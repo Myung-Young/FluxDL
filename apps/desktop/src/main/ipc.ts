@@ -72,6 +72,7 @@ function parseJobInput(raw: unknown): DownloadJobInput {
     ...(raw["liveFromStart"] === true ? { liveFromStart: true as const } : {}),
     ...(raw["waitForVideo"] === true ? { waitForVideo: true as const } : {}),
     ...(raw["splitChapters"] === true ? { splitChapters: true as const } : {}),
+    ...(raw["forceOverwrite"] === true ? { forceOverwrite: true as const } : {}),
     // Audio tag overrides (M4.3): rebuilt from primitives, never trusted.
     ...(isAudioMetadata(raw["audioMetadata"])
       ? { audioMetadata: normalizeAudioMetadata(raw["audioMetadata"]) }

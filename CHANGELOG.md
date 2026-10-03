@@ -3,6 +3,32 @@
 All notable changes to FluxDL are documented here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.4.1] — 2026-10-04
+
+Bug fixes from the first manual pass on the portable build.
+
+### Fixed
+
+- **Settings never saved, in any released build.** The main process is
+  CommonJS while electron-store is ESM-only, so every write threw
+  `Store is not a constructor` and the UI swallowed the error — toggles looked
+  clickable but changed nothing, with no message. Settings are now written as
+  atomic JSON by us (same file, same shape, so existing settings still load).
+  Your download folder, proxy, cookies, theme, density and every other setting
+  now persist across restarts.
+- A settings change that fails to save now says so instead of failing silently.
+- Library → **Download again** now asks for confirmation, and it actually
+  re-downloads: yt-dlp previously answered "has already been downloaded" and
+  exited successfully without fetching anything. The same fix applies to Home's
+  "Download anyway" and the batch panel.
+- Downloads that use the download archive no longer fail with a missing-file
+  error when the app's data folder has not been created yet.
+
+### Added
+
+- Real-engine settings tests: every control is verified to reach disk and
+  survive a reload and a full app restart.
+
 ## [1.4.0] — 2026-10-04
 
 Depth and polish: live streams and chapters that actually reach yt-dlp, an

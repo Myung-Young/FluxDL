@@ -52,8 +52,8 @@ pnpm dist            # NSIS + portable into /release (also gitignored)
 
 Artifacts (`/release`):
 
-- `FluxDL-Setup-1.4.0.exe` — per-user NSIS wizard, no admin, install dir changeable
-- `FluxDL-Portable-1.4.0.exe` — single exe, runs from any folder (even with spaces)
+- `FluxDL-Setup-1.4.1.exe` — per-user NSIS wizard, no admin, install dir changeable
+- `FluxDL-Portable-1.4.1.exe` — single exe, runs from any folder (even with spaces)
 
 First run copies `yt-dlp.exe` into userData so self-update (`-U`) works under
 Program Files; `ffmpeg`/`ffprobe` resolve from the bundled copy with a PATH

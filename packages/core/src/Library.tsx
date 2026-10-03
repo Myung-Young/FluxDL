@@ -6,7 +6,7 @@ import type { DownloadJob } from "./types.js";
 import { pressScale } from "./motion.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 import type { ToastStoreState } from "./toast.js";
-import { useStrings } from "./locale.js";
+import { formatStr, useStrings } from "./locale.js";
 import { chunkDestinations, deriveMissingIds } from "./health.js";
 import { VirtualList } from "./VirtualList.js";
 import { ContextMenu, type MenuItemDef } from "./ContextMenu.js";
@@ -97,16 +97,26 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
   };
 
   const redownload = async (h: DownloadJob): Promise<void> => {
-    // Explicit re-download: bypasses the duplicate guard (user said so) and
-    // skips the archive for this job.
-    await queue.getState().enqueue({
-      url: h.url,
-      title: h.title,
-      preset: h.preset,
-      outputDir: settings.getState().settings.downloadDir,
-      extractor: h.extractor ?? null,
-      videoId: h.videoId ?? null,
-    });
+    // Re-downloading replaces the existing file, so ask first (M4.8). The
+    // confirmation names the file so nobody is surprised by a silent replace.
+    if (!window.confirm(formatStr(S.library.redownloadConfirm, { title: h.title }))) return;
+    setBusy(true);
+    try {
+      await queue.getState().enqueue({
+        url: h.url,
+        title: h.title,
+        preset: h.preset,
+        outputDir: settings.getState().settings.downloadDir,
+        extractor: h.extractor ?? null,
+        videoId: h.videoId ?? null,
+        // Without this yt-dlp answers "has already been downloaded" and exits
+        // successfully without fetching anything.
+        forceOverwrite: true,
+      });
+      toast.getState().push(S.toast.queued, "info");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const remove = async (id: string): Promise<void> => {

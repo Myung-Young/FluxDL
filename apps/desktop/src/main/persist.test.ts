@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -123,5 +123,94 @@ describe("persist", () => {
     expect(isDownloadJob(null)).toBe(false);
     expect(isDownloadJob({ id: "x" })).toBe(false);
     expect(isDownloadJob({ ...job("x"), status: "flying" })).toBe(false);
+  });
+});
+
+/**
+ * Settings persistence without electron-store (D94).
+ *
+ * The bug these guard: the main bundle is CommonJS, electron-store v11 is
+ * ESM-only, so `new Store()` threw "Store is not a constructor" and every
+ * settings write failed *silently* in the packaged app. These tests assert the
+ * file actually lands on disk, because "the merge returned an object" was
+ * never the failing part.
+ */
+describe("settings persistence (no electron-store)", () => {
+  const FILE = "grabber-settings.json";
+
+  it("creates the file on first save", () => {
+    const d = dir("first-save");
+    expect(existsSync(join(d, FILE))).toBe(false);
+    saveSettingsToDisk(d, { concurrency: 4 });
+    expect(existsSync(join(d, FILE))).toBe(true);
+    const raw = JSON.parse(readFileSync(join(d, FILE), "utf8")) as Record<string, unknown>;
+    expect(raw["concurrency"]).toBe(4);
+  });
+
+  it("merges patches instead of replacing the whole object", () => {
+    const d = dir("merge-patch");
+    saveSettingsToDisk(d, { theme: "paper" });
+    saveSettingsToDisk(d, { concurrency: 3 });
+    const loaded = loadSettingsFromDisk(d);
+    expect(loaded.theme).toBe("paper");
+    expect(loaded.concurrency).toBe(3);
+  });
+
+  it("keeps Windows paths, % and filename templates byte-exact", () => {
+    const d = dir("paths");
+    const template = "%(title)s [%(id)s].%(ext)s";
+    saveSettingsToDisk(d, {
+      downloadDir: "C:\\Users\\P\\Videos\\FluxDL",
+      filenameTemplate: template,
+    });
+    const loaded = loadSettingsFromDisk(d);
+    expect(loaded.downloadDir).toBe("C:\\Users\\P\\Videos\\FluxDL");
+    expect(loaded.filenameTemplate).toBe(template);
+    // And the same bytes on disk (no JSON-escaping round trip surprises).
+    const raw = JSON.parse(readFileSync(join(d, FILE), "utf8")) as { downloadDir?: string };
+    expect(raw.downloadDir).toBe("C:\\Users\\P\\Videos\\FluxDL");
+  });
+
+  it("loads a legacy electron-store file and drops unknown keys", () => {
+    const d = dir("legacy");
+    mkdirSync(d, { recursive: true });
+    // electron-store wrote a flat JSON object; extra keys appear over versions.
+    writeFileSync(
+      join(d, FILE),
+      JSON.stringify({ concurrency: 3, theme: "midnight", removedInV14: "gone", __x: 1 }),
+      "utf8",
+    );
+    const loaded = loadSettingsFromDisk(d);
+    expect(loaded.concurrency).toBe(3);
+    expect(loaded.theme).toBe("midnight");
+    expect("removedInV14" in loaded).toBe(false);
+  });
+
+  it("writes atomically and leaves no temp file behind", () => {
+    const d = dir("atomic");
+    saveSettingsToDisk(d, { concurrency: 5 });
+    expect(existsSync(join(d, "grabber-settings.json.tmp"))).toBe(false);
+    expect(existsSync(join(d, FILE))).toBe(true);
+  });
+
+  it("recovers from a settings file containing a JSON array or null", () => {
+    for (const junk of ["[]", "null", '"text"', "123"]) {
+      const d = dir(`junk-${junk.replace(/\W/g, "")}`);
+      mkdirSync(d, { recursive: true });
+      writeFileSync(join(d, FILE), junk, "utf8");
+      expect(loadSettingsFromDisk(d).concurrency).toBe(2);
+    }
+  });
+
+  it("keeps working when the userData dir has spaces and unicode", () => {
+    const d = dir("unicode");
+    saveSettingsToDisk(d, { proxy: "http://127.0.0.1:8080" });
+    expect(loadSettingsFromDisk(d).proxy).toBe("http://127.0.0.1:8080");
+  });
+
+  it("rejects a non-object patch loudly instead of silently ignoring it", () => {
+    const d = dir("bad-patch");
+    expect(() => saveSettingsToDisk(d, null as never)).toThrow();
+    expect(() => saveSettingsToDisk(d, [] as never)).toThrow();
   });
 });

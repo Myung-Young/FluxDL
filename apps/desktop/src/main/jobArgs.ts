@@ -49,5 +49,6 @@ export function buildStartArgs(input: DownloadJobInput, deps: StartArgsDeps): st
     waitForVideo: input.waitForVideo === true,
     splitChapters: input.splitChapters === true,
     audioMetadata: input.audioMetadata ?? null,
+    forceOverwrite: input.forceOverwrite === true,
   });
 }

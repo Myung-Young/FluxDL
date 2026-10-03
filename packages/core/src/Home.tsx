@@ -485,6 +485,10 @@ export function Home({
           ...(t.fromPlaylist && settingsState.skipArchived && !t.forceFresh
             ? { useArchive: true as const }
             : {}),
+          // "Download anyway" on an already-downloaded video must refetch:
+          // without this yt-dlp sees the existing file and exits 0 having
+          // downloaded nothing (M4.8).
+          ...(t.forceFresh ? { forceOverwrite: true as const } : {}),
           ...(subdir !== null ? { playlistSubdir: subdir } : {}),
           ...(info.liveStatus !== undefined && info.liveStatus !== null
             ? { liveStatus: info.liveStatus }

@@ -59,7 +59,7 @@ describe("v1.0 fixtures load unchanged", () => {
     mkdirSync(dir, { recursive: true });
     copyFileSync(join(FIXTURES, "queue.json"), join(dir, "queue.json"));
     copyFileSync(join(FIXTURES, "history.jsonl"), join(dir, "history.jsonl"));
-    // electron-store file name for settings.
+    // settings file name (flat JSON, unchanged since v1.0).
     copyFileSync(join(FIXTURES, "settings.json"), join(dir, "grabber-settings.json"));
 
     const queue = await loadQueueFromDisk(dir);

@@ -123,7 +123,7 @@ export interface DownloadEngine {
   clearArchive(): Promise<void>;
   /** Raw console of a job for the Logs screen (kept by the engine). */
   getRawLog(id: string): Promise<string | null>;
-  /** Settings persist in main (electron-store). Renderer talks via these only. */
+  /** Settings persist main-side (atomic JSON). Renderer talks via these only. */
   loadSettings(): Promise<AppSettings>;
   saveSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
   /** Queue snapshot + finished history persist in main (JSON / JSONL). */

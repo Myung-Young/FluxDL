@@ -288,6 +288,7 @@ type StartOptions = Partial<
     | "audioMetadata"
     | "uploader"
     | "durationSec"
+    | "forceOverwrite"
   >
 >;
 
@@ -312,6 +313,7 @@ function pickJobOptions(source: DownloadJobInput): StartOptions {
     ...(source.liveFromStart === true ? { liveFromStart: true as const } : {}),
     ...(source.waitForVideo === true ? { waitForVideo: true as const } : {}),
     ...(source.splitChapters === true ? { splitChapters: true as const } : {}),
+    ...(source.forceOverwrite === true ? { forceOverwrite: true as const } : {}),
     ...(isAudioMetadata(source.audioMetadata)
       ? { audioMetadata: normalizeAudioMetadata(source.audioMetadata) }
       : {}),
