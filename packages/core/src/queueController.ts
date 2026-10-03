@@ -5,6 +5,7 @@ import {
   canTransition,
   clampConcurrency,
   makeJob,
+  reorder as reorderJobs,
   selectNextToStart,
   shouldRetry,
   transition,
@@ -183,6 +184,73 @@ export class QueueController {
     this.jobs.delete(queueId);
     this.emit();
     await this.persist();
+  }
+
+  /** Move a queued job within the queue (order persists). */
+  async reorder(queueId: string, toIndex: number): Promise<void> {
+    const job = this.require(queueId);
+    if (job.status !== "queued") {
+      throw new Error(`Only queued downloads can be reordered: ${job.status}`);
+    }
+    for (const j of reorderJobs(this.getJobs(), queueId, toIndex)) {
+      this.jobs.set(j.id, j);
+    }
+    this.emit();
+    await this.persist();
+  }
+
+  /** Pause everything pausable (queued locally, active via the engine). */
+  async pauseAll(): Promise<void> {
+    for (const job of this.jobs.values()) {
+      if (!canTransition(job.status, "pause")) continue;
+      const engineId = this.engineIds.get(job.id);
+      if (engineId !== undefined) {
+        await this.engine.pause(engineId).catch(() => undefined);
+      } else {
+        this.jobs.set(job.id, transition(job, "pause"));
+      }
+    }
+    this.emit();
+    await this.persist();
+  }
+
+  /** Resume every paused job. */
+  async resumeAll(): Promise<void> {
+    let pumped = false;
+    for (const job of this.jobs.values()) {
+      if (job.status !== "paused") continue;
+      const engineId = this.engineIds.get(job.id);
+      if (engineId !== undefined) {
+        await this.engine.resume(engineId).catch(() => undefined);
+      } else {
+        this.jobs.set(job.id, transition(job, "resume"));
+        pumped = true;
+      }
+    }
+    this.emit();
+    await this.persist();
+    if (pumped) await this.pump();
+  }
+
+  /** Cancel every queued job (each lands in history, like single cancel). */
+  async cancelQueued(): Promise<void> {
+    const ids = [...this.jobs.values()]
+      .filter((j) => j.status === "queued")
+      .map((j) => j.id);
+    for (const id of ids) {
+      await this.cancel(id);
+    }
+  }
+
+  /** Sweep error jobs into history (abandon their retries). */
+  async clearFinished(): Promise<void> {
+    const ids = [...this.jobs.values()]
+      .filter((j) => j.status === "error")
+      .map((j) => j.id);
+    for (const id of ids) {
+      const job = this.jobs.get(id);
+      if (job !== undefined) await this.finish(job);
+    }
   }
 
   /** Manual retry: fresh attempts, immediate re-queue. */

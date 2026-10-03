@@ -35,7 +35,7 @@ export type { IpcChannel } from "./engine.js";
 export { App } from "./App.js";
 export { Shell } from "./Shell.js";
 export type { ShellView, ShellProps } from "./Shell.js";
-export { prefersReducedMotion, staggerIn, fadeSwap, pressScale, tweenProgress } from "./motion.js";
+export { flipShift, prefersReducedMotion, staggerIn, fadeSwap, pressScale, tweenProgress } from "./motion.js";
 export { STRINGS } from "./strings.js";
 export type { Strings } from "./strings.js";
 export { Home, formatDuration } from "./Home.js";
@@ -90,7 +90,7 @@ export { comboFromEvent, isEditableTarget, isOpenSettings, isPasteAnalyze } from
 export type { KeyCombo } from "./shortcuts.js";
 export { readClipboardText, writeClipboardText } from "./clipboard.js";
 export { menuItemsFor, presetForMenu, MENU_AUDIO_PRESETS, MENU_VIDEO_PRESETS } from "./menu.js";
-export type { CardMenuId } from "./menu.js";
+export type { CardMenuId, MenuMove } from "./menu.js";
 export { ContextMenu } from "./ContextMenu.js";
 export type { ContextMenuProps, MenuItemDef } from "./ContextMenu.js";
 export { buildJobMenu } from "./JobMenu.js";
@@ -131,6 +131,7 @@ export {
   isFinished,
   searchHistory,
   pruneHistory,
+  reorder,
 } from "./queue.js";
 export type { QueueEvent, TransitionOptions, EngineProgressLike } from "./queue.js";
 export { QueueController } from "./queueController.js";

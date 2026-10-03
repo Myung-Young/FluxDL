@@ -28,6 +28,11 @@ export interface QueueStoreState {
   setJobCookies(id: string, browser: string | null): Promise<void>;
   setJobPreset(id: string, preset: DownloadJob["preset"]): Promise<void>;
   remove(id: string): Promise<void>;
+  reorder(id: string, toIndex: number): Promise<void>;
+  pauseAll(): Promise<void>;
+  resumeAll(): Promise<void>;
+  cancelQueued(): Promise<void>;
+  clearFinished(): Promise<void>;
 }
 
 export function createQueueStore(
@@ -77,6 +82,21 @@ export function createQueueStore(
     },
     remove: async (id) => {
       await getController(set).remove(id);
+    },
+    reorder: async (id, toIndex) => {
+      await getController(set).reorder(id, toIndex);
+    },
+    pauseAll: async () => {
+      await getController(set).pauseAll();
+    },
+    resumeAll: async () => {
+      await getController(set).resumeAll();
+    },
+    cancelQueued: async () => {
+      await getController(set).cancelQueued();
+    },
+    clearFinished: async () => {
+      await getController(set).clearFinished();
     },
   }));
 }

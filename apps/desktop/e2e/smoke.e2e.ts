@@ -44,6 +44,7 @@ async function installMock(page: Page): Promise<void> {
       }
     };
     const versions = { ytdlp: "mock", ffmpeg: null, app: "0.0.0-e2e" };
+    let n = 0;
     const mock = {
       getInfo: (url: string): Promise<unknown> =>
         Promise.resolve({
@@ -72,14 +73,36 @@ async function installMock(page: Page): Promise<void> {
         }),
       start: (job: unknown): Promise<string> => {
         started.push(job);
-        const id = "eng-mock-1";
+        n += 1;
+        const id = `eng-mock-${String(n)}`;
         setTimeout(() => {
           fireProgress(id);
         }, 100);
         return Promise.resolve(id);
       },
-      pause: (): Promise<void> => Promise.resolve(),
-      resume: (): Promise<void> => Promise.resolve(),
+      pause: (id: string): Promise<void> => {
+        setTimeout(() => {
+          for (const cb of listeners) {
+            cb({
+              id,
+              percent: 0,
+              speed: null,
+              eta: null,
+              downloadedBytes: null,
+              totalBytes: null,
+              stage: "paused",
+              destination: null,
+            });
+          }
+        }, 50);
+        return Promise.resolve();
+      },
+      resume: (id: string): Promise<void> => {
+        setTimeout(() => {
+          fireProgress(id);
+        }, 50);
+        return Promise.resolve();
+      },
       cancel: (): Promise<void> => Promise.resolve(),
       onProgress: (cb: (e: unknown) => void): (() => void) => {
         listeners.push(cb);
@@ -272,5 +295,27 @@ test("card context menu opens and closes with Esc", async () => {
   await expect(page.locator('[data-testid="card-menu"]')).toContainText("Copy URL");
   await page.keyboard.press("Escape");
   await expect(page.locator('[data-testid="card-menu"]')).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
+});
+
+test("bulk: pause all then resume all", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Downloads" }).click();
+  await page.getByRole("button", { name: "Pause all" }).click();
+  await expect(page.locator(".dl-card").first()).toContainText("paused", { timeout: 15000 });
+  await page.getByRole("button", { name: "Resume all" }).click();
+  await expect(page.locator(".dl-card").first()).toContainText("downloading", {
+    timeout: 15000,
+  });
   expect(pageErrors).toEqual([]);
 });

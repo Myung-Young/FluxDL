@@ -30,9 +30,9 @@ const TRANSITIONS: Readonly<Record<QueueEvent, ReadonlySet<JobStatus>>> = {
   start: new Set<JobStatus>(["queued", "analyzing", "paused"]),
   resume: new Set<JobStatus>(["paused"]),
   pause: new Set<JobStatus>(["queued", "analyzing", "downloading", "processing"]),
-  progress: new Set<JobStatus>(["downloading", "processing"]),
+  progress: new Set<JobStatus>(["downloading", "processing", "paused"]),
   process: new Set<JobStatus>(["downloading"]),
-  done: new Set<JobStatus>(["downloading", "processing", "analyzing"]),
+  done: new Set<JobStatus>(["downloading", "processing", "analyzing", "paused"]),
   fail: new Set<JobStatus>(["queued", "analyzing", "downloading", "processing", "paused"]),
   cancel: new Set<JobStatus>([
     "queued",
@@ -250,8 +250,7 @@ export function shouldRetry(job: DownloadJob, maxRetries: number, now: number): 
   return isDue(job, now);
 }
 
-/** Factory for new queue entries (status queued, zero attempts). */
-export function makeJob(id: string, input: DownloadJobInput, createdAt: number): DownloadJob {
+/** Factory for new queue entries (status queued, zero attempts). */export function makeJob(id: string, input: DownloadJobInput, createdAt: number): DownloadJob {
   return {
     id,
     url: input.url,
@@ -301,4 +300,40 @@ export function pruneHistory(history: readonly DownloadJob[], max: number): Down
   return [...history]
     .sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? -1 : 1))
     .slice(0, cap);
+}
+
+/**
+ * Move a queued job to a position within the queued subsequence.
+ * Implemented as a createdAt permutation (no schema change): the FIFO
+ * selector already orders by createdAt, so it honors the new order, the
+ * snapshot persists it, and hydrate keeps it. Non-queued jobs and unknown
+ * ids pass through untouched. Out-of-range targets clamp.
+ */
+export function reorder(
+  jobs: readonly DownloadJob[],
+  id: string,
+  toIndex: number,
+): DownloadJob[] {
+  const queued = jobs.filter((j) => j.status === "queued");
+  const from = queued.findIndex((j) => j.id === id);
+  if (from === -1) return [...jobs];
+  const clamped = Math.max(0, Math.min(toIndex, queued.length - 1));
+  if (from === clamped) return [...jobs];
+  const order = [...queued];
+  const moved = order.splice(from, 1)[0];
+  if (moved === undefined) return [...jobs];
+  order.splice(clamped, 0, moved);
+  // Permute createdAt (strictly increasing) to enforce the new order.
+  const times = order.map((j) => j.createdAt).sort((a, b) => a - b);
+  const assigned = new Map<string, number>();
+  let prev = Number.NEGATIVE_INFINITY;
+  order.forEach((j, i) => {
+    const t = Math.max(times[i] ?? j.createdAt, prev + 1);
+    assigned.set(j.id, t);
+    prev = t;
+  });
+  return jobs.map((j) => {
+    const t = assigned.get(j.id);
+    return t === undefined ? j : { ...j, createdAt: t };
+  });
 }

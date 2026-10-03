@@ -35,4 +35,21 @@ describe("menuItemsFor", () => {
     expect(menuItemsFor("processing", true)).toEqual(["copy-url", "copy-path", "open", "reveal"]);
     expect(menuItemsFor("paused", true)).toContain("delete-file");
   });
+
+  it("offers move up/down for queued jobs by position", () => {
+    expect(menuItemsFor("queued", false)).toEqual(["copy-url", "remove"]);
+    expect(menuItemsFor("queued", false, { up: true, down: true })).toEqual([
+      "copy-url",
+      "move-up",
+      "move-down",
+      "remove",
+    ]);
+    expect(menuItemsFor("queued", false, { up: false, down: true })).toEqual([
+      "copy-url",
+      "move-down",
+      "remove",
+    ]);
+    // Non-queued jobs never get move items, even when flagged.
+    expect(menuItemsFor("paused", false, { up: true, down: true })).not.toContain("move-up");
+  });
 });

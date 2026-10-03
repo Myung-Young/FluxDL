@@ -59,8 +59,7 @@ export function pressScale(element: Element): void {
 }
 
 /** Smooth progress morph toward a 0..1 ratio (width %). */
-export function tweenProgress(element: HTMLElement, ratio: number): void {
-  const clamped = Math.min(1, Math.max(0, ratio));
+export function tweenProgress(element: HTMLElement, ratio: number): void {  const clamped = Math.min(1, Math.max(0, ratio));
   if (prefersReducedMotion()) {
     element.style.width = `${String(clamped * 100)}%`;
     return;
@@ -70,5 +69,21 @@ export function tweenProgress(element: HTMLElement, ratio: number): void {
     duration: 0.3,
     ease: "power1.out",
     overwrite: true,
+  });
+}
+
+/**
+ * FLIP settle: glide an element from a measured vertical offset back to
+ * its laid-out place (used after queue reorders). Reduced-motion safe.
+ */
+export function flipShift(element: Element, fromY: number): void {
+  if (prefersReducedMotion()) return;
+  if (!Number.isFinite(fromY) || fromY === 0) return;
+  gsap.from(element, {
+    y: fromY,
+    duration: 0.28,
+    ease: "power2.out",
+    overwrite: true,
+    clearProps: "transform",
   });
 }

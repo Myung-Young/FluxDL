@@ -17,8 +17,15 @@ export type CardMenuId =
   | "open"
   | "reveal"
   | "retry-preset"
+  | "move-up"
+  | "move-down"
   | "remove"
   | "delete-file";
+
+export interface MenuMove {
+  readonly up: boolean;
+  readonly down: boolean;
+}
 
 const REMOVABLE: readonly JobStatus[] = ["queued", "paused", "error", "cancelled"];
 const RETRYABLE: readonly JobStatus[] = ["error", "cancelled"];
@@ -49,6 +56,7 @@ export function presetForMenu(kind: "video" | "audio", name: string): DownloadPr
 export function menuItemsFor(
   status: JobStatus,
   hasDestination: boolean,
+  move: MenuMove = { up: false, down: false },
 ): readonly CardMenuId[] {
   const items: CardMenuId[] = ["copy-url"];
   if (hasDestination) {
@@ -56,6 +64,10 @@ export function menuItemsFor(
   }
   if (RETRYABLE.includes(status)) {
     items.push("retry-preset");
+  }
+  if (status === "queued") {
+    if (move.up) items.push("move-up");
+    if (move.down) items.push("move-down");
   }
   if (REMOVABLE.includes(status)) {
     items.push("remove");

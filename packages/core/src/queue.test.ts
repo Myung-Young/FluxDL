@@ -8,6 +8,7 @@ import {
   isFinished,
   makeJob,
   pruneHistory,
+  reorder,
   searchHistory,
   selectNextToStart,
   shouldRetry,
@@ -103,6 +104,31 @@ describe("queue state machine", () => {
     expect(j.destination).toBe("C:\\Vids\\a.mp4");
   });
 
+  it("resumes accept progress and done events after pause (D53)", () => {
+    const paused = transition(jobAt("downloading"), "pause");
+    expect(paused.status).toBe("paused");
+    const resumed = applyEngineProgress(paused, {
+      percent: 50,
+      speed: "1M/s",
+      eta: "00:01",
+      downloadedBytes: 50,
+      totalBytes: 100,
+      stage: "downloading",
+      destination: null,
+    });
+    expect(resumed.status).toBe("downloading");
+    const finished = applyEngineProgress(paused, {
+      percent: 100,
+      speed: null,
+      eta: null,
+      downloadedBytes: 100,
+      totalBytes: 100,
+      stage: "done",
+      destination: "C:\\Vids\\a.mp4",
+    });
+    expect(finished.status).toBe("done");
+  });
+
   it("enforces FIFO with concurrency 1-5 and backoff gating", () => {
     const a = jobAt("queued", 1, "a");
     const b = jobAt("queued", 2, "b");
@@ -129,5 +155,50 @@ describe("queue state machine", () => {
     expect(searchHistory(h, "youtu.be")).toHaveLength(3);
     expect(searchHistory(h, "nope")).toHaveLength(0);
     expect(pruneHistory(h, 2).map((j) => j.id)).toEqual(["c", "b"]);
+  });
+
+  it("reorders queued jobs by permuting createdAt (FIFO honors it)", () => {
+    const a = jobAt("queued", 1, "a");
+    const b = jobAt("queued", 2, "b");
+    const c = jobAt("queued", 3, "c");
+    const active = jobAt("downloading", 0, "z");
+    const moved = reorder([a, b, c, active], "c", 0);
+    // createdAt multiset preserved, strictly increasing in the new order.
+    expect(moved.map((j) => j.createdAt).sort((x, y) => x - y)).toEqual([0, 1, 2, 3]);
+    const queuedOrder = moved
+      .filter((j) => j.status === "queued")
+      .sort((x, y) => x.createdAt - y.createdAt)
+      .map((j) => j.id);
+    expect(queuedOrder).toEqual(["c", "a", "b"]);
+    expect(selectNextToStart(moved, 5, 0)?.id).toBe("c");
+    expect(moved.find((j) => j.id === "z")?.createdAt).toBe(0);
+  });
+
+  it("reorder clamps, ignores unknown ids and non-queued jobs", () => {
+    const a = jobAt("queued", 1, "a");
+    const b = jobAt("queued", 2, "b");
+    expect(reorder([a, b], "zzz", 0).map((j) => j.id)).toEqual(["a", "b"]);
+    expect(reorder([a, b], "a", 0)).toEqual([a, b]);
+    const toEnd = reorder([a, b], "a", 99);
+    expect(toEnd.find((j) => j.id === "a")?.createdAt).toBeGreaterThan(
+      toEnd.find((j) => j.id === "b")?.createdAt ?? 0,
+    );
+    const first = reorder([a, b], "b", 0);
+    expect(first[0]?.id).toBe("a");
+    expect(first[1]?.id).toBe("b");
+    // b now sorts first by createdAt.
+    expect(first[1]?.createdAt).toBeLessThan(first[0]?.createdAt ?? 0);
+    const paused = jobAt("paused", 5, "p");
+    expect(reorder([a, paused], "p", 0).map((j) => j.id)).toEqual(["a", "p"]);
+  });
+
+  it("reorder breaks createdAt ties so batch-enqueued jobs keep an order", () => {
+    const a = jobAt("queued", 7, "a");
+    const b = jobAt("queued", 7, "b");
+    const c = jobAt("queued", 7, "c");
+    const moved = reorder([a, b, c], "c", 0);
+    const times = moved.map((j) => j.createdAt);
+    expect(new Set(times).size).toBe(3);
+    expect(selectNextToStart(moved, 5, 0)?.id).toBe("c");
   });
 });

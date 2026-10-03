@@ -5,6 +5,7 @@ import {
   MENU_VIDEO_PRESETS,
   menuItemsFor,
   presetForMenu,
+  type MenuMove,
 } from "./menu.js";
 import type { MenuItemDef } from "./ContextMenu.js";
 
@@ -14,14 +15,20 @@ export interface JobMenuHandlers {
   readonly openFile: () => void;
   readonly reveal: () => void;
   readonly retryWithPreset: (preset: DownloadJob["preset"]) => void;
+  readonly moveUp?: () => void;
+  readonly moveDown?: () => void;
   readonly remove: () => void;
   readonly deleteFile: () => void;
 }
 
 /** Build themed-menu defs for one job (Downloads cards + Library rows). */
-export function buildJobMenu(job: DownloadJob, h: JobMenuHandlers): MenuItemDef[] {
+export function buildJobMenu(
+  job: DownloadJob,
+  h: JobMenuHandlers,
+  move: MenuMove = { up: false, down: false },
+): MenuItemDef[] {
   const defs: MenuItemDef[] = [];
-  for (const id of menuItemsFor(job.status, job.destination !== null)) {
+  for (const id of menuItemsFor(job.status, job.destination !== null, move)) {
     switch (id) {
       case "copy-url":
         defs.push({
@@ -89,6 +96,32 @@ export function buildJobMenu(job: DownloadJob, h: JobMenuHandlers): MenuItemDef[
           },
         });
         break;
+      case "move-up": {
+        const up = h.moveUp;
+        if (up !== undefined) {
+          defs.push({
+            id,
+            label: STRINGS.menu.moveUp,
+            run: () => {
+              up();
+            },
+          });
+        }
+        break;
+      }
+      case "move-down": {
+        const down = h.moveDown;
+        if (down !== undefined) {
+          defs.push({
+            id,
+            label: STRINGS.menu.moveDown,
+            run: () => {
+              down();
+            },
+          });
+        }
+        break;
+      }
       case "delete-file":
         defs.push({
           id,

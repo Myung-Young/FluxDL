@@ -316,4 +316,115 @@ describe("QueueController", () => {
     await expect(ctrl.remove("missing")).rejects.toThrow();
     ctrl.dispose();
   });
+
+  it("reorders queued jobs, persists the order, and hydrates it back", async () => {
+    const fake = makeFake();
+    let n = 0;
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 1,
+      maxRetries: 3,
+      clock: { now: () => 1000 },
+      createId: () => `q${String((n += 1))}`,
+    });
+    await ctrl.enqueue(input);
+    await ctrl.enqueue({ ...input, title: "B" });
+    await ctrl.enqueue({ ...input, title: "C" });
+    // q1 started (downloading); q2/q3 queued with tied createdAt.
+    await ctrl.reorder("q3", 0);
+    expect(fake.started).toHaveLength(1);
+    await expect(ctrl.reorder("q1", 0)).rejects.toThrow();
+    // Persisted snapshot keeps the queued order.
+    const saved = fake.saved[fake.saved.length - 1] ?? [];
+    const queuedSaved = saved.filter((j) => j.status === "queued");
+    expect(queuedSaved[0]?.id).toBe("q3");
+    // Hydrate restores the same start order.
+    const fake2 = makeFake();
+    const ctrl2 = new QueueController({ engine: fake2, concurrency: 5, maxRetries: 3 });
+    ctrl2.hydrate(saved);
+    await ctrl2.pump();
+    expect(fake2.started.map((s) => s.title)).toEqual(["Big Buck Bunny", "C", "B"]);
+    ctrl.dispose();
+    ctrl2.dispose();
+  });
+
+  it("pauses/resumes everything across engine and local paths", async () => {
+    const fake = makeFake();
+    let n = 0;
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 1,
+      maxRetries: 3,
+      createId: () => `q${String((n += 1))}`,
+    });
+    await ctrl.enqueue(input);
+    await ctrl.enqueue({ ...input, title: "B" });
+    await ctrl.pauseAll();
+    // Active job goes through the engine; queued job pauses locally.
+    expect(fake.paused).toEqual(["eng-1"]);
+    expect(ctrl.getJobs().find((j) => j.id === "q2")?.status).toBe("paused");
+    fake.fire({ ...downloading("eng-1"), stage: "paused" });
+    await vi.waitFor(() => {
+      expect(ctrl.getJobs().every((j) => j.status === "paused")).toBe(true);
+    });
+    await ctrl.resumeAll();
+    expect(fake.resumed).toEqual(["eng-1"]);
+    await vi.waitFor(() => {
+      expect(ctrl.getJobs().find((j) => j.id === "q2")?.status).toBe("downloading");
+    });
+    // Empty-queue bulk ops are safe no-ops.
+    const empty = makeFake();
+    const ctrlEmpty = new QueueController({ engine: empty, concurrency: 2, maxRetries: 3 });
+    await ctrlEmpty.pauseAll();
+    await ctrlEmpty.resumeAll();
+    await ctrlEmpty.cancelQueued();
+    await ctrlEmpty.clearFinished();
+    expect(empty.started).toHaveLength(0);
+    ctrl.dispose();
+    ctrlEmpty.dispose();
+  });
+
+  it("cancelQueued lands in history and clearFinished sweeps lingering errors", async () => {
+    const fake = makeFake();
+    let n = 0;
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 1,
+      maxRetries: 0,
+      createId: () => `q${String((n += 1))}`,
+    });
+    await ctrl.enqueue(input);
+    await ctrl.enqueue({ ...input, title: "B" });
+    await ctrl.cancelQueued();
+    expect(ctrl.getJobs().map((j) => j.status)).toEqual(["downloading"]);
+    expect(fake.history.map((h) => h.status)).toEqual(["cancelled"]);
+    fake.fire({ ...downloading("eng-1"), stage: "error" });
+    await vi.waitFor(() => {
+      expect(fake.history).toHaveLength(2);
+    });
+    // maxRetries=0: the error went straight to history; nothing to clear.
+    await ctrl.clearFinished();
+    expect(ctrl.getJobs()).toHaveLength(0);
+    // A backoff-gated error lingers in the queue until cleared.
+    const slow = makeFake();
+    let m = 0;
+    const ctrl2 = new QueueController({
+      engine: slow,
+      concurrency: 1,
+      maxRetries: 3,
+      clock: { now: () => 0 },
+      createId: () => `w${String((m += 1))}`,
+    });
+    await ctrl2.enqueue(input);
+    slow.fire({ ...downloading("eng-1"), stage: "error" });
+    await vi.waitFor(() => {
+      expect(ctrl2.getJobs()[0]?.status).toBe("error");
+    });
+    await ctrl2.clearFinished();
+    expect(ctrl2.getJobs()).toHaveLength(0);
+    expect(slow.history).toHaveLength(1);
+    expect(slow.history[0]?.status).toBe("error");
+    ctrl.dispose();
+    ctrl2.dispose();
+  });
 });
