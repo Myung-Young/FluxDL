@@ -725,6 +725,21 @@ select.input {
   border-radius: var(--radius-md);
 }
 
+/* Audio metadata editor (M4.3) */
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+}
+
+.meta-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
 .chapter-row {
   display: flex;
   align-items: center;

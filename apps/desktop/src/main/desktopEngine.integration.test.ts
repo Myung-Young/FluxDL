@@ -219,6 +219,67 @@ describe.skipIf(!HAS_YTDLP)("desktop engine live (real yt-dlp)", () => {
     await engine.cancelAnalyze("unknown-id");
   }, 60_000);
 
+  /**
+   * M4.3: the whole point is bytes on disk, so this asserts real tags via
+   * ffprobe. Values are deliberately hostile (colons, percent, regex
+   * metacharacters, unicode, emoji, a %(title)s injection attempt) because
+   * every one of them silently produced a WRONG tag during R0 probing rather
+   * than an error.
+   */
+  it("embeds edited audio metadata into the file tags (M4.3)", async () => {
+    if (!HAS_FFPROBE) return;
+    const { engine, events, outputDir, base } = makeEngine(true);
+    const unsub = engine.onProgress((e) => {
+      events.push(e);
+    });
+    const wanted = {
+      title: "Live: One: 100% (Remaster) 🎵",
+      artist: "AC/DC",
+      album: "Hits: 1999 [Deluxe]",
+      year: "1999",
+    };
+    try {
+      const id = await engine.start({
+        url: "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+        title: "M4.3 metadata probe",
+        preset: { kind: "audio", videoPreset: "Best", audioPreset: "MP3", rawFormat: null },
+        outputDir,
+        audioMetadata: wanted,
+      });
+      const finished = await waitFor(
+        events,
+        (e) => e.id === id && e.stage === "done",
+        120_000,
+        "audio done",
+      );
+      const dest = finished.destination ?? "";
+      expect(dest.endsWith(".mp3")).toBe(true);
+      const probe = spawnSync(
+        "ffprobe",
+        [
+          "-v",
+          "error",
+          "-show_entries",
+          "format_tags=title,artist,album,date",
+          "-of",
+          "json",
+          dest,
+        ],
+        { timeout: 30000, encoding: "utf8" },
+      );
+      expect(probe.status).toBe(0);
+      const tags = (JSON.parse(probe.stdout) as { format?: { tags?: Record<string, string> } })
+        .format?.tags;
+      expect(tags?.["title"]).toBe(wanted.title);
+      expect(tags?.["artist"]).toBe(wanted.artist);
+      expect(tags?.["album"]).toBe(wanted.album);
+      expect(tags?.["date"]).toBe(wanted.year);
+    } finally {
+      unsub();
+      rmSync(base, { recursive: true, force: true });
+    }
+  }, 240_000);
+
   it("second run with --download-archive skips the fetched video", async () => {
     const { engine, events, outputDir, userData, base } = makeEngine(true);
     const unsub = engine.onProgress((e) => {

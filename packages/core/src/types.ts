@@ -3,6 +3,7 @@
  * Everything UI + state talks to the `DownloadEngine` interface only.
  */
 import type { ErrorCategory } from "./errors.js";
+import type { AudioMetadata } from "./metadata.js";
 
 export type JobStatus =
   "queued" | "analyzing" | "downloading" | "processing" | "paused" | "done" | "error" | "cancelled";
@@ -82,6 +83,8 @@ export interface MediaInfo {
   readonly liveStatus?: LiveStatus | null;
   /** Internal video chapters if present (M4.2). */
   readonly chapters?: readonly ChapterInfo[] | null;
+  /** Raw `upload_date` (YYYYMMDD) used to seed the metadata editor (M4.3). */
+  readonly uploadDate?: string | null;
 }
 
 export type MediaKind = "video" | "audio";
@@ -145,6 +148,8 @@ export interface DownloadJob {
   readonly waitForVideo?: boolean;
   /** Split by chapters into containing folder (M4.2). */
   readonly splitChapters?: boolean | null;
+  /** Audio tag overrides for this job (M4.3), or null for none. */
+  readonly audioMetadata?: AudioMetadata | null;
 }
 
 export interface DownloadJobInput extends Pick<
@@ -160,6 +165,7 @@ export interface DownloadJobInput extends Pick<
   | "liveFromStart"
   | "waitForVideo"
   | "splitChapters"
+  | "audioMetadata"
 > {
   readonly useArchive?: boolean;
   /** Sanitized playlist subfolder (UI-side, when the setting is on). */

@@ -2,6 +2,7 @@ import type { CodecPreference, DownloadPreset, LiveStatus } from "./types.js";
 import { PROGRESS_TEMPLATE } from "./progress.js";
 import { normalizeUrl } from "./url.js";
 import { sanitizePlaylistTitle } from "./playlist.js";
+import { buildParseMetadataArgs, type AudioMetadata } from "./metadata.js";
 
 /**
  * yt-dlp arg builder. Always returns an args array (never a shell string).
@@ -44,6 +45,8 @@ export interface DownloadArgsInput {
   readonly waitForVideo?: boolean;
   /** Split video into multiple files based on internal chapters (M4.2). */
   readonly splitChapters?: boolean | null;
+  /** Per-job audio tag overrides (M4.3); forces --embed-metadata. */
+  readonly audioMetadata?: AudioMetadata | null;
 }
 
 export function buildChapterOutputTemplate(
@@ -190,7 +193,15 @@ export function buildDownloadArgs(input: DownloadArgsInput): string[] {
     args.push("--ffmpeg-location", input.ffmpegDir.trim());
   }
   if (input.embedThumbnail) args.push("--embed-thumbnail");
-  if (input.embedMetadata) args.push("--embed-metadata");
+  // M4.3: explicit tags are useless unless they are embedded, so overrides
+  // force --embed-metadata even when the global setting is off.
+  const metaArgs = buildParseMetadataArgs(input.audioMetadata ?? null);
+  if (metaArgs.length > 0) {
+    args.push("--embed-metadata");
+    for (const meta of metaArgs) args.push("--parse-metadata", meta);
+  } else if (input.embedMetadata) {
+    args.push("--embed-metadata");
+  }
   if (input.writeSubs) {
     args.push("--write-subs");
     if (input.subLangs.trim().length > 0) {

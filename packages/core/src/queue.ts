@@ -1,5 +1,6 @@
 import type { DownloadJob, DownloadJobInput, JobStatus } from "./types.js";
 import type { ErrorCategory } from "./errors.js";
+import { isAudioMetadata, normalizeAudioMetadata } from "./metadata.js";
 
 /**
  * Queue state machine (pure, no I/O). The orchestrator (`queueController.ts`)
@@ -284,6 +285,7 @@ type StartOptions = Partial<
     | "liveFromStart"
     | "waitForVideo"
     | "splitChapters"
+    | "audioMetadata"
   >
 >;
 
@@ -308,6 +310,9 @@ function pickJobOptions(source: DownloadJobInput): StartOptions {
     ...(source.liveFromStart === true ? { liveFromStart: true as const } : {}),
     ...(source.waitForVideo === true ? { waitForVideo: true as const } : {}),
     ...(source.splitChapters === true ? { splitChapters: true as const } : {}),
+    ...(isAudioMetadata(source.audioMetadata)
+      ? { audioMetadata: normalizeAudioMetadata(source.audioMetadata) }
+      : {}),
   };
 }
 

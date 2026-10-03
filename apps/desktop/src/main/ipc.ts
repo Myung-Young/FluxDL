@@ -3,6 +3,7 @@ import { IPC_CHANNELS } from "@grabber/core/engine.js";
 import { normalizeUrl } from "@grabber/core/url.js";
 import type { AudioPreset, DownloadJobInput, LiveStatus, VideoPreset } from "@grabber/core/types.js";
 import { AUDIO_PRESETS, LIVE_STATUSES, VIDEO_PRESETS } from "@grabber/core/types.js";
+import { isAudioMetadata, normalizeAudioMetadata } from "@grabber/core/metadata.js";
 import type { DesktopEngine } from "./desktopEngine.js";
 import { isDownloadJob } from "./persist.js";
 
@@ -71,6 +72,10 @@ function parseJobInput(raw: unknown): DownloadJobInput {
     ...(raw["liveFromStart"] === true ? { liveFromStart: true as const } : {}),
     ...(raw["waitForVideo"] === true ? { waitForVideo: true as const } : {}),
     ...(raw["splitChapters"] === true ? { splitChapters: true as const } : {}),
+    // Audio tag overrides (M4.3): rebuilt from primitives, never trusted.
+    ...(isAudioMetadata(raw["audioMetadata"])
+      ? { audioMetadata: normalizeAudioMetadata(raw["audioMetadata"]) }
+      : {}),
   };
 }
 

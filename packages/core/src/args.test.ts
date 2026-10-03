@@ -239,5 +239,93 @@ describe("arg builder", () => {
       "chapter:C:\\Users\\P\\Videos\\Grabber/%(title)s/%(section_number)03d - %(section_title)s.%(ext)s",
     );
   });
+
+  describe("audio metadata (M4.3)", () => {
+    const audio = base({
+      preset: { kind: "audio", videoPreset: "Best", audioPreset: "MP3", rawFormat: null },
+    });
+
+    function parseValues(args: readonly string[]): string[] {
+      return args.filter((a, i) => args[i - 1] === "--parse-metadata");
+    }
+
+    it("emits one --parse-metadata pair per non-empty field", () => {
+      const args = buildDownloadArgs(
+        base({
+          preset: audio.preset,
+          embedMetadata: false,
+          audioMetadata: { title: "T", artist: "A", album: "", year: "2024" },
+        }),
+      );
+      expect(parseValues(args)).toEqual([
+        "T~:(?P<meta_title>T)~",
+        "A~:(?P<meta_artist>A)~",
+        "2024~:(?P<meta_date>2024)~",
+      ]);
+    });
+
+    it("forces --embed-metadata even when the setting is off", () => {
+      const args = buildDownloadArgs(
+        base({
+          preset: audio.preset,
+          embedMetadata: false,
+          audioMetadata: { title: "T", artist: "", album: "", year: "" },
+        }),
+      );
+      expect(args).toContain("--embed-metadata");
+      expect(args.filter((a) => a === "--embed-metadata")).toHaveLength(1);
+    });
+
+    it("adds no flags when the editor was left blank", () => {
+      const args = buildDownloadArgs(
+        base({
+          preset: audio.preset,
+          embedMetadata: false,
+          audioMetadata: { title: "  ", artist: "", album: "", year: "" },
+        }),
+      );
+      expect(args).not.toContain("--parse-metadata");
+      expect(args).not.toContain("--embed-metadata");
+    });
+
+    it("adds no flags when there is no metadata at all", () => {
+      const args = buildDownloadArgs(base({ preset: audio.preset, embedMetadata: false }));
+      expect(args).not.toContain("--parse-metadata");
+      expect(args).not.toContain("--embed-metadata");
+    });
+
+    it("still honors the setting when no overrides are present", () => {
+      expect(buildDownloadArgs(base({ preset: audio.preset, embedMetadata: true }))).toContain(
+        "--embed-metadata",
+      );
+      expect(
+        buildDownloadArgs(base({ preset: audio.preset, embedMetadata: false })),
+      ).not.toContain("--embed-metadata");
+    });
+
+    it("escapes tricky values into injection-safe specs", () => {
+      const args = buildDownloadArgs(
+        base({
+          preset: audio.preset,
+          audioMetadata: { title: "50% (Live): AC/DC", artist: "", album: "", year: "" },
+        }),
+      );
+      expect(parseValues(args)).toEqual([
+        "50%% (Live)\\: AC/DC~:(?P<meta_title>50% \\(Live\\): AC/DC)~",
+      ]);
+    });
+
+    it("works alongside extract-audio for audio presets", () => {
+      const args = buildDownloadArgs(
+        base({
+          preset: { kind: "audio", videoPreset: "Best", audioPreset: "FLAC", rawFormat: null },
+          audioMetadata: { title: "T", artist: "A", album: "", year: "" },
+        }),
+      );
+      expect(args).toContain("--extract-audio");
+      expect(args[args.indexOf("--audio-format") + 1]).toBe("flac");
+      expect(args).toContain("--parse-metadata");
+    });
+  });
 });
 

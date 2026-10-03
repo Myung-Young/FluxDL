@@ -26,6 +26,12 @@ import { useDuplicateGuard } from "./DuplicatePrompt.js";
 import type { GuardInput } from "./identity.js";
 import { identityKey } from "./identity.js";
 import { deriveEntryStates, sanitizePlaylistTitle, type EntryState } from "./playlist.js";
+import {
+  defaultAudioMetadata,
+  hasAudioMetadata,
+  isAudioPreset,
+  type AudioMetadata,
+} from "./metadata.js";
 import { VirtualList } from "./VirtualList.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 
@@ -112,6 +118,7 @@ export function Home({
   const [liveFromStart, setLiveFromStart] = useState<boolean>(false);
   const [waitForVideo, setWaitForVideo] = useState<boolean>(true);
   const [splitChapters, setSplitChapters] = useState<boolean>(false);
+  const [metaEditor, setMetaEditor] = useState<AudioMetadata | null>(null);
   const settingsState = useStore(settings, (s) => s.settings);
   const S = useStrings(settings);
   const locale = localeTag(resolveLanguage(settingsState.language));
@@ -249,6 +256,7 @@ export function Home({
           setEntryStates(null);
           setEntryPresets({});
           setSplitChapters(false);
+          setMetaEditor(defaultAudioMetadata(cached));
           lastIndex.current = null;
           void applyThumbAccent(cached.thumbnail);
           void refreshEntryStates(cached);
@@ -484,6 +492,11 @@ export function Home({
           ...(info.liveStatus === "is_live" && liveFromStart ? { liveFromStart: true } : {}),
           ...(info.liveStatus === "is_upcoming" && waitForVideo ? { waitForVideo: true } : {}),
           ...(splitChapters && hasChapters ? { splitChapters: true } : {}),
+          // M4.3: only audio jobs carry tag overrides, and only when at
+          // least one field is filled in.
+          ...(isAudioPreset(rowPreset) && hasAudioMetadata(metaEditor)
+            ? { audioMetadata: metaEditor }
+            : {}),
         });
         count += 1;
       }
@@ -765,6 +778,40 @@ export function Home({
                 </details>
               )}
             </>
+          )}
+
+          {/* M4.3: audio tag editor. Playlists are excluded: one title/artist
+              pair cannot describe N entries. */}
+          {metaEditor !== null && kind === "audio" && rawFormat === null && !info.isPlaylist && (
+            <details className="advanced" data-testid="meta-editor">
+              <summary>{S.home.metadata}</summary>
+              <div className="meta-grid">
+                {(
+                  [
+                    ["title", S.home.metaTitle, "meta-title"],
+                    ["artist", S.home.metaArtist, "meta-artist"],
+                    ["album", S.home.metaAlbum, "meta-album"],
+                    ["year", S.home.metaYear, "meta-year"],
+                  ] as const
+                ).map(([key, label, testid]) => (
+                  <label key={key} className="meta-field">
+                    <span className="field-label">{label}</span>
+                    <input
+                      type="text"
+                      className="input"
+                      data-testid={testid}
+                      value={metaEditor[key]}
+                      maxLength={200}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setMetaEditor({ ...metaEditor, [key]: next });
+                      }}
+                    />
+                  </label>
+                ))}
+              </div>
+              <p className="hint">{S.home.metadataHint}</p>
+            </details>
           )}
 
 

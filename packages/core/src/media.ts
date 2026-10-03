@@ -155,6 +155,7 @@ export function parseMediaInfo(sourceUrl: string, data: unknown): MediaInfo {
     formats,
     liveStatus: parseLiveStatus(data),
     chapters: parseChapters(data),
+    uploadDate: asString(data["upload_date"]),
   };
 }
 
