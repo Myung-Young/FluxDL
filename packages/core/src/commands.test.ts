@@ -33,6 +33,7 @@ function job(status: DownloadJob["status"]): DownloadJob {
 
 function ctx(jobs: DownloadJob["status"][] = []): CommandContext {
   const store = (value: unknown) => ({ getState: () => value }) as never;
+  const mutable = { miniToggles: 0 };
   return {
     engine: store({}),
     queue: store({ pauseAll: () => Promise.resolve() }),
@@ -42,6 +43,9 @@ function ctx(jobs: DownloadJob["status"][] = []): CommandContext {
     navigate: () => undefined,
     pasteAndAnalyze: () => undefined,
     showShortcuts: () => undefined,
+    toggleMiniMode: () => {
+      mutable.miniToggles += 1;
+    },
   };
 }
 

@@ -57,6 +57,12 @@ export interface ThumbnailColor {
   readonly b: number;
 }
 
+/** Desired window chrome (M4.4 mini mode, M4.6 theme colors). */
+export type { WindowChromeState } from "./window.js";
+import type { WindowChromeState } from "./window.js";
+
+export type WindowChromeListener = (state: WindowChromeState) => void;
+
 /**
  * Single abstraction every platform engine must implement.
  * - Desktop: child_process wrapping yt-dlp binary (apps/desktop/DesktopEngine).
@@ -88,6 +94,14 @@ export interface DownloadEngine {
   repairEngine(): Promise<RepairReport>;
   /** Throttled aggregate state (taskbar progress bar + tray tooltip). */
   setAggregateProgress(state: AggregateProgressState): Promise<void>;
+  /**
+   * Window chrome (M4.4/M4.6): mini mode geometry + always-on-top, and the
+   * native window colors that follow the theme. Main owns the geometry and
+   * persists it outside AppSettings.
+   */
+  applyWindowChrome(state: WindowChromeState): Promise<void>;
+  /** Push chrome changes made outside the renderer (tray menu). */
+  onWindowChrome(cb: WindowChromeListener): Unsubscribe;
   /** Dominant colour of an https thumbnail (null when unavailable). */
   getThumbnailColor(url: string): Promise<ThumbnailColor | null>;
   pickFolder(): Promise<string | null>;
@@ -138,6 +152,8 @@ export const IPC_CHANNELS = {
   updateEngine: "engine:update",
   repairEngine: "engine:repair",
   setAggregateProgress: "engine:aggregate",
+  applyWindowChrome: "engine:windowChrome",
+  onWindowChrome: "engine:windowChromeChanged",
   getThumbnailColor: "engine:thumbnailColor",
   pickFolder: "engine:pickFolder",
   pickFile: "engine:pickFile",

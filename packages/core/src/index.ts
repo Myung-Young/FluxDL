@@ -80,6 +80,8 @@ export type {
 } from "./identity.js";
 export { Downloads } from "./Downloads.js";
 export type { DownloadsProps } from "./Downloads.js";
+export { MiniView } from "./MiniView.js";
+export type { MiniViewProps } from "./MiniView.js";
 export { Library } from "./Library.js";
 export type { LibraryProps } from "./Library.js";
 export { SettingsScreen } from "./SettingsScreen.js";
@@ -90,7 +92,7 @@ export { createToastStore } from "./toast.js";
 export type { Toast, ToastAction, ToastKind, ToastStoreState } from "./toast.js";
 export { Toasts } from "./Toasts.js";
 export { ensureNotificationPermission, sendNotification } from "./notify.js";
-export { comboFromEvent, isEditableTarget, isOpenSettings, isPasteAnalyze, isCommandPalette, isShortcutHelp } from "./shortcuts.js";
+export { comboFromEvent, isEditableTarget, isOpenSettings, isPasteAnalyze, isCommandPalette, isMiniMode, isShortcutHelp } from "./shortcuts.js";
 export type { KeyCombo } from "./shortcuts.js";
 export { ShortcutsDialog, shortcutRows } from "./ShortcutsDialog.js";
 export type { ShortcutRow, ShortcutsDialogProps } from "./ShortcutsDialog.js";
@@ -204,6 +206,18 @@ export {
 export type { AudioMetaField, AudioMetadata } from "./metadata.js";
 export { QueueController } from "./queueController.js";
 export type { QueueEngine, QueueClock, QueueControllerOptions } from "./queueController.js";
+export {
+  MINI_HEIGHT,
+  MINI_MIN_HEIGHT,
+  MINI_MIN_WIDTH,
+  MINI_WIDTH,
+  NORMAL_BOUNDS,
+  boundsFor,
+  chromeState,
+  miniRows,
+  miniSummary,
+} from "./window.js";
+export type { MiniSummary, WindowChromeState } from "./window.js";
 export { DEFAULT_SETTINGS, mergeSettings } from "./settings.js";
 export { filterSettingIds, matchSettingField } from "./settingsFilter.js";
 export type { FilterableField } from "./settingsFilter.js";

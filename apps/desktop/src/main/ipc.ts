@@ -133,6 +133,11 @@ export function registerEngineIpc(engine: DesktopEngine): void {
     const tooltip = typeof raw["tooltip"] === "string" ? raw["tooltip"] : "";
     await engine.setAggregateProgress({ active, percent, tooltip });
   });
+  ipcMain.handle(IPC_CHANNELS.applyWindowChrome, async (_event, raw: unknown) => {
+    if (!isRecord(raw)) throw new Error("Invalid window chrome state.");
+    const theme = typeof raw["theme"] === "string" ? raw["theme"].slice(0, 32) : "obsidian";
+    await engine.applyWindowChrome({ mini: raw["mini"] === true, theme });
+  });
   ipcMain.handle(IPC_CHANNELS.getThumbnailColor, async (_event, rawUrl: unknown) => {
     const urlRaw = asNonEmptyString(rawUrl);
     if (urlRaw === null) throw new Error("Missing URL.");

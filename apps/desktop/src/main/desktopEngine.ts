@@ -17,6 +17,8 @@ import type {
   RepairReport,
   ThumbnailColor,
   Unsubscribe,
+  WindowChromeListener,
+  WindowChromeState,
 } from "@grabber/core/engine.js";
 import type { ErrorCategory, ErrorLocale, MappedError } from "@grabber/core/errors.js";
 import { STRINGS, STRINGS_MS } from "@grabber/core/strings.js";
@@ -74,6 +76,14 @@ export interface DesktopEngineDeps {
   readonly defaultOutputDir: string;
   readonly broadcast: (event: EngineProgress) => void;
   readonly onAggregate: (state: AggregateProgressState) => void;
+  /**
+   * Window chrome (M4.4/M4.6). Optional so headless tests can omit it;
+   * the desktop app always injects the main-process controller.
+   */
+  readonly chrome?: {
+    readonly apply: (state: WindowChromeState) => Promise<void>;
+    readonly subscribe: (cb: WindowChromeListener) => Unsubscribe;
+  };
 }
 
 type JobState = "running" | "pausing" | "cancelling" | "paused";
@@ -709,6 +719,14 @@ export class DesktopEngine implements DownloadEngine {
     const tooltip = typeof state.tooltip === "string" ? state.tooltip.slice(0, 200) : APP_NAME;
     this.deps.onAggregate({ active, percent, tooltip });
     return Promise.resolve();
+  }
+
+  applyWindowChrome(state: WindowChromeState): Promise<void> {
+    return this.deps.chrome?.apply(state) ?? Promise.resolve();
+  }
+
+  onWindowChrome(cb: WindowChromeListener): Unsubscribe {
+    return this.deps.chrome?.subscribe(cb) ?? (() => undefined);
   }
 
   getThumbnailColor(url: string): Promise<ThumbnailColor | null> {

@@ -24,6 +24,8 @@ export interface CommandContext {
   readonly navigate: (view: CommandView, section?: string) => void;
   readonly pasteAndAnalyze: (url: string) => void;
   readonly showShortcuts: () => void;
+  /** Toggle the compact always-on-top window (M4.4). */
+  readonly toggleMiniMode: () => void;
 }
 
 export interface CommandDef {
@@ -145,6 +147,15 @@ export const BUILTIN_COMMANDS: readonly CommandDef[] = [
       void ctx.settings
         .getState()
         .save({ density: current === "compact" ? "comfortable" : "compact" });
+    },
+  },
+  {
+    id: "toggle-mini-mode",
+    labelKey: "toggleMiniMode",
+    keywords: ["mini", "compact", "small", "always on top", "mini", "kecil", "atas"],
+    available: () => true,
+    run: (ctx) => {
+      ctx.toggleMiniMode();
     },
   },
   {

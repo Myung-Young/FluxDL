@@ -7,11 +7,20 @@ import { ensureUserDataBinary } from "./binaries.js";
 import { DesktopEngine } from "./desktopEngine.js";
 import { registerEngineIpc } from "./ipc.js";
 import { resolveTaskbarCommand } from "./taskbar.js";
+import { createWindowChrome } from "./windowChrome.js";
 
 let mainWindow: BrowserWindow | null = null;
 let engine: DesktopEngine | null = null;
 let tray: Tray | null = null;
 let quitting = false;
+/** Mini-mode chrome state (M4.4); owned here, mirrored to the renderer. */
+const chrome = createWindowChrome({
+  userDataDir: app.getPath("userData"),
+  getWindow: () => mainWindow,
+});
+/** Tray menu handle, so the mini checkbox can follow renderer toggles. */
+let trayMenu: Menu | null = null;
+const MINI_MENU_ID = "mini-mode";
 
 // Taskbar progress + tray tooltip (M1.5): renderer sends a throttled
 // aggregate; error/overlay flags are window-local and clear on show/focus.
@@ -125,8 +134,7 @@ function setupTray(): void {
   const image = nativeImage.createFromPath(iconPath());
   tray = new Tray(image.isEmpty() ? nativeImage.createEmpty() : image);
   tray.setToolTip(APP_NAME);
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
+  trayMenu = Menu.buildFromTemplate([
       {
         label: "Show",
         click: () => {
@@ -138,6 +146,19 @@ function setupTray(): void {
           }
         },
       },
+      {
+        id: MINI_MENU_ID,
+        label: "Mini mode",
+        type: "checkbox",
+        checked: chrome.current().mini,
+        click: (item) => {
+          // Tray-driven toggle: apply in main, then push to the renderer so
+          // the layout follows (and the checkbox stays in sync).
+          void chrome
+            .apply({ mini: item.checked, theme: chrome.current().theme })
+            .catch(() => undefined);
+        },
+      },
       { type: "separator" },
       {
         label: "Quit",
@@ -146,11 +167,16 @@ function setupTray(): void {
           app.quit();
         },
       },
-    ]),
-  );
+    ]);
+  tray.setContextMenu(trayMenu);
   tray.on("click", () => {
     mainWindow?.show();
     mainWindow?.focus();
+  });
+  // Keep the tray checkbox in sync with renderer-driven toggles.
+  chrome.subscribe((state) => {
+    const item = trayMenu?.getMenuItemById(MINI_MENU_ID) ?? null;
+    if (item !== null) item.checked = state.mini;
   });
 }
 
@@ -174,8 +200,16 @@ function getEngine(): DesktopEngine {
         aggTooltip = state.tooltip;
         refreshTaskbar();
       },
+      chrome: {
+        apply: (state) => chrome.apply(state),
+        subscribe: (cb) => chrome.subscribe(cb),
+      },
     });
     registerEngineIpc(engine);
+    // Mini mode may also be toggled from the tray, so mirror chrome to the UI.
+    chrome.subscribe((state) => {
+      mainWindow?.webContents.send(IPC_CHANNELS.onWindowChrome, state);
+    });
   }
   return engine;
 }

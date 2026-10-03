@@ -20,6 +20,12 @@ const EN = {
   status: {
     activeCount: "{count} active",
     ready: "Ready",
+    working: "Working…",
+  },
+  mini: {
+    title: "Mini mode",
+    exit: "Exit mini",
+    empty: "Nothing running.",
   },
   home: {
     title: "Home",
@@ -315,6 +321,7 @@ const EN = {
     showShortcuts: "Show keyboard shortcuts",
     clearFinished: "Clear finished downloads",
     toggleDensity: "Toggle comfortable/compact density",
+    toggleMiniMode: "Toggle mini mode (always on top)",
     settingsFolder: "Open Settings: download folder",
     settingsCookies: "Open Settings: cookies",
     settingsProxy: "Open Settings: proxy",
@@ -325,6 +332,7 @@ const EN = {
     paste: "Paste clipboard link and analyze",
     palette: "Open command palette",
     settings: "Open Settings",
+    miniMode: "Toggle mini mode",
     help: "Open this shortcut list",
     dismiss: "Close dialogs",
   },
@@ -366,6 +374,12 @@ const MS: Parity<Strings> = {
   status: {
     activeCount: "{count} aktif",
     ready: "Sedia",
+    working: "Bekerja…",
+  },
+  mini: {
+    title: "Mod mini",
+    exit: "Keluar mini",
+    empty: "Tiada yang berjalan.",
   },
   home: {
     title: "Utama",
@@ -661,6 +675,7 @@ const MS: Parity<Strings> = {
     showShortcuts: "Tunjuk pintasan papan kekunci",
     clearFinished: "Padam muat turun yang siap",
     toggleDensity: "Tukar ketumpatan selesa/padat",
+    toggleMiniMode: "Tukar mod mini (sentiasa di atas)",
     settingsFolder: "Buka Tetapan: folder muat turun",
     settingsCookies: "Buka Tetapan: kuki",
     settingsProxy: "Buka Tetapan: proksi",
@@ -671,6 +686,7 @@ const MS: Parity<Strings> = {
     paste: "Tampal pautan papan klip dan analisis",
     palette: "Buka palet perintah",
     settings: "Buka Tetapan",
+    miniMode: "Tukar mod mini",
     help: "Buka senarai pintasan ini",
     dismiss: "Tutup dialog",
   },

@@ -8,7 +8,7 @@ import { fadeSwap, pressScale, staggerIn } from "./motion.js";
 import { formatStr, localeTag, resolveLanguage, useStrings } from "./locale.js";
 import { isValidUrl } from "./url.js";
 import { readClipboardText } from "./clipboard.js";
-import { comboFromEvent, isCommandPalette, isEditableTarget, isOpenSettings, isPasteAnalyze, isShortcutHelp } from "./shortcuts.js";
+import { comboFromEvent, isCommandPalette, isEditableTarget, isMiniMode, isOpenSettings, isPasteAnalyze, isShortcutHelp } from "./shortcuts.js";
 import { ShortcutsDialog } from "./ShortcutsDialog.js";
 import { CommandPalette } from "./CommandPalette.js";
 import type { CommandContext } from "./commands.js";
@@ -19,6 +19,7 @@ import { SettingsScreen } from "./SettingsScreen.js";
 import { Logs } from "./Logs.js";
 import { Toasts } from "./Toasts.js";
 import { Onboarding } from "./Onboarding.js";
+import { MiniView } from "./MiniView.js";
 import {
   AGGREGATE_SEND_MS,
   aggregateStatus,
@@ -55,6 +56,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   const [aggregateText, setAggregateText] = useState<string>("");
   const [replayOnboarding, setReplayOnboarding] = useState<boolean>(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState<boolean>(false);
+  const [mini, setMini] = useState<boolean>(false);
   const settingsReady = useStore(settings, (s) => s.ready);
   const onboardingDone = useStore(settings, (s) => s.settings.onboardingDone);
   const lastAggSent = useRef<number | null>(null);
@@ -96,6 +98,29 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   useEffect(() => {
     document.documentElement.dataset["density"] = density;
   }, [density]);
+
+  // Mini mode (M4.4): same window, compact layout flag, and the main process
+  // owns the geometry/always-on-top. Tray toggles are pushed back to us.
+  useEffect(() => {
+    const root = document.documentElement;
+    if (mini) root.dataset["mini"] = "true";
+    else delete root.dataset["mini"];
+  }, [mini]);
+
+  useEffect(() => {
+    void engine
+      .applyWindowChrome({ mini, theme })
+      .catch(() => undefined);
+  }, [engine, mini, theme]);
+
+  useEffect(() => {
+    const unsub = engine.onWindowChrome((state) => {
+      setMini(state.mini);
+    });
+    return () => {
+      unsub();
+    };
+  }, [engine]);
 
   // User accent override (M2.6): re-checked pairs, applied as CSS vars.
   useEffect(() => {
@@ -215,6 +240,9 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
       showShortcuts: () => {
         setShortcutsOpen(true);
       },
+      toggleMiniMode: () => {
+        setMini((v) => !v);
+      },
     }),
     [engine, queue, settings, toast, jobs, navigate, pasteAndAnalyze],
   );
@@ -240,6 +268,12 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
       if (isOpenSettings(combo)) {
         e.preventDefault();
         switchView("settings");
+        return;
+      }
+      if (isMiniMode(combo)) {
+        // Window-level toggle: must work while typing in a field.
+        e.preventDefault();
+        setMini((v) => !v);
         return;
       }
       if (isPasteAnalyze(combo)) {
@@ -320,7 +354,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
         </span>
       </header>
       <div className="grabber-body">
-        <nav ref={navRef} className="grabber-nav" aria-label="Primary">
+        <nav ref={navRef} className="grabber-nav" aria-label="Primary" hidden={mini}>
           {nav.map((item) => (
             <button
               key={item.id}
@@ -349,7 +383,18 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
           </div>
         </nav>
         <main ref={mainRef} id="grabber-main" className="grabber-main" tabIndex={-1}>
-          {view === "home" && (
+          {mini && (
+            <MiniView
+              jobs={jobs}
+              queue={queue}
+              strings={S}
+              aggregateText={aggregateText}
+              onExit={() => {
+                setMini(false);
+              }}
+            />
+          )}
+          {!mini && view === "home" && (
             <Home
               engine={engine}
               queue={queue}
@@ -358,7 +403,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
               onPasteConsumed={consumePaste}
             />
           )}
-          {view === "downloads" && (
+          {!mini && view === "downloads" && (
             <Downloads
               engine={engine}
               queue={queue}
@@ -367,10 +412,10 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
               navigate={navigate}
             />
           )}
-          {view === "library" && (
+          {!mini && view === "library" && (
             <Library engine={engine} queue={queue} settings={settings} toast={toast} />
           )}
-          {view === "settings" && (
+          {!mini && view === "settings" && (
             <SettingsScreen
               engine={engine}
               settings={settings}
@@ -380,7 +425,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
               }}
             />
           )}
-          {view === "logs" && <Logs engine={engine} queue={queue} settings={settings} />}
+          {!mini && view === "logs" && <Logs engine={engine} queue={queue} settings={settings} />}
         </main>
       </div>
       <Toasts toast={toast} strings={S} />

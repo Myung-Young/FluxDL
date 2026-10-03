@@ -12,6 +12,7 @@ export function shortcutRows(strings: Strings): readonly ShortcutRow[] {
     { keys: "Ctrl+V", label: strings.shortcuts.paste },
     { keys: "Ctrl+K", label: strings.shortcuts.palette },
     { keys: "Ctrl+,", label: strings.shortcuts.settings },
+    { keys: "Ctrl+Shift+M", label: strings.shortcuts.miniMode },
     { keys: "?", label: strings.shortcuts.help },
     { keys: "Esc", label: strings.shortcuts.dismiss },
   ];

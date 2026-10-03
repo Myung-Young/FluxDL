@@ -43,6 +43,8 @@ async function installMock(page: Page): Promise<void> {
       autoCheckUpdate: false,
     };
     const started: Array<unknown> = [];
+    let chromeState = { mini: false, theme: "obsidian" };
+    let chromeListeners: Array<(s: { mini: boolean; theme: string }) => void> = [];
     const fireProgress = (id: string): void => {
       for (const cb of listeners) {
         cb({
@@ -139,6 +141,18 @@ async function installMock(page: Page): Promise<void> {
       archiveHas: (): Promise<boolean[]> => Promise.resolve([]),
       clearArchive: (): Promise<void> => Promise.resolve(),
       setAggregateProgress: (): Promise<void> => Promise.resolve(),
+      // Window chrome (M4.4): record the last request and let tests flip it
+      // back the way the tray would.
+      applyWindowChrome: (state: { mini: boolean; theme: string }): Promise<void> => {
+        chromeState = { mini: state.mini, theme: state.theme };
+        return Promise.resolve();
+      },
+      onWindowChrome: (cb: (s: { mini: boolean; theme: string }) => void) => {
+        chromeListeners.push(cb);
+        return () => {
+          chromeListeners = chromeListeners.filter((l) => l !== cb);
+        };
+      },
       loadSettings: (): Promise<unknown> => Promise.resolve({ ...settings }),
       saveSettings: (patch: unknown): Promise<unknown> => {
         if (typeof patch === "object" && patch !== null) {
@@ -154,6 +168,11 @@ async function installMock(page: Page): Promise<void> {
       clearHistory: (): Promise<void> => Promise.resolve(),
       getRawLog: (): Promise<string> => Promise.resolve("mock log"),
       _started: started,
+      _chrome: () => chromeState,
+      _emitChrome: (s: { mini: boolean; theme: string }) => {
+        chromeState = s;
+        for (const cb of chromeListeners) cb(s);
+      },
     };
     (window as unknown as { __grabberOverride: unknown }).__grabberOverride = mock;
   });
@@ -483,5 +502,74 @@ test("settings: search filters rows and clears", async () => {
   await expect(page.locator(".grabber-view")).toContainText("No settings match.");
   await page.locator('[data-testid="settings-search"]').fill("");
   await expect(page.locator("#set-theme-label")).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
+
+test("mini mode: Ctrl+Shift+M toggles the compact view and syncs chrome", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+  await installMock(page);
+  await page.reload();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await expect(page.locator('[data-testid="grabber-shell"]')).toBeVisible({ timeout: 30000 });
+  await expect(page.locator(".grabber-nav")).toBeVisible();
+
+  await page.keyboard.press("Control+Shift+KeyM");
+  await expect(page.locator('[data-testid="mini-view"]')).toBeVisible({ timeout: 15000 });
+  // Sidebar is hidden and the layout flag reaches <html>.
+  await expect(page.locator(".grabber-nav")).toBeHidden();
+  await expect(page.locator("html")).toHaveAttribute("data-mini", "true");
+  const chrome = await page.evaluate(() => {
+    const mock = (window as unknown as { __grabberOverride?: { _chrome?: () => unknown } })
+      .__grabberOverride;
+    return mock?._chrome?.() ?? null;
+  });
+  expect(chrome).toMatchObject({ mini: true });
+
+  // Leaving mini restores the normal shell.
+  await page.locator('[data-testid="mini-exit"]').click();
+  await expect(page.locator('[data-testid="mini-view"]')).toHaveCount(0);
+  await expect(page.locator(".grabber-nav")).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
+
+test("mini mode: a tray-side chrome push switches the layout", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await page.evaluate(() => {
+    const mock = (
+      window as unknown as {
+        __grabberOverride?: { _emitChrome?: (s: { mini: boolean; theme: string }) => void };
+      }
+    ).__grabberOverride;
+    mock?._emitChrome?.({ mini: true, theme: "obsidian" });
+  });
+  await expect(page.locator('[data-testid="mini-view"]')).toBeVisible({ timeout: 15000 });
+  await page.evaluate(() => {
+    const mock = (
+      window as unknown as {
+        __grabberOverride?: { _emitChrome?: (s: { mini: boolean; theme: string }) => void };
+      }
+    ).__grabberOverride;
+    mock?._emitChrome?.({ mini: false, theme: "obsidian" });
+  });
+  await expect(page.locator('[data-testid="mini-view"]')).toHaveCount(0);
   expect(pageErrors).toEqual([]);
 });

@@ -143,6 +143,12 @@
   box-sizing: border-box;
 }
 
+/* The UA `[hidden]` rule loses to any class selector with `display`, which
+   silently un-hides elements (e.g. the mini-mode sidebar). Make it win. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body,
 #root {
@@ -372,6 +378,94 @@ body {
 
 .grabber-main::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* ---- mini mode (M4.4): compact always-on-top window ----
+   The sidebar is hidden in the markup; these rules reclaim the width, the
+   titlebar height and the card padding so 360x520 stays usable. */
+:root[data-mini="true"] {
+  --titlebar-h: 36px;
+}
+
+:root[data-mini="true"] .grabber-titlebar {
+  padding-left: var(--space-3);
+  padding-right: 132px;
+}
+
+:root[data-mini="true"] .grabber-viewtitle,
+:root[data-mini="true"] .grabber-appname {
+  display: none;
+}
+
+:root[data-mini="true"] .grabber-main {
+  padding: var(--space-3);
+}
+
+:root[data-mini="true"] .grabber-view {
+  gap: var(--space-3);
+  max-width: none;
+}
+
+:root[data-mini="true"] .grabber-card {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+}
+
+:root[data-mini="true"] .preview-thumb {
+  width: 96px;
+  height: 54px;
+}
+
+:root[data-mini="true"] .toasts {
+  max-width: none;
+}
+
+.mini-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.mini-head .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mini-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.mini-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+
+.mini-title {
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mini-meta {
+  font-size: var(--text-xs);
+  color: var(--fg-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 @media (prefers-reduced-motion: reduce) {

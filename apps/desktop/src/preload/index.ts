@@ -11,6 +11,8 @@ import type {
   RepairReport,
   ThumbnailColor,
   Unsubscribe,
+  WindowChromeListener,
+  WindowChromeState,
 } from "@grabber/core/engine.js";
 
 /**
@@ -29,6 +31,8 @@ export interface GrabberApi {
   updateEngine(): Promise<EngineVersions>;
   repairEngine(): Promise<RepairReport>;
   setAggregateProgress(state: AggregateProgressState): Promise<void>;
+  applyWindowChrome(state: WindowChromeState): Promise<void>;
+  onWindowChrome(cb: WindowChromeListener): Unsubscribe;
   getThumbnailColor(url: string): Promise<ThumbnailColor | null>;
   pickFolder(): Promise<string | null>;
   pickFile(): Promise<string | null>;
@@ -76,6 +80,18 @@ const api: GrabberApi = {
   repairEngine: () => ipcRenderer.invoke(IPC_CHANNELS.repairEngine) as Promise<RepairReport>,
   setAggregateProgress: (state: AggregateProgressState) =>
     ipcRenderer.invoke(IPC_CHANNELS.setAggregateProgress, state) as Promise<void>,
+  applyWindowChrome: (state: WindowChromeState) =>
+    ipcRenderer.invoke(IPC_CHANNELS.applyWindowChrome, state) as Promise<void>,
+  onWindowChrome: (cb) => {
+    const listener = (_event: IpcRendererEvent, value: WindowChromeState): void => {
+      cb(value);
+    };
+    ipcRenderer.on(IPC_CHANNELS.onWindowChrome, listener);
+    const unsubscribe: Unsubscribe = () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.onWindowChrome, listener);
+    };
+    return unsubscribe;
+  },
   getThumbnailColor: (url: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.getThumbnailColor, url) as Promise<ThumbnailColor | null>,
   pickFolder: () => ipcRenderer.invoke(IPC_CHANNELS.pickFolder) as Promise<string | null>,

@@ -3,6 +3,7 @@
  * - Ctrl/Cmd+V pastes + analyzes when focus is NOT in an editable field.
  * - Ctrl/Cmd+, opens Settings.
  * - Ctrl/Cmd+K opens the command palette (never inside editable fields).
+ * - Ctrl/Cmd+Shift+M toggles mini mode (M4.4).
  * - ? opens the shortcut help dialog (never inside editable fields).
  */
 
@@ -35,6 +36,11 @@ export function isOpenSettings(combo: KeyCombo): boolean {
 
 export function isCommandPalette(combo: KeyCombo): boolean {
   return combo.ctrlOrCmd && !combo.shift && combo.key === "k";
+}
+
+/** Ctrl/Cmd+Shift+M toggles mini mode (M4.4). */
+export function isMiniMode(combo: KeyCombo): boolean {
+  return combo.ctrlOrCmd && combo.shift && combo.key === "m";
 }
 
 /** Bare ? (Shift+/ on most layouts, so shift is ignored here). */
