@@ -31,6 +31,7 @@ export interface GrabberApi {
   setAggregateProgress(state: AggregateProgressState): Promise<void>;
   getThumbnailColor(url: string): Promise<ThumbnailColor | null>;
   pickFolder(): Promise<string | null>;
+  pickFile(): Promise<string | null>;
   openPath(path: string): Promise<void>;
   revealInFolder(path: string): Promise<void>;
   fileExists(path: string): Promise<boolean>;
@@ -78,6 +79,7 @@ const api: GrabberApi = {
   getThumbnailColor: (url: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.getThumbnailColor, url) as Promise<ThumbnailColor | null>,
   pickFolder: () => ipcRenderer.invoke(IPC_CHANNELS.pickFolder) as Promise<string | null>,
+  pickFile: () => ipcRenderer.invoke(IPC_CHANNELS.pickFile) as Promise<string | null>,
   openPath: (path) => ipcRenderer.invoke(IPC_CHANNELS.openPath, path) as Promise<void>,
   revealInFolder: (path) => ipcRenderer.invoke(IPC_CHANNELS.revealInFolder, path) as Promise<void>,
   fileExists: (path) =>

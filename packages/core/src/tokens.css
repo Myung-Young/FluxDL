@@ -865,6 +865,11 @@ select.input {
   white-space: nowrap;
 }
 
+.badge-warn {
+  color: var(--warning);
+  background: rgb(251 191 36 / 0.12);
+}
+
 .entry-row {
   min-height: 44px;
 }

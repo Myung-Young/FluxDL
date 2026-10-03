@@ -697,6 +697,12 @@ export class DesktopEngine implements DownloadEngine {
     return res.filePaths[0] ?? null;
   }
 
+  async pickFile(): Promise<string | null> {
+    const res = await dialog.showOpenDialog({ properties: ["openFile"] });
+    if (res.canceled) return null;
+    return res.filePaths[0] ?? null;
+  }
+
   async openPath(path: string): Promise<void> {
     await this.assertAllowed(path);
     const err = await shell.openPath(path);

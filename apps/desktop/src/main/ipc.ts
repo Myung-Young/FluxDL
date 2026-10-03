@@ -125,6 +125,9 @@ export function registerEngineIpc(engine: DesktopEngine): void {
   ipcMain.handle(IPC_CHANNELS.pickFolder, async () => {
     return engine.pickFolder();
   });
+  ipcMain.handle(IPC_CHANNELS.pickFile, async () => {
+    return engine.pickFile();
+  });
   ipcMain.handle(IPC_CHANNELS.openPath, async (_event, rawPath: unknown) => {
     const p = asNonEmptyString(rawPath);
     if (p === null) throw new Error("Missing path.");

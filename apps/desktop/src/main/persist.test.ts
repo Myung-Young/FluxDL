@@ -102,6 +102,18 @@ describe("persist", () => {
     expect(loaded[1]?.fileDeleted).toBeUndefined();
   });
 
+  it("trims history to the keep-last-N setting on append", async () => {
+    const d = dir("histtrim");
+    saveSettingsToDisk(d, { historyLimit: 10 });
+    for (let i = 0; i < 15; i += 1) {
+      await appendHistoryToDisk(d, job(`j${String(i)}`));
+    }
+    const loaded = await loadHistoryFromDisk(d);
+    expect(loaded).toHaveLength(10);
+    expect(loaded[0]?.id).toBe("j5");
+    expect(loaded[9]?.id).toBe("j14");
+  });
+
   it("surfaces disk/IO failures instead of silently dropping data", async () => {    await expect(saveQueueToDisk("C:\\bad\0path", [job("a")])).rejects.toThrow();
     await expect(appendHistoryToDisk("C:\\bad\0path", job("a"))).rejects.toThrow();
   });

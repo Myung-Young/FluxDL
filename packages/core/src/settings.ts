@@ -38,6 +38,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   accentOverride: null,
   playlistSubfolder: true,
   language: "auto",
+  historyLimit: 500,
 };
 
 const THEMES: readonly ThemeName[] = ["obsidian", "midnight", "ember"];
@@ -79,6 +80,11 @@ function cleanAccentOverride(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const t = value.trim();
   return /^#[0-9a-f]{6}$/i.test(t) ? t.toLowerCase() : null;
+}
+
+function clampHistoryLimit(n: unknown): number {
+  if (typeof n !== "number" || !Number.isFinite(n)) return 500;
+  return Math.min(5000, Math.max(10, Math.floor(n)));
 }
 
 function cleanPreset(
@@ -165,5 +171,9 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
         : cleanAccentOverride(patch.accentOverride),
     playlistSubfolder: cleanBool(patch.playlistSubfolder, base.playlistSubfolder),
     language: LANGUAGES.includes(languageRaw) ? languageRaw : base.language,
+    historyLimit:
+      patch.historyLimit === undefined
+        ? base.historyLimit
+        : clampHistoryLimit(patch.historyLimit),
   };
 }

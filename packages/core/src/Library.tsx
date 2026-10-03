@@ -7,6 +7,8 @@ import { pressScale } from "./motion.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 import type { ToastStoreState } from "./toast.js";
 import { useStrings } from "./locale.js";
+import { chunkDestinations, deriveMissingIds } from "./health.js";
+import { VirtualList } from "./VirtualList.js";
 import { ContextMenu, type MenuItemDef } from "./ContextMenu.js";
 import { buildJobMenu } from "./JobMenu.js";
 import { writeClipboardText } from "./clipboard.js";
@@ -22,26 +24,77 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
   const S = useStrings(settings);
   const [history, setHistory] = useState<readonly DownloadJob[]>([]);
   const [query, setQuery] = useState<string>("");
+  const [debouncedQuery, setDebouncedQuery] = useState<string>("");
   const [busy, setBusy] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [menu, setMenu] = useState<{ job: DownloadJob; x: number; y: number } | null>(null);
+  const [missing, setMissing] = useState<ReadonlySet<string>>(new Set());
+  const [checking, setChecking] = useState<boolean>(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(query);
+    }, 100);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [query]);
+
+  const checkHealth = useCallback(
+    async (records: readonly DownloadJob[]): Promise<void> => {
+      setChecking(true);
+      try {
+        const exists = new Map<string, boolean>();
+        for (const chunk of chunkDestinations(records, 40)) {
+          const found = await engine.fileExistsBulk(chunk).catch(() => chunk.map(() => false));
+          chunk.forEach((d, i) => {
+            exists.set(d, found[i] ?? false);
+          });
+          await new Promise((r) => setTimeout(r, 0));
+        }
+        setMissing(deriveMissingIds(records, exists));
+      } finally {
+        setChecking(false);
+      }
+    },
+    [engine],
+  );
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
       const loaded = await engine.loadHistory();
-      setHistory(pruneHistory(loaded, 500));
+      const pruned = pruneHistory(loaded, 500);
+      setHistory(pruned);
+      void checkHealth(pruned);
     } catch {
       setHistory([]);
     } finally {
       setLoading(false);
     }
-  }, [engine]);
+  }, [engine, checkHealth]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  const visible = useMemo(() => searchHistory(history, query), [history, query]);
+  const visible = useMemo(
+    () => searchHistory(history, debouncedQuery),
+    [history, debouncedQuery],
+  );
+
+  const locate = async (id: string): Promise<void> => {
+    const picked = await engine.pickFile().catch(() => null);
+    if (picked === null) return;
+    const rec = history.find((h) => h.id === id);
+    if (rec === undefined) return;
+    setBusy(true);
+    try {
+      await engine.updateHistory({ ...rec, destination: picked, fileDeleted: false });
+      await refresh();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const redownload = async (h: DownloadJob): Promise<void> => {
     // Explicit re-download: bypasses the duplicate guard (user said so) and
@@ -136,6 +189,74 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
     undefined,
     S);
 
+  const renderRow = (h: DownloadJob): React.JSX.Element => (
+    <article
+      className="grabber-card"
+      aria-label={h.title}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setMenu({ job: h, x: e.clientX, y: e.clientY });
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+          e.preventDefault();
+          const r = e.currentTarget.getBoundingClientRect();
+          setMenu({ job: h, x: r.left + 24, y: r.top + 24 });
+        }
+      }}
+    >
+      <h2 className="dl-title">{h.title}</h2>
+      <p className="muted">
+        {h.status}
+        {h.error !== null ? ` · ${h.error}` : ""}
+        {h.fileDeleted === true ? ` · ${S.menu.fileDeleted}` : ""}
+        {missing.has(h.id) && (
+          <>
+            {" · "}
+            <span className="badge badge-warn">{S.library.missing}</span>
+          </>
+        )}
+      </p>
+      <div className="chip-row">
+        {missing.has(h.id) && (
+          <button
+            type="button"
+            className="btn btn-small"
+            disabled={busy}
+            onClick={() => {
+              void locate(h.id);
+            }}
+          >
+            {S.library.locate}
+          </button>
+        )}
+        <button
+          type="button"
+          className="btn btn-small"
+          disabled={busy}
+          onPointerDown={(e) => {
+            pressScale(e.currentTarget);
+          }}
+          onClick={() => {
+            redownload(h).catch(() => undefined);
+          }}
+        >
+          {S.library.redownload}
+        </button>
+        <button
+          type="button"
+          className="btn btn-small"
+          disabled={busy}
+          onClick={() => {
+            void remove(h.id);
+          }}
+        >
+          {S.library.remove}
+        </button>
+      </div>
+    </article>
+  );
+
   return (
     <section className="grabber-view" aria-label={S.library.title}>
       <h1>{S.library.title}</h1>
@@ -149,6 +270,7 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
             setQuery(e.target.value);
           }}
         />
+        {checking && <p className="muted">{S.library.checking}</p>}
       </div>
       {loading ? (
         <div className="grabber-card">
@@ -162,57 +284,19 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
             {query.trim().length > 0 ? S.library.emptySearch : S.library.empty}
           </p>
         </div>
+      ) : visible.length >= 200 ? (
+        <VirtualList
+          items={visible}
+          rowHeight={140}
+          height={480}
+          ariaLabel={S.library.title}
+          keyOf={(h) => h.id}
+          renderRow={(h) => renderRow(h)}
+        />
       ) : (
         <div className="dl-list">
           {visible.map((h) => (
-            <article
-              key={h.id}
-              className="grabber-card"
-              aria-label={h.title}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                setMenu({ job: h, x: e.clientX, y: e.clientY });
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
-                  e.preventDefault();
-                  const r = e.currentTarget.getBoundingClientRect();
-                  setMenu({ job: h, x: r.left + 24, y: r.top + 24 });
-                }
-              }}
-            >
-              <h2 className="dl-title">{h.title}</h2>
-              <p className="muted">
-                {h.status}
-                {h.error !== null ? ` · ${h.error}` : ""}
-                {h.fileDeleted === true ? ` · ${S.menu.fileDeleted}` : ""}
-              </p>
-              <div className="chip-row">
-                <button
-                  type="button"
-                  className="btn btn-small"
-                  disabled={busy}
-                  onPointerDown={(e) => {
-                    pressScale(e.currentTarget);
-                  }}
-                  onClick={() => {
-                    redownload(h).catch(() => undefined);
-                  }}
-                >
-                  {S.library.redownload}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-small"
-                  disabled={busy}
-                  onClick={() => {
-                    void remove(h.id);
-                  }}
-                >
-                  {S.library.remove}
-                </button>
-              </div>
-            </article>
+            <div key={h.id}>{renderRow(h)}</div>
           ))}
         </div>
       )}

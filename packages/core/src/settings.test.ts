@@ -74,4 +74,11 @@ describe("mergeSettings", () => {
     expect(mergeSettings(DEFAULT_SETTINGS, { language: "ms" }).language).toBe("ms");
     expect(mergeSettings(DEFAULT_SETTINGS, { language: "fr" as never }).language).toBe("auto");
   });
+
+  it("defaults history keep-last-N and clamps it", () => {
+    expect(DEFAULT_SETTINGS.historyLimit).toBe(500);
+    expect(mergeSettings(DEFAULT_SETTINGS, { historyLimit: 50 }).historyLimit).toBe(50);
+    expect(mergeSettings(DEFAULT_SETTINGS, { historyLimit: 5 }).historyLimit).toBe(10);
+    expect(mergeSettings(DEFAULT_SETTINGS, { historyLimit: 99999 }).historyLimit).toBe(5000);
+  });
 });

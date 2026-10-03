@@ -89,6 +89,8 @@ export interface DownloadEngine {
   /** Dominant colour of an https thumbnail (null when unavailable). */
   getThumbnailColor(url: string): Promise<ThumbnailColor | null>;
   pickFolder(): Promise<string | null>;
+  /** File picker for locating moved downloads (null = cancelled). */
+  pickFile(): Promise<string | null>;
   openPath(path: string): Promise<void>;
   revealInFolder(path: string): Promise<void>;
   /** True when a job/history destination still exists on disk (guard-checked). */
@@ -136,6 +138,7 @@ export const IPC_CHANNELS = {
   setAggregateProgress: "engine:aggregate",
   getThumbnailColor: "engine:thumbnailColor",
   pickFolder: "engine:pickFolder",
+  pickFile: "engine:pickFile",
   openPath: "engine:openPath",
   revealInFolder: "engine:reveal",
   fileExists: "engine:fileExists",

@@ -139,3 +139,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M2.8
 
 - D63: i18n EN + MS. strings.ts split into EN source-of-truth + MS with a recursive Parity<> type (missing key fails typecheck) plus a runtime key-walk test. Screens read the active dict via useStrings(settings) (strings.ts itself stays dependency-free so main can import it); JobMenu takes it as a param, Toasts/DuplicatePrompt via props. Interpolation ({count}/{n}) on counts, plural() flat in Malay, Intl decimals/dates via localeTag, natural Malay (muat turun, baris gilir, tetapan; tech terms kept). Error mapper localized too (main resolves auto via app.getLocale). Desktop live tests need no changes (PATH binary path). E2E covers the Settings language switch end to end.
+
+## M2.9
+
+- D64: Library health. `deriveMissingIds` (destinations explicitly reported missing) + `chunkDestinations` (40/chunk, UI yields between) are pure and tested; the screen bulk-checks on open with a progress line. Missing badge + Locate (new pickFile engine method, 30 → 31 channels; record updated via updateHistory, fileDeleted cleared) + Remove + Re-download. VirtualList (shared with M2.7) kicks in at 200 rows with fixed 140px rows; search debounces 100 ms. History prune is enforced main-side in appendHistoryToDisk (keep last N, default 500, clamp 10–5000) with a round-trip trim test. (Note: health.ts, not library.ts — Library.tsx collides on Windows per D26.)

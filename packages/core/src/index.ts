@@ -146,6 +146,7 @@ export { VirtualList, visibleRange } from "./VirtualList.js";
 export type { VirtualListProps } from "./VirtualList.js";
 export { deriveEntryStates, sanitizePlaylistTitle } from "./playlist.js";
 export type { EntryState } from "./playlist.js";
+export { chunkDestinations, deriveMissingIds } from "./health.js";
 export { normalizeUrl, isValidUrl, UrlValidationError } from "./url.js";
 export {
   buildDownloadArgs,

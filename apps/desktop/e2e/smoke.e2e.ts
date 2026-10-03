@@ -123,6 +123,7 @@ async function installMock(page: Page): Promise<void> {
       repairEngine: (): Promise<unknown> =>
         Promise.resolve({ ok: true, repaired: ["yt-dlp.exe"], failed: [], versions }),
       pickFolder: (): Promise<null> => Promise.resolve(null),
+      pickFile: (): Promise<null> => Promise.resolve(null),
       openPath: (): Promise<void> => Promise.resolve(),
       revealInFolder: (): Promise<void> => Promise.resolve(),
       fileExists: (): Promise<boolean> => Promise.resolve(false),

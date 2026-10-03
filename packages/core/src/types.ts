@@ -157,4 +157,6 @@ export interface AppSettings {
   readonly playlistSubfolder: boolean;
   /** UI language (M2.8). */
   readonly language: Language;
+  /** Keep the last N history entries (M2.9). */
+  readonly historyLimit: number;
 }

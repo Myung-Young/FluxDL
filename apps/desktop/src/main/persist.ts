@@ -105,6 +105,22 @@ export async function appendHistoryToDisk(userDataDir: string, job: DownloadJob)
   if (!isDownloadJob(job)) throw new Error("Invalid history entry.");
   await mkdir(userDataDir, { recursive: true });
   await appendFile(join(userDataDir, HISTORY_FILE), `${JSON.stringify(job)}\n`, "utf8");
+  // Enforce the keep-last-N prune setting (M2.9).
+  let limit = 500;
+  try {
+    limit = loadSettingsFromDisk(userDataDir).historyLimit;
+  } catch {
+    // Defaults stand.
+  }
+  try {
+    const lines = (await readFile(join(userDataDir, HISTORY_FILE), "utf8")).split("\n");
+    const records = lines.filter((l) => l.trim().length > 0);
+    if (records.length > limit) {
+      await writeFile(join(userDataDir, HISTORY_FILE), `${records.slice(-limit).join("\n")}\n`, "utf8");
+    }
+  } catch {
+    // Best effort; the append above already landed.
+  }
 }
 
 export async function loadHistoryFromDisk(userDataDir: string): Promise<DownloadJob[]> {

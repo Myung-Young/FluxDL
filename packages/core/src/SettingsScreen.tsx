@@ -188,8 +188,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
 
         <label className="field-label" htmlFor="set-timeout">
           {S.settings.analyzeTimeout}
-        </label>
-        <input
+        </label>        <input
           id="set-timeout"
           key={String(saved.analyzeTimeoutSec)}
           className="input"
@@ -199,6 +198,22 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
           defaultValue={saved.analyzeTimeoutSec}
           onBlur={(e) => {
             save({ analyzeTimeoutSec: Number(e.target.value) });
+          }}
+        />
+
+        <label className="field-label" htmlFor="set-history">
+          {S.settings.historyLimit}
+        </label>
+        <input
+          id="set-history"
+          key={String(saved.historyLimit)}
+          className="input"
+          type="number"
+          min={10}
+          max={5000}
+          defaultValue={saved.historyLimit}
+          onBlur={(e) => {
+            save({ historyLimit: Number(e.target.value) });
           }}
         />
 
