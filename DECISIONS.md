@@ -171,3 +171,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M3.6
 
 - D71: Logs triage without new engine methods. Pure `logFilter.ts` (tested: empty matches all, multi-word AND, errors-only regex) drives a search box + clear, an errors-only toggle, a match-count/no-match status line, a Refresh button (re-fetch selected), a Copy-log button, and a follow-live pin (scrolls the tail on new text). Search filters the placeholder too, so the e2e needs no jobs. Two honest notes: (a) headless clipboard denies writes, so the e2e accepts either copy note via `.first()` (the diagnostics card shows the same text); (b) a mid-session full-suite flake (onboarding modal blocking tests 4–9, ~2.8 min timeout runs) was chased hard — probes proved the settings store clean (ready/true, zero saves, 3 mock loads), no app timers, no navigation code — and the suite has since gone 10/10 repeatedly; treated as environmental slowness, watching.
+
+## M3.7
+
+- D72: Inline settings validation, hints only. Pure `validate.ts` (tested): template needs `%(ext)s`, speed accepts empty or `4.2M`-style rates, preview substitutes sample metadata. Settings shows a live preview line under the template (draft-tracked, committed on blur as before) and error hints for bad template/speed; nothing blocks saving — the sanitizing merge stays authoritative. Strings EN+MS in parity.

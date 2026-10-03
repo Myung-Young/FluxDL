@@ -7,6 +7,7 @@ import { deriveAccentScale } from "./color.js";
 import type { SettingsStoreState } from "./stores.js";
 import { formatStr, useStrings } from "./locale.js";
 import { filterSettingIds, type FilterableField } from "./settingsFilter.js";
+import { previewFilename, validateFilenameTemplate, validateSpeedLimit } from "./validate.js";
 
 const ACCENT_SWATCHES: readonly string[] = [
   "#818cf8",
@@ -40,6 +41,8 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
   const [flash, setFlash] = useState<boolean>(false);
   const [archiveNote, setArchiveNote] = useState<boolean>(false);
   const [query, setQuery] = useState<string>("");
+  const [templateDraft, setTemplateDraft] = useState<string | null>(null);
+  const [speedDraft, setSpeedDraft] = useState<string | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flashSaved = (): void => {
@@ -231,10 +234,26 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
           defaultValue={saved.filenameTemplate}
           spellCheck={false}
           hidden={hide("set-template")}
+          onChange={(e) => {
+            setTemplateDraft(e.target.value);
+          }}
           onBlur={(e) => {
+            setTemplateDraft(null);
             commitText(e, (v) => ({ filenameTemplate: v }));
           }}
         />
+        {(() => {
+          const shown = templateDraft ?? saved.filenameTemplate;
+          return validateFilenameTemplate(shown) ? (
+            <p className="muted" role="status" hidden={hide("set-template")}>
+              {formatStr(S.settings.templatePreview, { name: previewFilename(shown) })}
+            </p>
+          ) : (
+            <p className="error-text" role="alert" hidden={hide("set-template")}>
+              {S.settings.templateInvalid}
+            </p>
+          );
+        })()}
         <div className="chip-row" aria-label={S.settings.filenamePresets} hidden={hide("set-template")}>
           {FILENAME_PRESETS.map((p) => (
             <button
@@ -310,10 +329,22 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
           defaultValue={saved.speedLimit ?? ""}
           spellCheck={false}
           hidden={hide("set-speed")}
+          onChange={(e) => {
+            setSpeedDraft(e.target.value);
+          }}
           onBlur={(e) => {
+            setSpeedDraft(null);
             commitText(e, (v) => ({ speedLimit: v }));
           }}
         />
+        {(() => {
+          const shown = speedDraft ?? saved.speedLimit;
+          return validateSpeedLimit(shown) ? null : (
+            <p className="error-text" role="alert" hidden={hide("set-speed")}>
+              {S.settings.speedInvalid}
+            </p>
+          );
+        })()}
 
         <label className="field-label" htmlFor="set-proxy" id="settings-section-proxy" hidden={hide("set-proxy")}>
           {S.settings.proxy}
