@@ -3,6 +3,74 @@
 All notable changes to FluxDL are documented here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.4.0] — 2026-10-04
+
+Depth and polish: live streams and chapters that actually reach yt-dlp, an
+audio tag editor, a mini window, download stats, a light theme with Windows
+High Contrast support, and signing documentation.
+
+### Fixed
+
+- **Live-stream and chapter flags were silently dropped** (the important one).
+  `--live-from-start`, `--wait-for-video`, `--hls-use-mpegts` and
+  `--split-chapters` were built correctly and unit-tested in isolation, but
+  three hand-written copy lists between the UI and the binary each omitted
+  them, so a packaged app never passed them to yt-dlp. There is now one
+  allow-list and one projection (`toStartInput`) used in both directions, the
+  argv mapping moved into a pure, tested `buildStartArgs()`, and a test asserts
+  the flags per live status.
+- Sidebar stayed visible in mini mode: `[hidden]` lost to
+  `.grabber-nav { display: flex }`. Fixed globally with
+  `[hidden] { display: none !important }`.
+- An idle app rewrote `queue.json` and re-rendered the shell once per second
+  (the queue pump tick emitted and persisted unconditionally). Both are now
+  gated on real state changes: **65 writes/65 s → 0** while idle.
+
+### Added
+
+- Audio metadata editor for audio presets: editable title/artist/album/year
+  seeded from the analyzed media ("Artist - Title" heuristic + upload year),
+  applied with `--parse-metadata` + `--embed-metadata`. Escaping is derived
+  from yt-dlp's own `metadataparser.py` and verified against the real binary
+  for colons, `%`, backslashes, regex metacharacters, `%(title)s` injection
+  attempts, unicode and emoji — a live test asserts the tags on a real mp3
+  with ffprobe.
+- Mini mode: the same window becomes a compact always-on-top 360×520 panel
+  (Ctrl+Shift+M, tray checkbox, command palette) showing active downloads,
+  totals and pause/resume. Previous window bounds are restored on exit and the
+  mini bounds persist.
+- Stats screen derived from download history: totals (size, duration,
+  completed, failed), a 12-week chart, top uploaders and preset mix, with
+  hand-rolled SVG/CSS bars and no chart library. Old records report "unknown"
+  rather than zero; clearing history clears these numbers.
+- Fourth theme "Paper" — a light theme with darkened status colours.
+- Windows High Contrast support via a `@media (forced-colors: active)` pass.
+- `docs/SIGNING.md`: why SmartScreen warns, the realistic signing options, and
+  how electron-builder consumes `CSC_LINK` / `CSC_KEY_PASSWORD`. **These
+  builds are not signed.**
+
+### Changed
+
+- Every theme's contrast pairs are now unit-tested against `tokens.css`
+  (16 text pairs at 4.5:1, 7:1 for body text, plus separator visibility). The
+  three existing themes were nudged to pass: tertiary text `--fg-2` was as low
+  as 3.55:1 on card backgrounds.
+- Theme names live in one registry instead of five hand-written lists.
+- The native window background and title-bar overlay follow the active theme
+  from boot, so a light theme no longer flashes dark chrome.
+
+### Known limitations
+
+- Builds are unsigned, so SmartScreen shows "Windows protected your PC". Click
+  **More info → Run anyway**. See `docs/SIGNING.md`.
+- The portable build has still not been launched manually from a path
+  containing spaces; run it once before distributing.
+- yt-dlp prints non-ASCII path segments as mojibake (the UTF-8 env overrides
+  remain verified no-ops), so a non-ASCII download folder can still report a
+  destination that does not resolve. The recovery scan covers the common case.
+- The live yt-dlp integration tests need internet and can time out on a slow
+  network; the rest of the suite is hermetic.
+
 ## [1.3.0] — 2026-10-03
 
 Bug fixes, quality of life, and polish: destination recovery, visible

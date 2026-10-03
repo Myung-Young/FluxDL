@@ -7,7 +7,10 @@ progress, context menus, bulk queue control, diagnostics, command palette,
 onboarding, thumbnail accents, density + accent options, smart playlists,
 English + Bahasa Melayu, library health, destination recovery, retry
 countdown, settings search, shortcut help, log triage, template validation,
-self-updating engine binaries, and persisted settings/history.
+live-stream support, split-by-chapters, audio tag editing, a compact
+always-on-top mini window, download statistics, four themes with Windows High
+Contrast support, self-updating engine binaries, and persisted
+settings/history.
 
 > You are responsible for respecting copyright and each site's terms.
 > Only download content you own or are allowed to keep.
@@ -49,8 +52,8 @@ pnpm dist            # NSIS + portable into /release (also gitignored)
 
 Artifacts (`/release`):
 
-- `FluxDL-Setup-1.3.0.exe` — per-user NSIS wizard, no admin, install dir changeable
-- `FluxDL-Portable-1.3.0.exe` — single exe, runs from any folder (even with spaces)
+- `FluxDL-Setup-1.4.0.exe` — per-user NSIS wizard, no admin, install dir changeable
+- `FluxDL-Portable-1.4.0.exe` — single exe, runs from any folder (even with spaces)
 
 First run copies `yt-dlp.exe` into userData so self-update (`-U`) works under
 Program Files; `ffmpeg`/`ffprobe` resolve from the bundled copy with a PATH
@@ -82,16 +85,17 @@ packages/core/        shared UI + state, talks ONLY to DownloadEngine
   src/queueController.ts  engine-agnostic orchestrator (injected clock/engine)
   src/settings.ts     defaults + sanitizing merge
   src/stores.ts       zustand queue/settings stores over DownloadEngine
-  src/Home|Downloads|Library|SettingsScreen|Logs.tsx  the five screens
+  src/Home|Downloads|Library|StatsScreen|SettingsScreen|Logs.tsx  the six screens
   src/BatchPanel|DuplicatePrompt|ErrorActions|ContextMenu|JobMenu  feature UI
   src/CommandPalette|Onboarding|VirtualList  palette, wizard, virtual list
-  src/Shell.tsx       frameless titlebar, sidebar, themes, shortcuts, toasts
+  src/Shell.tsx       frameless titlebar, sidebar, themes, shortcuts, toasts, mini mode
   src/motion.ts       GSAP helpers (reduced-motion safe)
   src/strings.ts      every user-facing string, EN
-  src/tokens.css      design tokens + 3 [data-theme]s
+  src/tokens.css      design tokens + 4 [data-theme]s + forced-colors pass
   src/assets/fonts/   self-hosted Inter Variable (OFL)
 apps/desktop/         Electron shell + DesktopEngine (child_process, args arrays only)
-  src/main/           window/CSP/tray/taskbar, binaries resolve+repair, engine, persist, IPC
+  src/main/           window/CSP/tray/taskbar, binaries resolve+repair, engine, persist, IPC, window chrome
+  scripts/soak.mjs    idle CPU/RAM soak (hide the window, sample app metrics)
   src/preload/        typed window.grabber bridge (CJS for the sandbox)
   src/renderer/       thin mount of core App
   e2e/smoke.e2e.ts    Playwright: launch → analyze → queue → batch → guard → repair → menu → bulk

@@ -53,11 +53,12 @@
   `useArchive`/`extractor`/`videoId`/`cookiesFromBrowser`/`errorCategory`/`fileDeleted`),
   `JobStatus`, `AppSettings` (+`embedSubs`, `codecPreference`, `skipArchived`,
   `cookiesFile`), `CodecPreference`, `VideoPreset` (+`"Compatible"`).
-- `packages/core/src/engine.ts` — `DownloadEngine` (31 methods),
-  `IPC_CHANNELS` (31 channels), `EngineProgress`
+- `packages/core/src/engine.ts` — `DownloadEngine` (33 methods),
+  `IPC_CHANNELS` (33 channels), `EngineProgress`
   (+`destination`/`errorMessage`/`errorCategory`), `EngineVersions`
   (+optional `os`/`arch`/`electron`/`node`), `RepairReport`,
-  `AggregateProgressState`, `ThumbnailColor`, `GetInfoInit`.
+  `AggregateProgressState`, `ThumbnailColor`, `GetInfoInit`,
+  `WindowChromeState`/`WindowChromeListener` (M4.4 mini mode, M4.6 theme colors).
 - `packages/core/src/url|args|progress|errors|media.ts` — pure engine logic.
   `args.ts` owns the machine `--progress-template`, `--trim-filenames 200`,
   `--ignore-config` (every spawn), `-S` codec sorts, `--download-archive`,
@@ -92,12 +93,17 @@
 - `packages/core/src/ShortcutsDialog.tsx` — `?` help dialog (+ pure row table).
 - `packages/core/src/settings.ts` — `DEFAULT_SETTINGS`, sanitizing `mergeSettings`.
 - `packages/core/src/stores.ts` — zustand stores bound to a `DownloadEngine`.
-- `packages/core/src/Home|Downloads|Library|SettingsScreen|Logs.tsx` — screens.
+- `packages/core/src/{Home,Downloads,Library,StatsScreen,SettingsScreen,Logs}.tsx` — screens.
+- `packages/core/src/{metadata,stats,window,themes}.ts` — audio tag escaping (M4.3),
+  stats compute (M4.5), mini-mode metrics (M4.4), theme registry (M4.6).
+  `StatsScreen.tsx`/`stats.ts` are split for case-insensitive filesystems.
 - `packages/core/src/Shell.tsx` — titlebar/sidebar/themes/shortcuts/toasts/focus,
   aggregate footer, throttled taskbar updates, settings-section deep links.
 - `packages/core/src/{motion,strings,toast,notify,shortcuts,clipboard}.ts` — helpers
   (`flipShift`, toast actions, clipboard read/write).
-- `packages/core/src/tokens.css` + `fonts.css` — tokens, 3 themes, self-hosted Inter.
+- `packages/core/src/tokens.css` + `fonts.css` — tokens, 4 themes ([data-theme]), forced-colors
+  pass. Palette contrast is asserted by `apps/desktop/src/main/tokens.test.ts`, which
+  parses this file (core tests cannot read files: eslint bans `node:fs` there).
 - `packages/core/src/bbb-54formats.json` — real 53-format capture for estimator tests.
 - `fixtures/v1.0/` — v1.0 settings/queue/history samples (back-compat contract).
 - `apps/desktop/src/main/index.ts` — frameless window + overlay, CSP, tray
@@ -110,6 +116,11 @@
   settings read from disk per download, destination on every event incl.
   Merger/ExtractAudio, `isAllowedPath` trust boundary, archive/cookies plumbing,
   update-blocked-while-active, `repairEngine`).
+- `apps/desktop/src/main/jobArgs.ts` — pure settings→argv builder (the hop that
+  silently dropped the live/chapter flags; 13 tests assert the argv).
+- `apps/desktop/src/main/windowChrome.ts` — mini-mode geometry (always-on-top,
+  size, restore) + native theme colors, persisted in `window-state.json`
+  outside AppSettings; tray checkbox + `onWindowChrome` push.
 - `apps/desktop/src/main/taskbar.ts` — pure taskbar mode resolver.
 - `apps/desktop/src/main/thumbnail.ts` — guarded thumbnail fetch + BGRA decode.
 - `apps/desktop/src/main/persist.ts` — electron-store settings, atomic
@@ -117,6 +128,8 @@
 - `apps/desktop/src/main/ipc.ts` — typed handlers with arg validation.
 - `apps/desktop/src/preload/index.ts` — `window.grabber` 1:1 mirror (CJS).
 - `apps/desktop/src/renderer/` — mounts core `App`, sets title from `APP_NAME`.
+- `apps/desktop/scripts/soak.mjs` — idle CPU/RAM soak (hidden window, `pnpm --filter
+  @grabber/desktop soak: idle`).
 - `apps/desktop/e2e/smoke.e2e.ts` — `*.e2e.ts` so vitest ignores it; mock engine
   via `__grabberOverride` (contextBridge props are read-only). Mock mirrors
   `DEFAULT_SETTINGS` + unique engine ids + pause/resume events.
@@ -146,12 +159,20 @@
 - Frozen yt-dlp prints non-ASCII paths as mojibake no matter what
   (`PYTHONIOENCODING`/`PYTHONUTF8` verified no-ops) — never trust printed
   paths for non-ASCII dirs; Open/Reveal must existence-check.
-- `DesktopEngine.start()` rebuilds its input: every new `DownloadJobInput`
-  field must be carried over explicitly or it silently drops.
+- `DesktopEngine.start()` no longer hand-copies fields: it calls
+  `toStartInput()` and delegates argv to `jobArgs.buildStartArgs()`. A new
+  optional field still has to be added to `pickJobOptions()` (see below) or it
+  silently drops — that is the whole R1 lesson.
 - `resolveJsonModule` is on (JSON fixtures importable in core tests, which
   still cannot use `node:*` — eslint has no test exemption).
 - Interface callback props use property style (`onClose: () => void`), never
   method shorthand — `unbound-method` flags the latter.
 - Windows filename collisions (never `X.tsx` + `x.ts` in one dir):
-  `SettingsScreen`, `Onboarding` (machine inside the component),
+  `SettingsScreen`, `StatsScreen`, `Onboarding` (machine inside the component),
   `health` (not `library`).
+- Never write escaped Windows paths through a bash heredoc: `\\` gets eaten
+  before TypeScript sees it, so the test asserts a corrupted value (D88).
+- A new optional `DownloadJob`/`DownloadJobInput` field must be added to
+  `pickJobOptions()` in `queue.ts`. That one allow-list feeds both `makeJob`
+  (input→job) and `toStartInput` (job→input), which is what keeps the two
+  directions from drifting — the bug that shipped M4.1/M4.2 dead (R1).
