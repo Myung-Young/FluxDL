@@ -98,6 +98,17 @@ export {
 export type { CommandContext, CommandDef, CommandView, RankedCommand } from "./commands.js";
 export { CommandPalette } from "./CommandPalette.js";
 export type { CommandPaletteProps } from "./CommandPalette.js";
+export { Onboarding } from "./Onboarding.js";
+export type { OnboardingProps } from "./Onboarding.js";
+export {
+  ONBOARDING_STEPS,
+  isFirstStep,
+  isLastStep,
+  nextStep,
+  prevStep,
+  stepIndex,
+} from "./Onboarding.js";
+export type { OnboardingDraft, OnboardingStep } from "./Onboarding.js";
 export {
   LOG_TAIL_CHARS,
   MAX_ERROR_EVENTS,

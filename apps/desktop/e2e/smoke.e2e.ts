@@ -29,6 +29,8 @@ async function installMock(page: Page): Promise<void> {
       sponsorBlock: false,
       codecPreference: "auto",
       skipArchived: true,
+      onboardingDone: true,
+      defaultPreset: { kind: "video", videoPreset: "1080", audioPreset: "MP3", rawFormat: null },
       theme: "obsidian",
       postDownloadAction: "none",
       autoCheckUpdate: false,
@@ -354,5 +356,26 @@ test("palette: Ctrl+K filters and runs a command", async () => {
   await expect(page.locator('[role="combobox"]')).toBeVisible({ timeout: 15000 });
   await page.keyboard.press("Escape");
   await expect(page.locator('[role="combobox"]')).toHaveCount(0);
+  expect(pageErrors).toEqual([]);
+});
+
+test("onboarding: replay from Settings then skip", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await expect(page.locator('[data-testid="onboarding"]')).toHaveCount(0);
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Settings" }).click();
+  await page.locator('[data-testid="settings-replay"]').click();
+  await expect(page.locator('[data-testid="onboarding"]')).toBeVisible({ timeout: 15000 });
+  await page.locator('[data-testid="onboard-skip"]').click();
+  await expect(page.locator('[data-testid="onboarding"]')).toHaveCount(0);
   expect(pageErrors).toEqual([]);
 });

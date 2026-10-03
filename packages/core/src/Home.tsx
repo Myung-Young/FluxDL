@@ -79,9 +79,13 @@ export function Home({
   const [queueing, setQueueing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<MediaInfo | null>(null);
-  const [kind, setKind] = useState<MediaKind>("video");
-  const [videoPreset, setVideoPreset] = useState<VideoPreset>("1080");
-  const [audioPreset, setAudioPreset] = useState<AudioPreset>("MP3");
+  const [kind, setKind] = useState<MediaKind>(() => settings.getState().settings.defaultPreset.kind);
+  const [videoPreset, setVideoPreset] = useState<VideoPreset>(
+    () => settings.getState().settings.defaultPreset.videoPreset,
+  );
+  const [audioPreset, setAudioPreset] = useState<AudioPreset>(
+    () => settings.getState().settings.defaultPreset.audioPreset,
+  );
   const [rawFormat, setRawFormat] = useState<string | null>(null);
   const [selected, setSelected] = useState<readonly string[]>([]);
   const [watchClipboard, setWatchClipboard] = useState<boolean>(false);

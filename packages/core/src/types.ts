@@ -132,4 +132,8 @@ export interface AppSettings {
   readonly theme: ThemeName;
   readonly postDownloadAction: "none" | "open-file" | "reveal";
   readonly autoCheckUpdate: boolean;
+  /** First-run wizard completed (M2.2). */
+  readonly onboardingDone: boolean;
+  /** Default preset for new analyses (chosen in onboarding). */
+  readonly defaultPreset: DownloadPreset;
 }

@@ -111,3 +111,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M2.1
 
 - D56: Command palette registry is data (id + strings key + keywords + when/run) with a hand-rolled fuzzy scorer (substring fast path, subsequence + prefix/consecutive bonuses) and usage-count recency boost; no new dependency. Shell owns open state + memoized context; Ctrl+K is ignored inside editable fields; combobox/listbox pattern with focus trap/restore and staggered entrance. Density toggle command lands in M2.5 (setting does not exist yet); availability predicates are covered by context tests.
+
+## M2.2
+
+- D57: Onboarding adds `onboardingDone` + `defaultPreset` settings (sanitized; Compatible MP4 is the default default). Wizard is non-blocking (Skip discards, Done commits), re-runnable from Settings, engine status shown on the preset step. Home/BatchPanel initialize their presets from the setting. Step machine lives in Onboarding.tsx — NOT onboarding.ts, which collides on Windows (walked straight into D26 and merged). E2E covers replay+skip; mock settings gained the new fields.

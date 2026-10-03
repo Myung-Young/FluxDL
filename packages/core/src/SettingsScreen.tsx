@@ -9,6 +9,7 @@ import type { SettingsStoreState } from "./stores.js";
 export interface SettingsScreenProps {
   readonly engine: DownloadEngine;
   readonly settings: StoreApi<SettingsStoreState>;
+  readonly onReplay: () => void;
 }
 
 const FILENAME_PRESETS: readonly string[] = [
@@ -19,7 +20,7 @@ const FILENAME_PRESETS: readonly string[] = [
 
 const MERGE_CONTAINERS: readonly string[] = ["mp4", "mkv", "webm"];
 
-export function SettingsScreen({ engine, settings }: SettingsScreenProps): React.JSX.Element {
+export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenProps): React.JSX.Element {
   const saved = useStore(settings, (s) => s.settings);
   const ready = useStore(settings, (s) => s.ready);
   const [flash, setFlash] = useState<boolean>(false);
@@ -364,6 +365,17 @@ export function SettingsScreen({ engine, settings }: SettingsScreenProps): React
             }}
           >
             {STRINGS.settings.clearArchive}
+          </button>
+        </div>
+
+        <div>
+          <button
+            type="button"
+            className="btn"
+            data-testid="settings-replay"
+            onClick={onReplay}
+          >
+            {STRINGS.onboarding.replay}
           </button>
         </div>
       </div>

@@ -84,9 +84,13 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
   const [queueing, setQueueing] = useState<boolean>(false);
-  const [kind, setKind] = useState<MediaKind>("video");
-  const [videoPreset, setVideoPreset] = useState<VideoPreset>("Compatible");
-  const [audioPreset, setAudioPreset] = useState<AudioPreset>("MP3");
+  const [kind, setKind] = useState<MediaKind>(() => settings.getState().settings.defaultPreset.kind);
+  const [videoPreset, setVideoPreset] = useState<VideoPreset>(
+    () => settings.getState().settings.defaultPreset.videoPreset,
+  );
+  const [audioPreset, setAudioPreset] = useState<AudioPreset>(
+    () => settings.getState().settings.defaultPreset.audioPreset,
+  );
   const entriesRef = useRef<readonly BatchEntry[]>([]);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const settingsState = useStore(settings, (s) => s.settings);

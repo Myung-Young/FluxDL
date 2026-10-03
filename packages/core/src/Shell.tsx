@@ -17,6 +17,7 @@ import { Library } from "./Library.js";
 import { SettingsScreen } from "./SettingsScreen.js";
 import { Logs } from "./Logs.js";
 import { Toasts } from "./Toasts.js";
+import { Onboarding } from "./Onboarding.js";
 import {
   AGGREGATE_SEND_MS,
   aggregateStatus,
@@ -63,6 +64,9 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   const [pendingSection, setPendingSection] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState<boolean>(false);
   const [aggregateText, setAggregateText] = useState<string>(STRINGS.status.ready);
+  const [replayOnboarding, setReplayOnboarding] = useState<boolean>(false);
+  const settingsReady = useStore(settings, (s) => s.ready);
+  const onboardingDone = useStore(settings, (s) => s.settings.onboardingDone);
   const lastAggSent = useRef<number | null>(null);
   const aggTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const jobs = useStore(queue, (s) => s.jobs);
@@ -297,7 +301,15 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
           {view === "library" && (
             <Library engine={engine} queue={queue} settings={settings} toast={toast} />
           )}
-          {view === "settings" && <SettingsScreen engine={engine} settings={settings} />}
+          {view === "settings" && (
+            <SettingsScreen
+              engine={engine}
+              settings={settings}
+              onReplay={() => {
+                setReplayOnboarding(true);
+              }}
+            />
+          )}
           {view === "logs" && <Logs engine={engine} queue={queue} />}
         </main>
       </div>
@@ -309,6 +321,15 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
           setPaletteOpen(false);
         }}
       />
+      {((settingsReady && !onboardingDone) || replayOnboarding) && (
+        <Onboarding
+          engine={engine}
+          settings={settings}
+          onDone={() => {
+            setReplayOnboarding(false);
+          }}
+        />
+      )}
     </div>
   );
 }

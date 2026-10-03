@@ -244,6 +244,21 @@ export const STRINGS = {
     settingsCookies: "Open Settings: cookies",
     settingsProxy: "Open Settings: proxy",
   },
+  onboarding: {
+    title: "Welcome to FluxDL",
+    subtitle: "Three quick steps — you can change everything later in Settings.",
+    stepFolder: "Where should downloads go?",
+    browse: "Browse…",
+    stepTheme: "Pick a theme",
+    stepPreset: "Default preset",
+    engineOk: "Engine ready",
+    engineFail: "Engine check failed — you can still use the app.",
+    back: "Back",
+    next: "Next",
+    done: "Done",
+    skip: "Skip",
+    replay: "Replay onboarding",
+  },
 } as const;
 
 export type Strings = typeof STRINGS;
