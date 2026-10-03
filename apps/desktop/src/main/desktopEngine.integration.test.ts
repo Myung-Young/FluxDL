@@ -77,7 +77,8 @@ describe.skipIf(!HAS_YTDLP)("desktop engine live (real yt-dlp)", () => {
 
   it("extracts a dominant colour from the video thumbnail", async () => {
     // Needs real Electron nativeImage (vitest node has only the path stub).
-    if (process.versions["electron"] === undefined) return;
+    const runtime = process.versions as unknown as Record<string, string | undefined>;
+    if (runtime["electron"] === undefined) return;
     const { engine } = makeEngine();
     const rgb = await engine.getThumbnailColor("https://i.ytimg.com/vi/aqz-KE-bpKQ/hqdefault.jpg");
     expect(rgb).not.toBeNull();

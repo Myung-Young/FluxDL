@@ -71,6 +71,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   const aggTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const jobs = useStore(queue, (s) => s.jobs);
   const theme = useStore(settings, (s) => s.settings.theme);
+  const density = useStore(settings, (s) => s.settings.density);
   const navRef = useRef<HTMLElement | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
 
@@ -88,6 +89,10 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   useEffect(() => {
     document.documentElement.dataset["theme"] = theme;
   }, [theme]);
+
+  useEffect(() => {
+    document.documentElement.dataset["density"] = density;
+  }, [density]);
 
   useEffect(() => {
     if (navRef.current !== null) staggerIn(navRef.current, "[data-nav]");

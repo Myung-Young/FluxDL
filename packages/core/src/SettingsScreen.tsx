@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
-import type { AppSettings, ThemeName } from "./types.js";
+import type { AppSettings, Density, ThemeName } from "./types.js";
 import { STRINGS } from "./strings.js";
 import type { SettingsStoreState } from "./stores.js";
 
@@ -330,8 +330,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
 
         <span className="field-label" id="set-theme-label">
           {STRINGS.settings.theme}
-        </span>
-        <div className="chip-row" role="group" aria-labelledby="set-theme-label">
+        </span>        <div className="chip-row" role="group" aria-labelledby="set-theme-label">
           {(["obsidian", "midnight", "ember"] as const).map((t: ThemeName) => (
             <button
               key={t}
@@ -343,6 +342,30 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
               }}
             >
               {t}
+            </button>
+          ))}
+        </div>
+
+        <span className="field-label" id="set-density-label">
+          {STRINGS.settings.density}
+        </span>
+        <div className="chip-row" role="group" aria-labelledby="set-density-label">
+          {(
+            [
+              ["comfortable", STRINGS.settings.densityComfortable],
+              ["compact", STRINGS.settings.densityCompact],
+            ] as const
+          ).map(([d, label]: readonly [Density, string]) => (
+            <button
+              key={d}
+              type="button"
+              className="chip"
+              aria-pressed={saved.density === d}
+              onClick={() => {
+                save({ density: d });
+              }}
+            >
+              {label}
             </button>
           ))}
         </div>

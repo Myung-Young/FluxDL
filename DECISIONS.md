@@ -123,3 +123,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M2.4
 
 - D59: Dynamic thumbnail accent. Main fetches (https only, <=2 MB, 10 s timeout, image/* only, manual redirects blocked off https) and decodes via nativeImage to 32px; dominant colour is a small pure median-cut in core. toBitmap() byte order is BGRA on Windows — PROVEN with a red/green probe PNG in real Electron 36, converted here, unit-tested. deriveAccent clamps saturation then scans lightness for the closest variant reaching 4.5:1 on the card grounds (property-tested on dark themes); scoped to the preview card via --thumb-accent (global chrome keeps theme/user accent), GSAP RGB tween, reduced-motion sets directly. Live path verified in Electron (BBB thumb: 200 image/jpeg, avg 119,134,114). Engine 27 → 28 methods/channels. No renderer canvas (would taint cross-origin).
+
+## M2.5
+
+- D60: Density is a spacing/typography token switch (`[data-density]`) plus a horizontal list-row layout for Downloads/Library cards in compact; Shell sets the dataset like theme. Palette toggle-density command + Settings segmented control. Default comfortable; sanitized like other enums.

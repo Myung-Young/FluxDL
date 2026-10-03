@@ -55,4 +55,13 @@ describe("mergeSettings", () => {
       mergeSettings(DEFAULT_SETTINGS, { analyzeTimeoutSec: Number.NaN }).analyzeTimeoutSec,
     ).toBe(60);
   });
+
+  it("defaults comfortable density and sanitizes it", () => {
+    expect(DEFAULT_SETTINGS.density).toBe("comfortable");
+    expect(DEFAULT_SETTINGS.thumbnailAccent).toBe(true);
+    expect(mergeSettings(DEFAULT_SETTINGS, { density: "compact" }).density).toBe("compact");
+    expect(mergeSettings(DEFAULT_SETTINGS, { density: "cozy" as never }).density).toBe(
+      "comfortable",
+    );
+  });
 });

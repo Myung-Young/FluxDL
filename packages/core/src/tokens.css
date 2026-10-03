@@ -82,6 +82,63 @@
   --focus-ring: 0 0 0 2px var(--bg-0), 0 0 0 4px var(--accent);
 }
 
+/* ---- density (M2.5): compact tightens spacing/typography and turns the
+   Downloads/Library cards into horizontal list rows ---- */
+:root[data-density="compact"] {
+  --text-sm: 12px;
+  --text-md: 13px;
+  --space-1: 2px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 14px;
+  --sidebar-w: 200px;
+}
+
+:root[data-density="compact"] .dl-list {
+  gap: var(--space-1);
+}
+
+:root[data-density="compact"] .dl-list .grabber-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-3);
+  row-gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+}
+
+:root[data-density="compact"] .dl-list .dl-title {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-md);
+}
+
+:root[data-density="compact"] .dl-list .grabber-card > .muted {
+  margin: 0;
+}
+
+:root[data-density="compact"] .dl-list .dl-track {
+  flex: 1 1 100%;
+  order: 5;
+}
+
+:root[data-density="compact"] .dl-list .chip-row {
+  margin-bottom: 0;
+}
+
+:root[data-density="compact"] .chip {
+  padding: 4px var(--space-2);
+}
+
+:root[data-density="compact"] .grabber-nav-btn {
+  padding: 8px var(--space-3);
+}
+
 * {
   box-sizing: border-box;
 }

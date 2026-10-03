@@ -110,6 +110,8 @@ export interface DownloadJobInput extends Pick<
 
 export type ThemeName = "obsidian" | "midnight" | "ember";
 
+export type Density = "comfortable" | "compact";
+
 export interface AppSettings {
   readonly downloadDir: string;
   readonly filenameTemplate: string;
@@ -140,4 +142,6 @@ export interface AppSettings {
   readonly analyzeTimeoutSec: number;
   /** Tint the preview card with the thumbnail colour (M2.4, default ON). */
   readonly thumbnailAccent: boolean;
+  /** Spacing/typography density (M2.5). */
+  readonly density: Density;
 }

@@ -2,6 +2,7 @@ import type {
   AppSettings,
   AudioPreset,
   CodecPreference,
+  Density,
   ThemeName,
   VideoPreset,
 } from "./types.js";
@@ -32,9 +33,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultPreset: { kind: "video", videoPreset: "Compatible", audioPreset: "MP3", rawFormat: null },
   analyzeTimeoutSec: 60,
   thumbnailAccent: true,
+  density: "comfortable",
 };
 
 const THEMES: readonly ThemeName[] = ["obsidian", "midnight", "ember"];
+const DENSITIES: readonly Density[] = ["comfortable", "compact"];
 const CODECS: readonly CodecPreference[] = ["auto", "h264", "vp9", "av1"];
 const POST_ACTIONS: readonly AppSettings["postDownloadAction"][] = ["none", "open-file", "reveal"];
 const VIDEO_PRESETS: readonly VideoPreset[] = [
@@ -106,6 +109,7 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
     typeof patch.concurrency === "number" ? patch.concurrency : base.concurrency;
   const themeRaw = patch.theme ?? base.theme;
   const codecRaw = patch.codecPreference ?? base.codecPreference;
+  const densityRaw = patch.density ?? base.density;
   const postRaw = patch.postDownloadAction ?? base.postDownloadAction;
   return {
     downloadDir: typeof patch.downloadDir === "string" ? patch.downloadDir : base.downloadDir,
@@ -142,5 +146,6 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
         ? base.analyzeTimeoutSec
         : clampTimeoutSec(patch.analyzeTimeoutSec),
     thumbnailAccent: cleanBool(patch.thumbnailAccent, base.thumbnailAccent),
+    density: DENSITIES.includes(densityRaw) ? densityRaw : base.density,
   };
 }

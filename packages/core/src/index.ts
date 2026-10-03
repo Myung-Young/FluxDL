@@ -3,6 +3,7 @@ export type {
   AppSettings,
   AudioPreset,
   CodecPreference,
+  Density,
   DownloadJob,
   DownloadJobInput,
   DownloadPreset,

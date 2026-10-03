@@ -135,6 +135,18 @@ export const BUILTIN_COMMANDS: readonly CommandDef[] = [
     },
   },
   {
+    id: "toggle-density",
+    labelKey: "toggleDensity",
+    keywords: ["density", "compact", "comfortable", "layout", "ketumpatan", "padat"],
+    available: () => true,
+    run: (ctx) => {
+      const current = ctx.settings.getState().settings.density;
+      void ctx.settings
+        .getState()
+        .save({ density: current === "compact" ? "comfortable" : "compact" });
+    },
+  },
+  {
     id: "update-engine",
     labelKey: "updateEngine",
     keywords: ["update", "engine", "yt-dlp", "kemas", "kini", "enjin"],
