@@ -52,8 +52,17 @@ describe("isAllowedPath (renderer trust boundary)", () => {
     );
   });
 
-  it("allows known active/history destinations outside the roots", async () => {
-    const d = dir("known");
+  it("allows spaces + unicode roots and destinations (M3.3)", async () => {
+    const d = dir("spaces");
+    const downloads = join(d, "My Videos münchen 輸入");
+    mkdirSync(downloads, { recursive: true });
+    saveSettingsToDisk(d, { downloadDir: downloads });
+    const dest = join(downloads, "title [abc123].mp4");
+    writeFileSync(dest, "x");
+    expect(await isAllowedPath(d, join(d, "os-downloads"), [], dest)).toBe(true);
+  });
+
+  it("allows known active/history destinations outside the roots", async () => {    const d = dir("known");
     const outside = join(d, "elsewhere", "v.mp4");
     mkdirSync(join(d, "elsewhere"), { recursive: true });
     writeFileSync(outside, "x");

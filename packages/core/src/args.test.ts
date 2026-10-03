@@ -87,6 +87,18 @@ describe("arg builder", () => {
     expect(args).toContain("--cookies-from-browser");
   });
 
+  it("keeps a spaces path as one --output argv with a subfolder (M3.3)", () => {
+    const args = buildDownloadArgs(
+      base({
+        outputDir: "C:\\Users\\P\\My Videos",
+        playlistSubdir: "My Playlist",
+      }),
+    );
+    const i = args.indexOf("--output");
+    expect(i).toBeGreaterThan(-1);
+    expect(args[i + 1]).toContain("My Videos/My Playlist/");
+  });
+
   it("trims very long filenames for Windows path limits", () => {
     const args = buildDownloadArgs(base());
     const i = args.indexOf("--trim-filenames");

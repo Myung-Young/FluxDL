@@ -32,6 +32,10 @@ async function installMock(page: Page): Promise<void> {
       density: "comfortable",
       accentOverride: null,
       language: "en",
+      analyzeTimeoutSec: 60,
+      thumbnailAccent: true,
+      playlistSubfolder: true,
+      historyLimit: 500,
       onboardingDone: true,
       defaultPreset: { kind: "video", videoPreset: "1080", audioPreset: "MP3", rawFormat: null },
       theme: "obsidian",
@@ -114,6 +118,7 @@ async function installMock(page: Page): Promise<void> {
         return Promise.resolve();
       },
       cancel: (): Promise<void> => Promise.resolve(),
+      cancelAnalyze: (): Promise<void> => Promise.resolve(),
       onProgress: (cb: (e: unknown) => void): (() => void) => {
         listeners.push(cb);
         return () => undefined;

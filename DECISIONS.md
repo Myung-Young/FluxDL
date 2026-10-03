@@ -155,3 +155,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M3.2
 
 - D67: Retry visibility + bulk retry, no new engine methods. `retryInSeconds(job, now)` (pure, tested) drives a 1s-ticking "Retrying in Ns · attempt A" line on error cards (past-due shows "Attempt A"); the ticking interval only mounts while a future deadline exists. `QueueController.retryAll()` re-queues every error job FIFO via the existing `retry()` (attempts reset), exposed through the queue store and as a palette command + bulk button. Strings added EN+MS in parity (downloads.retryAll/retryIn/attempt, commands.retryAll).
+
+## M3.3
+
+- D68: Mock-drift guard + spaces-path hardening. Real drift found: the e2e mock was missing 4 settings fields (`analyzeTimeoutSec`, `thumbnailAccent`, `playlistSubfolder`, `historyLimit`) and the `cancelAnalyze` method — fixed both. A pinned `DEFAULT_SETTINGS` key-list test now fails the suite the moment a new setting lands (comment points at the e2e mirror). Spaces-path: `--output` stays one argv element (new single-argv subfolder test) and the trust boundary explicitly allows spaces+unicode roots; the packaged-portable-from-spaces GUI pass stays a manual pre-distribute step (extraction exceeds automation budgets).

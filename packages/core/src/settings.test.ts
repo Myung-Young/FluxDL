@@ -81,4 +81,39 @@ describe("mergeSettings", () => {
     expect(mergeSettings(DEFAULT_SETTINGS, { historyLimit: 5 }).historyLimit).toBe(10);
     expect(mergeSettings(DEFAULT_SETTINGS, { historyLimit: 99999 }).historyLimit).toBe(5000);
   });
+
+  it("pins the settings shape so mocks cannot drift silently (M3.3)", () => {
+    // When this fails, update the mirrors too:
+    // apps/desktop/e2e/smoke.e2e.ts installMock settings + any fake engines.
+    expect(Object.keys(DEFAULT_SETTINGS).sort()).toEqual([
+      "accentOverride",
+      "analyzeTimeoutSec",
+      "autoCheckUpdate",
+      "codecPreference",
+      "concurrency",
+      "cookiesFile",
+      "cookiesFromBrowser",
+      "defaultPreset",
+      "density",
+      "downloadDir",
+      "embedMetadata",
+      "embedSubs",
+      "embedThumbnail",
+      "filenameTemplate",
+      "historyLimit",
+      "language",
+      "mergeContainer",
+      "onboardingDone",
+      "playlistSubfolder",
+      "postDownloadAction",
+      "proxy",
+      "skipArchived",
+      "speedLimit",
+      "sponsorBlock",
+      "subtitleLangs",
+      "subtitles",
+      "theme",
+      "thumbnailAccent",
+    ]);
+  });
 });
