@@ -23,6 +23,7 @@ export interface CommandContext {
   readonly jobs: readonly DownloadJob[];
   readonly navigate: (view: CommandView, section?: string) => void;
   readonly pasteAndAnalyze: (url: string) => void;
+  readonly showShortcuts: () => void;
 }
 
 export interface CommandDef {
@@ -199,6 +200,15 @@ export const BUILTIN_COMMANDS: readonly CommandDef[] = [
     available: (ctx) => ctx.jobs.some((j) => j.status === "error"),
     run: (ctx) => {
       void ctx.queue.getState().retryAll();
+    },
+  },
+  {
+    id: "show-shortcuts",
+    labelKey: "showShortcuts",
+    keywords: ["shortcut", "shortcuts", "keys", "keyboard", "help", "pintasan", "kekunci", "?"],
+    available: () => true,
+    run: (ctx) => {
+      ctx.showShortcuts();
     },
   },
   {

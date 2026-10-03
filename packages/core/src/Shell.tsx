@@ -8,7 +8,8 @@ import { fadeSwap, pressScale, staggerIn } from "./motion.js";
 import { formatStr, localeTag, resolveLanguage, useStrings } from "./locale.js";
 import { isValidUrl } from "./url.js";
 import { readClipboardText } from "./clipboard.js";
-import { comboFromEvent, isCommandPalette, isEditableTarget, isOpenSettings, isPasteAnalyze } from "./shortcuts.js";
+import { comboFromEvent, isCommandPalette, isEditableTarget, isOpenSettings, isPasteAnalyze, isShortcutHelp } from "./shortcuts.js";
+import { ShortcutsDialog } from "./ShortcutsDialog.js";
 import { CommandPalette } from "./CommandPalette.js";
 import type { CommandContext } from "./commands.js";
 import { Home } from "./Home.js";
@@ -49,6 +50,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
   const [pendingSection, setPendingSection] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState<boolean>(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
   const [aggregateText, setAggregateText] = useState<string>("");
   const [replayOnboarding, setReplayOnboarding] = useState<boolean>(false);
   const settingsReady = useStore(settings, (s) => s.ready);
@@ -181,16 +183,33 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   );
 
   const paletteContext: CommandContext = useMemo(
-    () => ({ engine, queue, settings, toast, jobs, navigate, pasteAndAnalyze }),
+    () => ({
+      engine,
+      queue,
+      settings,
+      toast,
+      jobs,
+      navigate,
+      pasteAndAnalyze,
+      showShortcuts: () => {
+        setShortcutsOpen(true);
+      },
+    }),
     [engine, queue, settings, toast, jobs, navigate, pasteAndAnalyze],
   );
 
   // Global shortcuts: Ctrl+, opens Settings; Ctrl+V pastes + analyzes
   // when focus is outside editable fields; Ctrl+K opens the palette
-  // everywhere except inside editable fields.
+  // everywhere except inside editable fields; ? opens shortcut help.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const combo = comboFromEvent(e);
+      if (isShortcutHelp(combo)) {
+        if (isEditableTarget(e.target)) return;
+        e.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
       if (isCommandPalette(combo)) {
         if (isEditableTarget(e.target)) return;
         e.preventDefault();
@@ -345,6 +364,14 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
           setPaletteOpen(false);
         }}
       />
+      {shortcutsOpen && (
+        <ShortcutsDialog
+          strings={S}
+          onClose={() => {
+            setShortcutsOpen(false);
+          }}
+        />
+      )}
       {((settingsReady && !onboardingDone) || replayOnboarding) && (
         <Onboarding
           engine={engine}

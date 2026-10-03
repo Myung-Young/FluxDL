@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { comboFromEvent, isEditableTarget, isOpenSettings, isPasteAnalyze } from "./shortcuts.js";
+import {
+  comboFromEvent,
+  isEditableTarget,
+  isOpenSettings,
+  isPasteAnalyze,
+  isShortcutHelp,
+} from "./shortcuts.js";
 
 describe("shortcuts", () => {
   it("matches Ctrl+V and Ctrl+, (either modifier, no shift)", () => {
@@ -26,5 +32,20 @@ describe("shortcuts", () => {
   it("detects editable targets safely outside a DOM", () => {
     expect(isEditableTarget(null)).toBe(false);
     expect(isEditableTarget(undefined)).toBe(false);
+  });
+
+  it("matches bare ? for shortcut help, ignoring shift, blocking modifiers", () => {
+    expect(
+      isShortcutHelp(comboFromEvent({ key: "?", ctrlKey: false, metaKey: false, shiftKey: true })),
+    ).toBe(true);
+    expect(
+      isShortcutHelp(comboFromEvent({ key: "?", ctrlKey: false, metaKey: false, shiftKey: false })),
+    ).toBe(true);
+    expect(
+      isShortcutHelp(comboFromEvent({ key: "?", ctrlKey: true, metaKey: false, shiftKey: false })),
+    ).toBe(false);
+    expect(
+      isShortcutHelp(comboFromEvent({ key: "/", ctrlKey: false, metaKey: false, shiftKey: false })),
+    ).toBe(false);
   });
 });

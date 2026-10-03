@@ -163,3 +163,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M3.4
 
 - D69: Settings search + a real duplicate-key bug it exposed. Filter is a pure matcher (`settingsFilter.ts`, tested: empty matches all, multi-word AND, label+id+English keywords so Malay labels still match "proxy") with a `hidden`-per-row UI, match count, and empty state. The new e2e caught ghost inputs: every empty setting shared React key `""` among siblings, so renders multiplied the inputs (5× `#set-proxy`); fixed with stable unique keys (`proxy:…`, `dir:…`, …). Also added a scoped `.settings-grid [hidden]` kill — author `display` rules (`.field-label`, `.url-row`) otherwise beat the UA hidden style and filtered rows stayed visible.
+
+## M3.5
+
+- D70: Shortcut help dialog. Bare `?` (new `isShortcutHelp` matcher, shift-agnostic, ignored inside editable fields like Ctrl+K/V) opens a focus-trapped `role=dialog` (Esc/outside close, focus restore, same pattern as the guard dialog) listing Ctrl+V / Ctrl+K / Ctrl+, / ? / Esc with `<kbd>` styling. Openable from the key, a new always-available palette command (`showShortcuts` added to `CommandContext`), and the Home hint line now mentions `?`. Strings EN+MS in parity; rows helper unit-tested, `?` open/close covered in the palette e2e.

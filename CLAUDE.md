@@ -84,6 +84,7 @@
   batch UI, guard dialog, error buttons, themed menu, menu builder.
 - `packages/core/src/{CommandPalette,Onboarding,VirtualList}.tsx` — palette,
   first-run wizard (+ step machine), virtualized list.
+- `packages/core/src/ShortcutsDialog.tsx` — `?` help dialog (+ pure row table).
 - `packages/core/src/settings.ts` — `DEFAULT_SETTINGS`, sanitizing `mergeSettings`.
 - `packages/core/src/stores.ts` — zustand stores bound to a `DownloadEngine`.
 - `packages/core/src/Home|Downloads|Library|SettingsScreen|Logs.tsx` — screens.

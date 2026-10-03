@@ -368,6 +368,12 @@ test("palette: Ctrl+K filters and runs a command", async () => {
   await expect(page.locator('[role="combobox"]')).toBeVisible({ timeout: 15000 });
   await page.keyboard.press("Escape");
   await expect(page.locator('[role="combobox"]')).toHaveCount(0);
+  // Bare ? opens the shortcut help; Escape closes it.
+  await page.keyboard.press("?");
+  await expect(page.locator('[data-testid="shortcuts-dialog"]')).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('[data-testid="shortcuts-dialog"]')).toContainText("Ctrl+K");
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[data-testid="shortcuts-dialog"]')).toHaveCount(0);
   expect(pageErrors).toEqual([]);
 });
 

@@ -3,6 +3,7 @@
  * - Ctrl/Cmd+V pastes + analyzes when focus is NOT in an editable field.
  * - Ctrl/Cmd+, opens Settings.
  * - Ctrl/Cmd+K opens the command palette (never inside editable fields).
+ * - ? opens the shortcut help dialog (never inside editable fields).
  */
 
 export interface KeyCombo {
@@ -34,6 +35,11 @@ export function isOpenSettings(combo: KeyCombo): boolean {
 
 export function isCommandPalette(combo: KeyCombo): boolean {
   return combo.ctrlOrCmd && !combo.shift && combo.key === "k";
+}
+
+/** Bare ? (Shift+/ on most layouts, so shift is ignored here). */
+export function isShortcutHelp(combo: KeyCombo): boolean {
+  return !combo.ctrlOrCmd && combo.key === "?";
 }
 
 export function isEditableTarget(target: unknown): boolean {

@@ -41,6 +41,7 @@ function ctx(jobs: DownloadJob["status"][] = []): CommandContext {
     jobs: jobs.map((s) => job(s)),
     navigate: () => undefined,
     pasteAndAnalyze: () => undefined,
+    showShortcuts: () => undefined,
   };
 }
 
