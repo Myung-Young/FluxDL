@@ -191,3 +191,7 @@ Log for ambiguous decisions (simplest option wins, keep going).
 ## M4.1
 
 - D76: The queue only pumped on mutations, so boot-hydrated jobs stalled as queued forever and backoff auto-retries never fired on their own (defeating the backoff design). Fix with no new engine methods: `refresh()` pumps after hydrate, the queue store exposes `pump()`, and Shell runs a 1 s tick. The controller drops overlapping ticks via a reentrancy guard (two overlapping pumps could otherwise hand the same job to the engine twice). Timers stay outside the controller per its no-internal-timers design; the tick is cheap and cleaned up on unmount.
+
+## M4.2
+
+- D77: Onboarding Done/Skip buttons did nothing on first run: `finish()` deferred `onDone()` until the async `save({ onboardingDone: true })` resolved, but on first run `onDone()` only set `replayOnboarding(false)` — already false, a no-op. The modal relied entirely on the zustand store propagating `onboardingDone=true` back through Shell's selector, which could race or fail. Fix: `onDone()` fires immediately (optimistic dismiss), a new `onboardingDismissed` local state in Shell gates the first-run condition, and save runs fire-and-forget. Replay resets `onboardingDismissed` when re-opening. New e2e test covers the Done button path (navigate to last step, click Done, verify dismiss).

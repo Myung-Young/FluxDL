@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine, EngineVersions } from "./engine.js";
-import type { AudioPreset, DownloadPreset, ThemeName, VideoPreset } from "./types.js";
+import type { AppSettings, AudioPreset, DownloadPreset, ThemeName, VideoPreset } from "./types.js";
 import { useStrings } from "./locale.js";
 import { pressScale } from "./motion.js";
 import type { SettingsStoreState } from "./stores.js";
@@ -90,25 +90,23 @@ export function Onboarding({ engine, settings, onDone }: OnboardingProps): React
   }, [engine]);
 
   const finish = (commit: boolean): void => {
-    const done = (): void => {
-      onDone();
-    };
-    if (!commit) {
-      void settings
-        .getState()
-        .save({ onboardingDone: true })
-        .then(done, done);
-      return;
-    }
+    // Dismiss immediately — don't wait for the async save. On first run the
+    // old code relied on `onboardingDone` propagating through zustand before
+    // onDone() fired (a no-op when replayOnboarding was already false). If
+    // the IPC round-trip was slow or failed the modal stayed open forever.
+    onDone();
+    const patch: Partial<AppSettings> = commit
+      ? {
+          onboardingDone: true,
+          downloadDir: draft.downloadDir,
+          theme: draft.theme,
+          defaultPreset: draft.preset,
+        }
+      : { onboardingDone: true };
     void settings
       .getState()
-      .save({
-        onboardingDone: true,
-        downloadDir: draft.downloadDir,
-        theme: draft.theme,
-        defaultPreset: draft.preset,
-      })
-      .then(done, done);
+      .save(patch)
+      .catch(() => undefined);
   };
 
   const browse = async (): Promise<void> => {

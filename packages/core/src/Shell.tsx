@@ -54,6 +54,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
   const [aggregateText, setAggregateText] = useState<string>("");
   const [replayOnboarding, setReplayOnboarding] = useState<boolean>(false);
+  const [onboardingDismissed, setOnboardingDismissed] = useState<boolean>(false);
   const settingsReady = useStore(settings, (s) => s.ready);
   const onboardingDone = useStore(settings, (s) => s.settings.onboardingDone);
   const lastAggSent = useRef<number | null>(null);
@@ -370,6 +371,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
               settings={settings}
               onReplay={() => {
                 setReplayOnboarding(true);
+                setOnboardingDismissed(false);
               }}
             />
           )}
@@ -392,12 +394,13 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
           }}
         />
       )}
-      {((settingsReady && !onboardingDone) || replayOnboarding) && (
+      {((settingsReady && !onboardingDone && !onboardingDismissed) || replayOnboarding) && (
         <Onboarding
           engine={engine}
           settings={settings}
           onDone={() => {
             setReplayOnboarding(false);
+            setOnboardingDismissed(true);
           }}
         />
       )}
