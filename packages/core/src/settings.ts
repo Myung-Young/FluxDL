@@ -41,7 +41,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   playlistSubfolder: true,
   language: "auto",
   historyLimit: 500,
-  closeBehavior: "tray",
+  // X quits by default: hiding to tray only when the user opts in.
+  // (An earlier default of "tray" made X ignore the minimize-to-tray toggle
+  // and trap users who expected a real quit.)
+  closeBehavior: "quit",
   minimizeToTray: false,
 };
 

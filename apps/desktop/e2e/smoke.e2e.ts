@@ -37,7 +37,7 @@ async function installMock(page: Page): Promise<void> {
       thumbnailAccent: true,
       playlistSubfolder: true,
       historyLimit: 500,
-      closeBehavior: "tray",
+      closeBehavior: "quit",
       minimizeToTray: false,
       onboardingDone: true,
       defaultPreset: { kind: "video", videoPreset: "1080", audioPreset: "MP3", rawFormat: null },
@@ -228,7 +228,7 @@ test("launch -> analyze mocked response -> queue item", async () => {
 
   await expect(page.locator('[data-testid="grabber-shell"]')).toBeVisible({ timeout: 30000 });
   // Home, Downloads, Library, Stats, Settings, Logs.
-  await expect(page.locator(".grabber-nav-btn")).toHaveCount(6);
+  await expect(page.locator(".grabber-nav-btn")).toHaveCount(7);
 
   await page.locator("#home-url").fill("https://example.com/mock-video");
   await page.locator(".url-row .btn").filter({ hasText: "Analyze" }).click();

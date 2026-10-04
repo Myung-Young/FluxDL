@@ -360,6 +360,7 @@ const EN = {
     goStats: "Go to Stats",
     goSettings: "Go to Settings",
     goLogs: "Go to Logs",
+    goChangelog: "Go to Changelog",
     themeObsidian: "Switch to Obsidian theme",
     themeMidnight: "Switch to Midnight theme",
     themePaper: "Use the Paper (light) theme",
@@ -384,9 +385,12 @@ const EN = {
     palette: "Open command palette",
     settings: "Open Settings",
     miniMode: "Toggle mini mode",
-    navigate: "Jump between views (Ctrl+1…6)",
+    navigate: "Jump between views (Ctrl+1…7)",
     help: "Open this shortcut list",
     dismiss: "Close dialogs",
+  },
+  changelog: {
+    title: "Changelog",
   },
   onboarding: {
     title: "Welcome to FluxDL",
@@ -766,6 +770,7 @@ const MS: Parity<Strings> = {
     goStats: "Pergi ke Statistik",
     goSettings: "Pergi ke Tetapan",
     goLogs: "Pergi ke Log",
+    goChangelog: "Pergi ke Log Perubahan",
     themeObsidian: "Tukar ke tema Obsidian",
     themeMidnight: "Tukar ke tema Midnight",
     themePaper: "Tukar ke tema Paper (cerah)",
@@ -790,9 +795,12 @@ const MS: Parity<Strings> = {
     palette: "Buka palet perintah",
     settings: "Buka Tetapan",
     miniMode: "Tukar mod mini",
-    navigate: "Lompat antara paparan (Ctrl+1…6)",
+    navigate: "Lompat antara paparan (Ctrl+1…7)",
     help: "Buka senarai pintasan ini",
     dismiss: "Tutup dialog",
+  },
+  changelog: {
+    title: "Log Perubahan",
   },
   onboarding: {
     title: "Selamat datang ke FluxDL",

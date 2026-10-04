@@ -110,6 +110,10 @@ export {
 export type { DownloadStats, PresetMixEntry, TopUploader, WeekBucket } from "./stats.js";
 export { Library } from "./Library.js";
 export type { LibraryProps } from "./Library.js";
+export { ChangelogScreen } from "./ChangelogScreen.js";
+export type { ChangelogScreenProps } from "./ChangelogScreen.js";
+export { CHANGELOG_ENTRIES } from "./changelog.js";
+export type { ChangelogEntry } from "./changelog.js";
 export { PreviewModal } from "./PreviewModal.js";
 export type { PreviewModalProps } from "./PreviewModal.js";
 export { SettingsScreen } from "./SettingsScreen.js";

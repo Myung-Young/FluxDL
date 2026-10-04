@@ -178,11 +178,12 @@ async function createWindow(): Promise<void> {
   // "quit" terminates. Minimize-to-tray is a separate opt-in setting.
   win.on("close", (event) => {
     if (quitting) return;
-    let behavior = "tray";
+    // Default quit: only an explicit "tray" choice hides the window.
+    let behavior = "quit";
     try {
       behavior = loadSettingsFromDisk(app.getPath("userData")).closeBehavior;
     } catch {
-      behavior = "tray";
+      behavior = "quit";
     }
     if (behavior === "quit") {
       quitting = true;

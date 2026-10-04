@@ -35,15 +35,15 @@ describe("shortcuts", () => {
     expect(isEditableTarget(undefined)).toBe(false);
   });
 
-  it("matches Ctrl+1..6 view jumps, rejecting shift and out-of-range digits", () => {
+  it("matches Ctrl+1..7 view jumps, rejecting shift and out-of-range digits", () => {
     expect(
       navIndexFor(comboFromEvent({ key: "1", ctrlKey: true, metaKey: false, shiftKey: false })),
     ).toBe(0);
     expect(
-      navIndexFor(comboFromEvent({ key: "6", ctrlKey: false, metaKey: true, shiftKey: false })),
-    ).toBe(5);
+      navIndexFor(comboFromEvent({ key: "7", ctrlKey: false, metaKey: true, shiftKey: false })),
+    ).toBe(6);
     expect(
-      navIndexFor(comboFromEvent({ key: "7", ctrlKey: true, metaKey: false, shiftKey: false })),
+      navIndexFor(comboFromEvent({ key: "8", ctrlKey: true, metaKey: false, shiftKey: false })),
     ).toBeNull();
     expect(
       navIndexFor(comboFromEvent({ key: "2", ctrlKey: true, metaKey: false, shiftKey: true })),

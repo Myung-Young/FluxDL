@@ -73,3 +73,7 @@ desktop.ini
 # Temporary & Cache
 tmp/
 temp/
+
+# Internal contributor notes (kept locally, not for the public repo)
+CLAUDE.md
+DECISIONS.md

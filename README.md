@@ -115,9 +115,8 @@ zero Electron/Node imports in core (eslint-enforced), every URL validated
 before it reaches the engine, `yt-dlp` flags verified against the real
 binary, and `typecheck + lint + test + build` green after every milestone.
 
-Further reading: `AGENTS.md` (working rules), `CLAUDE.md` (conventions),
-`DECISIONS.md` (why things are the way they are), `CHANGELOG.md` (release
-notes), [`docs/SIGNING.md`](docs/SIGNING.md) (code signing + SmartScreen).
+Further reading: `CHANGELOG.md` (release notes),
+[`docs/SIGNING.md`](docs/SIGNING.md) (code signing + SmartScreen).
 
 ## Contributing
 

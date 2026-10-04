@@ -3,6 +3,21 @@
 All notable changes to FluxDL are documented here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.5.1] — 2026-10-04
+
+### Fixed
+
+- The X button now quits for real by default instead of hiding to the
+  system tray when the tray toggle is off. Hiding stays available as an
+  explicit choice in Settings.
+- Onboarding theme picks now preview live across the whole app instead of
+  only applying after the wizard finishes.
+
+### Added
+
+- In-app **Changelog** tab (Ctrl+7): the release history from v0.1.0 to the
+  current version, in English and Bahasa Melayu.
+
 ## [1.5.0] — 2026-10-04
 
 ### Fixed

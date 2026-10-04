@@ -89,7 +89,7 @@ export function Logs({ engine, queue, settings, toast }: LogsProps): React.JSX.E
   // the same toast the auto-check would (same message + Get update action).
   const demoReminder = async (): Promise<void> => {
     const v = await engine.getEngineVersion().catch(() => null);
-    const cur = v?.app ?? "1.5.0";
+    const cur = v?.app ?? "1.5.1";
     const fake: UpdateStatus = {
       appCurrent: cur,
       appLatest: nextPatchVersion(cur),

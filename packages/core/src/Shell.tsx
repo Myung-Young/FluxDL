@@ -19,6 +19,7 @@ import { Library } from "./Library.js";
 import { Stats } from "./StatsScreen.js";
 import { SettingsScreen } from "./SettingsScreen.js";
 import { Logs } from "./Logs.js";
+import { ChangelogScreen } from "./ChangelogScreen.js";
 import { Toasts } from "./Toasts.js";
 import { Onboarding } from "./Onboarding.js";
 import { MiniView } from "./MiniView.js";
@@ -37,7 +38,7 @@ import type { ToastStoreState } from "./toast.js";
 import "./tokens.css";
 import "./fonts.css";
 
-export type ShellView = "home" | "downloads" | "library" | "stats" | "settings" | "logs";
+export type ShellView = "home" | "downloads" | "library" | "stats" | "settings" | "logs" | "changelog";
 
 /**
  * Live bandwidth sparkline: hand-rolled SVG polyline over the last 30
@@ -109,6 +110,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
       { id: "stats", label: S.stats.title },
       { id: "settings", label: S.settings.title },
       { id: "logs", label: S.logs.title },
+      { id: "changelog", label: S.changelog.title },
     ],
     [S],
   );
@@ -568,6 +570,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
           {!mini && view === "logs" && (
             <Logs engine={engine} queue={queue} settings={settings} toast={toast} />
           )}
+          {!mini && view === "changelog" && <ChangelogScreen settings={settings} />}
         </main>
       </div>
       <Toasts toast={toast} strings={S} />

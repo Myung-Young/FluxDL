@@ -13,7 +13,14 @@ import { isValidUrl } from "./url.js";
  * live here (pure, tested); rendering lives in CommandPalette.
  */
 
-export type CommandView = "home" | "downloads" | "library" | "stats" | "settings" | "logs";
+export type CommandView =
+  | "home"
+  | "downloads"
+  | "library"
+  | "stats"
+  | "settings"
+  | "logs"
+  | "changelog";
 
 export interface CommandContext {
   readonly engine: DownloadEngine;
@@ -117,6 +124,15 @@ export const BUILTIN_COMMANDS: readonly CommandDef[] = [
     available: () => true,
     run: (ctx) => {
       ctx.navigate("logs");
+    },
+  },
+  {
+    id: "go-changelog",
+    labelKey: "goChangelog",
+    keywords: ["go", "changelog", "release", "version", "perubahan", "versi"],
+    available: () => true,
+    run: (ctx) => {
+      ctx.navigate("changelog");
     },
   },
   {

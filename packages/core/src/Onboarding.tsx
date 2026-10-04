@@ -167,6 +167,13 @@ export function Onboarding({ engine, settings, onDone }: OnboardingProps): React
                   }}
                   onClick={() => {
                     setDraft({ ...draft, theme: t });
+                    // Live preview: apply immediately so the user sees the
+                    // difference before Done. The draft commit keeps it;
+                    // Skip leaves the last-picked theme (a deliberate pick).
+                    void settings
+                      .getState()
+                      .save({ theme: t })
+                      .catch(() => undefined);
                   }}
                 >
                   {S.settings.themes[t]}
