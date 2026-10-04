@@ -47,8 +47,15 @@ yt-dlp prints non-ASCII paths as mojibake (recovery scan covers it).
 
 ## 5. Publish
 
-- Push commits + tags, then create GitHub Releases **oldest-first** so
-  `releases/latest` resolves to the newest (the in-app updater reads it).
-- Attach binaries **only to the newest release**; older ones are notes-only.
-- After publishing, launch the previous portable once and confirm the
-  update reminder appears.
+Automated one-command publish:
+```sh
+pnpm release
+```
+This script automatically:
+- Reads version from `package.json`
+- Extracts the release section from `CHANGELOG.md`
+- Tags `vX.Y.Z` in git & pushes to GitHub
+- Uploads the installer (`FluxDL-Setup-*.exe`) and portable (`FluxDL-Portable-*.exe`) to the GitHub Release.
+
+After publishing, launch the previous portable once and confirm the update reminder appears.
+
