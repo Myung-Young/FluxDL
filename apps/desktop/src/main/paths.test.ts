@@ -85,6 +85,7 @@ describe("isAllowedPath (renderer trust boundary)", () => {
       defaultOutputDir: join(d, "dl"),
       broadcast: () => undefined,
       broadcastDeepLink: () => undefined,
+      broadcastBatchLink: () => undefined,
       onAggregate: () => undefined,
     });
     await expect(engine.trashFile(join(d, "..", "evil.mp4"))).rejects.toThrow(/outside/);

@@ -41,6 +41,7 @@ function makeEngine(plain = false) {
     defaultOutputDir: outputDir,
     broadcast: () => undefined,
     broadcastDeepLink: () => undefined,
+    broadcastBatchLink: () => undefined,
     onAggregate: () => undefined,
   });
   return { engine, events, outputDir, userData, base };
@@ -336,6 +337,7 @@ describe.skipIf(!HAS_YTDLP)("userData must exist before spawning", () => {
       defaultOutputDir: outputDir,
       broadcast: () => undefined,
       broadcastDeepLink: () => undefined,
+      broadcastBatchLink: () => undefined,
       onAggregate: () => undefined,
     });
     const unsub = engine.onProgress((e) => {

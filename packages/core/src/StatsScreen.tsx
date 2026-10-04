@@ -11,6 +11,7 @@ import {
   formatTotalDuration,
   type DownloadStats,
 } from "./stats.js";
+import type { StorageInsights } from "./engine.js";
 
 export interface StatsProps {
   readonly engine: DownloadEngine;
@@ -29,8 +30,12 @@ function pct(value: number, max: number): number {
 
 export function Stats({ engine, settings }: StatsProps): React.JSX.Element {
   const S = useStrings(settings);
+  const settingsState = settings.getState().settings;
+  const locale = settingsState.language === "ms" ? "ms-MY" : "en";
   const [history, setHistory] = useState<readonly DownloadJob[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [storage, setStorage] = useState<StorageInsights | null>(null);
+  const [cleaning, setCleaning] = useState<boolean>(false);
 
   const refresh = useCallback(async (): Promise<void> => {
     try {
@@ -41,7 +46,27 @@ export function Stats({ engine, settings }: StatsProps): React.JSX.Element {
     } finally {
       setLoading(false);
     }
+    void engine
+      .getStorageInsights()
+      .then((s) => {
+        setStorage(s);
+      })
+      .catch(() => undefined);
   }, [engine, settings]);
+
+  const cleanOrphans = async (): Promise<void> => {
+    if (storage === null || storage.orphans.length === 0) return;
+    setCleaning(true);
+    try {
+      for (const p of storage.orphans) {
+        await engine.trashFile(p).catch(() => undefined);
+      }
+      const next = await engine.getStorageInsights().catch(() => null);
+      if (next !== null) setStorage(next);
+    } finally {
+      setCleaning(false);
+    }
+  };
 
   useEffect(() => {
     void refresh();
@@ -145,6 +170,80 @@ export function Stats({ engine, settings }: StatsProps): React.JSX.Element {
             empty={S.stats.noData}
             testId="stats-presets"
           />
+          <TopList
+            title={S.stats.topSites}
+            rows={stats.sites.map((u) => ({
+              key: u.name === "?" ? S.stats.unknown : u.name,
+              count: u.count,
+            }))}
+            max={uploaderMax}
+            empty={S.stats.noData}
+            testId="stats-sites"
+          />
+          <TopList
+            title={S.stats.presetSuccess}
+            rows={stats.presetSuccess.map((p) => ({
+              key: `${p.label} · ${p.rate === null ? S.stats.unknown : `${String(Math.round(p.rate * 100))}%`}`,
+              count: p.done,
+            }))}
+            max={Math.max(1, ...stats.presetSuccess.map((p) => p.done))}
+            empty={S.stats.noData}
+            testId="stats-success"
+          />
+          {stats.presetSuccess.some((p) => p.total >= 3 && (p.rate ?? 1) <= 0.5) && (
+            <p className="note" role="status">
+              {S.stats.presetAdvice}
+            </p>
+          )}
+          {storage !== null && (
+            <div className="grabber-card" data-testid="stats-storage">
+              <h2 className="dl-title">{S.stats.storage}</h2>
+              <ul className="stat-list">
+                <li className="stat-row-line">
+                  <span className="stat-name">
+                    {S.home.kindAudio} · {formatSize(storage.audioBytes, locale)}
+                  </span>
+                  <span className="stat-bar" aria-hidden="true">
+                    <span
+                      className="stat-bar-fill"
+                      style={{
+                        width: `${String(pct(storage.audioFiles, Math.max(1, storage.audioFiles + storage.videoFiles + storage.otherFiles)))}%`,
+                      }}
+                    />
+                  </span>
+                  <span className="stat-count">{storage.audioFiles}</span>
+                </li>
+                <li className="stat-row-line">
+                  <span className="stat-name">
+                    {S.home.kindVideo} · {formatSize(storage.videoBytes, locale)}
+                  </span>
+                  <span className="stat-bar" aria-hidden="true">
+                    <span
+                      className="stat-bar-fill"
+                      style={{
+                        width: `${String(pct(storage.videoFiles, Math.max(1, storage.audioFiles + storage.videoFiles + storage.otherFiles)))}%`,
+                      }}
+                    />
+                  </span>
+                  <span className="stat-count">{storage.videoFiles}</span>
+                </li>
+              </ul>
+              {storage.orphans.length > 0 && (
+                <div className="chip-row">
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    disabled={cleaning}
+                    onClick={() => {
+                      void cleanOrphans();
+                    }}
+                  >
+                    {S.stats.cleanOrphans} ({formatSize(storage.orphanBytes, locale)})
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           <p className="note">{S.stats.derivedFromHistory}</p>
         </>

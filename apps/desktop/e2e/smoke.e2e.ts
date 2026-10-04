@@ -36,9 +36,20 @@ async function installMock(page: Page): Promise<void> {
       analyzeTimeoutSec: 60,
       thumbnailAccent: true,
       playlistSubfolder: true,
+      presetBySite: {},
+      lastView: "home",
+      lastQueueFilter: "all",
+      batchDraft: "",
+      savedSearches: [],
+      recentSearches: [],
       historyLimit: 500,
       closeBehavior: "quit",
       minimizeToTray: false,
+      notifyFinished: true,
+      followSystemTheme: false,
+      launchAtLogin: false,
+      autoSort: false,
+      experimental: false,
       onboardingDone: true,
       defaultPreset: { kind: "video", videoPreset: "1080", audioPreset: "MP3", rawFormat: null },
       theme: "obsidian",
@@ -164,15 +175,32 @@ async function installMock(page: Page): Promise<void> {
         }
         return Promise.resolve({ ...settings });
       },
+      loadWatchlist: (): Promise<unknown[]> => Promise.resolve([]),
+      saveWatchlist: (): Promise<void> => Promise.resolve(),
       loadQueue: (): Promise<unknown[]> => Promise.resolve([]),
       saveQueue: (): Promise<void> => Promise.resolve(),
       appendHistory: (): Promise<void> => Promise.resolve(),
-      loadHistory: (): Promise<unknown[]> => Promise.resolve(historyFixture),
       removeHistory: (): Promise<void> => Promise.resolve(),
+      loadHistory: (): Promise<unknown[]> => Promise.resolve(historyFixture),
       clearHistory: (): Promise<void> => Promise.resolve(),
       getRawLog: (): Promise<string> => Promise.resolve("mock log"),
       shutdown: (): Promise<void> => Promise.resolve(),
       onDeepLink: (): (() => void) => () => undefined,
+      onBatchLink: (): (() => void) => () => undefined,
+      readClipboard: (): Promise<null> => Promise.resolve(null),
+      getDiskSpace: (): Promise<null> => Promise.resolve(null),
+      getJobArgs: (): Promise<null> => Promise.resolve(null),
+      getStorageInsights: (): Promise<unknown> =>
+        Promise.resolve({
+          audioFiles: 0,
+          audioBytes: 0,
+          videoFiles: 0,
+          videoBytes: 0,
+          otherFiles: 0,
+          otherBytes: 0,
+          orphans: [],
+          orphanBytes: 0,
+        }),
       checkForUpdates: (): Promise<unknown> =>
         Promise.resolve({
           appCurrent: "0.0.0-e2e",
@@ -273,6 +301,7 @@ test("batch: paste 3 URLs -> analyze all -> queue 3", async () => {
   const before = await page.locator(".dl-card").count();
 
   await page.locator(".grabber-nav-btn").filter({ hasText: "Home" }).click();
+  await page.locator('[data-testid="home-mode-batch"]').click();
   await page
     .locator("#batch-input")
     .fill("https://example.com/b1\nhttps://example.com/b2\n# comment\n\nhttps://example.com/b3");

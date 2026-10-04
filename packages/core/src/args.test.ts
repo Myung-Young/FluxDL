@@ -5,6 +5,7 @@ import {
   buildInfoArgs,
   buildUpdateArgs,
   buildVersionArgs,
+  redactArgs,
   type DownloadArgsInput,
 } from "./args.js";
 
@@ -353,6 +354,16 @@ describe("arg builder", () => {
   });
 });
 
+
+describe("redactArgs (C6)", () => {
+  it("redacts cookie and proxy values, keeps the shape", () => {
+    expect(
+      redactArgs(["--cookies", "C:\\me\\c.txt", "--proxy", "http://u:p@h", "--format", "best"]),
+    ).toEqual(["--cookies", "(redacted)", "--proxy", "(redacted)", "--format", "best"]);
+    expect(redactArgs(["--format", "best"])).toEqual(["--format", "best"]);
+    expect(redactArgs(["--cookies"])).toEqual(["--cookies"]);
+  });
+});
 
 describe("forceOverwrite (M4.8)", () => {
   const withFlag = (patch: Partial<DownloadArgsInput>): string[] => buildDownloadArgs(base(patch));

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { hasMojibake, isMediaFile, pickFallbackFile } from "./destination.js";
+import {
+  autoSortSubdir,
+  episodeSeasonFolder,
+  hasMojibake,
+  isExecutablePath,
+  isMediaFile,
+  pickFallbackFile,
+} from "./destination.js";
 
 describe("destination recovery", () => {
   it("detects mojibake replacement chars", () => {
@@ -12,6 +19,17 @@ describe("destination recovery", () => {
     expect(isMediaFile("a.MKV")).toBe(true);
     expect(isMediaFile("a.txt")).toBe(false);
     expect(isMediaFile("a")).toBe(false);
+    expect(isExecutablePath("C:\\Vids\\setup.EXE")).toBe(true);
+    expect(isExecutablePath("run.bat")).toBe(true);
+    expect(isExecutablePath("movie.mp4")).toBe(false);
+    expect(isExecutablePath("notes.txt")).toBe(false);
+    expect(episodeSeasonFolder("Show S01E02")).toBe("Season 01");
+    expect(episodeSeasonFolder("Show 2x14")).toBe("Season 02");
+    expect(episodeSeasonFolder("Show Season 3 Finale")).toBe("Season 03");
+    expect(episodeSeasonFolder("Just a vlog")).toBeNull();
+    expect(autoSortSubdir("audio", "Song")).toBe("Music");
+    expect(autoSortSubdir("video", "Vlog")).toBe("Videos");
+    expect(autoSortSubdir("video", "Show S01E02")).toBe("Videos/Season 01");
   });
 
   it("prefers bracketed video id matches", () => {

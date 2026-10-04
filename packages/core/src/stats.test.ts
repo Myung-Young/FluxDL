@@ -11,6 +11,7 @@ interface Over {
   readonly totalBytes?: number | null;
   readonly downloadedBytes?: number | null;
   readonly uploader?: string | null;
+  readonly extractor?: string | null;
   readonly durationSec?: number | null;
   readonly kind?: "video" | "audio";
   readonly videoPreset?: DownloadJob["preset"]["videoPreset"];
@@ -43,6 +44,7 @@ function rec(id: string, over: Over = {}): DownloadJob {
     destination: `C:\\Vids\\${id}.mp4`,
     ...(over.finishedAt !== undefined ? { finishedAt: over.finishedAt } : {}),
     ...(over.uploader !== undefined ? { uploader: over.uploader } : {}),
+    ...(over.extractor !== undefined ? { extractor: over.extractor } : {}),
     ...(over.durationSec !== undefined ? { durationSec: over.durationSec } : {}),
   };
 }
@@ -201,6 +203,22 @@ describe("computeStats", () => {
   it("counts presets across all outcomes, not just completed ones", () => {
     const stats = computeStats([rec("a"), rec("b", { status: "error" })], NOW);
     expect(stats.presets).toEqual([{ label: "Video · 1080", count: 2 }]);
+  });
+
+  it("reports top sites and per-preset success rates (F7)", () => {
+    const stats = computeStats(
+      [
+        rec("a", { extractor: "YouTube" }),
+        rec("b", { extractor: "youtube" }),
+        rec("c", { status: "error", extractor: "vimeo" }),
+        rec("d", { status: "error" }),
+      ],
+      NOW,
+    );
+    expect(stats.sites[0]).toEqual({ name: "youtube", count: 2 });
+    expect(stats.sites).toContainEqual({ name: "?", count: 1 });
+    const video = stats.presetSuccess.find((p) => p.label === "Video · 1080");
+    expect(video).toMatchObject({ done: 2, total: 4, rate: 0.5 });
   });
 });
 

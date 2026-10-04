@@ -5,10 +5,11 @@ import type { DownloadEngine } from "./engine.js";
 import type { AppSettings, Density } from "./types.js";
 import { THEME_NAMES } from "./themes.js";
 import { deriveAccentScale } from "./color.js";
-import type { SettingsStoreState } from "./stores.js";
+import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 import { formatStr, useStrings } from "./locale.js";
 import { filterSettingIds, type FilterableField } from "./settingsFilter.js";
 import { previewFilename, validateFilenameTemplate, validateSpeedLimit } from "./validate.js";
+import { exportBackup, parseBackup } from "./backup.js";
 
 const ACCENT_SWATCHES: readonly string[] = [
   "#818cf8",
@@ -24,6 +25,7 @@ const ACCENT_SWATCHES: readonly string[] = [
 export interface SettingsScreenProps {
   readonly engine: DownloadEngine;
   readonly settings: StoreApi<SettingsStoreState>;
+  readonly queue: StoreApi<QueueStoreState>;
   readonly onReplay: () => void;
 }
 
@@ -35,7 +37,7 @@ const FILENAME_PRESETS: readonly string[] = [
 
 const MERGE_CONTAINERS: readonly string[] = ["mp4", "mkv", "webm"];
 
-export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenProps): React.JSX.Element {
+export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsScreenProps): React.JSX.Element {
   const S = useStrings(settings);
   const saved = useStore(settings, (s) => s.settings);
   const ready = useStore(settings, (s) => s.ready);
@@ -45,6 +47,27 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
   const [query, setQuery] = useState<string>("");
   const [templateDraft, setTemplateDraft] = useState<string | null>(null);
   const [speedDraft, setSpeedDraft] = useState<string | null>(null);
+  const templateRef = useRef<HTMLInputElement | null>(null);
+
+  // Filename token builder (D6): click a placeholder to splice it at the
+  // cursor instead of typing yt-dlp syntax by hand. Commits on blur as usual.
+  const insertToken = (token: string): void => {
+    const el = templateRef.current;
+    const base = templateDraft ?? saved.filenameTemplate;
+    if (el === null || el.selectionStart === null) {
+      setTemplateDraft(`${base}${token}`);
+      return;
+    }
+    const at = el.selectionStart;
+    const end = el.selectionEnd ?? at;
+    const next = `${base.slice(0, at)}${token}${base.slice(end)}`;
+    el.value = next;
+    setTemplateDraft(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(at + token.length, at + token.length);
+    });
+  };
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flashSaved = (): void => {
@@ -110,10 +133,16 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
           S.settings.thumbnailAccent,
           S.settings.autoCheckUpdate,
           S.settings.minimizeToTray,
+          S.settings.notifyFinished,
+          S.settings.followSystemTheme,
+          S.settings.launchAtLogin,
+          S.settings.autoSort,
+          S.settings.experimental,
         ].join(" "),
         keywords: ["toggle", "embed", "subtitle", "sponsorblock", "archive", "update"],
       },
       { id: "set-close", label: S.settings.closeBehavior, keywords: ["close", "quit", "tray", "window", "minimize"] },
+      { id: "set-profiles", label: S.settings.profiles, keywords: ["profile", "preset", "music", "video", "bundle"] },
       { id: "set-sublangs", label: S.settings.subtitleLangs, keywords: ["subtitle", "language"] },
       { id: "set-merge", label: S.settings.mergeContainer, keywords: ["merge", "container"] },
       { id: "set-codec", label: S.settings.codecPreference, keywords: ["codec", "h264", "vp9", "av1"] },
@@ -123,6 +152,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
       { id: "set-language", label: S.settings.language, keywords: ["language", "locale"] },
       { id: "set-post", label: S.settings.postAction, keywords: ["after", "download", "open", "reveal"] },
       { id: "archive", label: S.settings.clearArchive, keywords: ["archive", "clear"] },
+      { id: "backup", label: S.settings.backup, keywords: ["backup", "restore", "export", "import"] },
       { id: "replay", label: S.onboarding.replay, keywords: ["onboarding", "replay", "wizard"] },
     ],
     [S],
@@ -132,6 +162,8 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
     [fields, query],
   );
   const hide = (id: string): boolean => query.trim().length > 0 && !visible.has(id);
+  const backupFile = useRef<HTMLInputElement | null>(null);
+  const [backupNote, setBackupNote] = useState<string | null>(null);
 
   if (!ready) {
     return (
@@ -166,6 +198,63 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
   const browse = async (): Promise<void> => {
     const dir = await engine.pickFolder().catch(() => null);
     if (dir !== null) save({ downloadDir: dir });
+  };
+
+  // Backup & restore (D9): one portable JSON file, everything sanitized.
+  const exportAll = async (): Promise<void> => {
+    try {
+      const [s, q, h] = await Promise.all([
+        engine.loadSettings().catch(() => saved),
+        engine.loadQueue().catch(() => []),
+        engine.loadHistory().catch(() => []),
+      ]);
+      const blob = new Blob([exportBackup(s, q, h)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "fluxdl-backup.json";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 5000);
+    } catch {
+      setBackupNote(S.settings.backupFailed);
+    }
+  };
+
+  const importAll = (file: File | null): void => {
+    if (file === null) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = reader.result;
+      if (typeof text !== "string") return;
+      void (async (): Promise<void> => {
+        try {
+          const parsed = parseBackup(text);
+          const merged = await engine.saveSettings(parsed.settings);
+          settings.getState().save(merged).catch(() => undefined);
+          await engine.saveQueue(parsed.queue);
+          await queue.getState().refresh().catch(() => undefined);
+          await engine.clearHistory();
+          for (const h of parsed.history) {
+            await engine.appendHistory(h).catch(() => undefined);
+          }
+          setBackupNote(
+            formatStr(S.settings.backupDone, {
+              q: parsed.queue.length,
+              h: parsed.history.length,
+              d: parsed.dropped,
+            }),
+          );
+          flashSaved();
+        } catch {
+          setBackupNote(S.settings.backupFailed);
+        }
+      })();
+    };
+    reader.readAsText(file);
   };
 
   return (
@@ -252,6 +341,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
         <input
           id="set-template"
           key={`template:${saved.filenameTemplate}`}
+          ref={templateRef}
           className="input"
           defaultValue={saved.filenameTemplate}
           spellCheck={false}
@@ -264,6 +354,20 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
             commitText(e, (v) => ({ filenameTemplate: v }));
           }}
         />
+        <div className="chip-row" aria-label={S.settings.filenameTemplate} hidden={hide("set-template")}>
+          {["%(title)s", "%(id)s", "%(uploader)s", "%(upload_date)s", "%(ext)s"].map((t) => (
+            <button
+              key={t}
+              type="button"
+              className="chip"
+              onClick={() => {
+                insertToken(t);
+              }}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
         {(() => {
           const shown = templateDraft ?? saved.filenameTemplate;
           return validateFilenameTemplate(shown) ? (
@@ -429,19 +533,29 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
               ["thumbnailAccent", S.settings.thumbnailAccent],
               ["autoCheckUpdate", S.settings.autoCheckUpdate],
               ["minimizeToTray", S.settings.minimizeToTray],
+              ["notifyFinished", S.settings.notifyFinished],
+              ["followSystemTheme", S.settings.followSystemTheme],
+              ["launchAtLogin", S.settings.launchAtLogin],
+              ["autoSort", S.settings.autoSort],
+              ["experimental", S.settings.experimental],
             ] as const
-          ).map(([key, label]) => (
-            <label key={key} className="check-row">
-              <input
-                type="checkbox"
-                checked={saved[key]}
-                onChange={(e) => {
-                  save({ [key]: e.target.checked });
-                }}
-              />
-              {label}
-            </label>
-          ))}
+          ).map(([key, label]) => {
+            // Dependent fields (D7): sub-options sleep while subtitles are off.
+            const off = (key === "embedSubs" || key === "includeAutoSubs") && !saved.subtitles;
+            return (
+              <label key={key} className="check-row">
+                <input
+                  type="checkbox"
+                  checked={saved[key]}
+                  disabled={off}
+                  onChange={(e) => {
+                    save({ [key]: e.target.checked });
+                  }}
+                />
+                {label}
+              </label>
+            );
+          })}
         </div>
 
         <label className="field-label" htmlFor="set-sublangs" hidden={hide("set-sublangs")}>
@@ -453,6 +567,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
           className="input"
           defaultValue={saved.subtitleLangs}
           spellCheck={false}
+          disabled={!saved.subtitles}
           hidden={hide("set-sublangs")}
           onBlur={(e) => {
             commitText(e, (v) => ({ subtitleLangs: v }));
@@ -655,6 +770,54 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
           <option value="quit">{S.settings.closeQuit}</option>
         </select>
 
+        <span className="field-label" id="set-profiles" hidden={hide("set-profiles")}>
+          {S.settings.profiles}
+        </span>
+        <p className="muted" hidden={hide("set-profiles")}>
+          {S.settings.profilesHint}
+        </p>
+        <div className="chip-row" role="group" aria-labelledby="set-profiles" hidden={hide("set-profiles")}>
+          <button
+            type="button"
+            className="chip"
+            onClick={() => {
+              save({
+                defaultPreset: { kind: "audio", videoPreset: "Best", audioPreset: "MP3", rawFormat: null },
+                speedLimit: null,
+              });
+            }}
+          >
+            {S.settings.profileMusic}
+          </button>
+          <button
+            type="button"
+            className="chip"
+            onClick={() => {
+              save({
+                defaultPreset: { kind: "video", videoPreset: "Compatible", audioPreset: "MP3", rawFormat: null },
+                speedLimit: null,
+              });
+            }}
+          >
+            {S.settings.profileVideo}
+          </button>
+          <button
+            type="button"
+            className="chip"
+            onClick={() => {
+              save({
+                defaultPreset: { kind: "audio", videoPreset: "Best", audioPreset: "MP3", rawFormat: null },
+                embedMetadata: true,
+                embedThumbnail: true,
+                subtitles: true,
+                includeAutoSubs: true,
+              });
+            }}
+          >
+            {S.settings.profileArchive}
+          </button>
+        </div>
+
         <div hidden={hide("archive")}>
           <button
             type="button"
@@ -673,6 +836,47 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
             {S.settings.clearArchive}
           </button>
         </div>
+
+        <span className="field-label" hidden={hide("backup")}>
+          {S.settings.backup}
+        </span>
+        <div className="chip-row" hidden={hide("backup")}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              void exportAll();
+            }}
+          >
+            {S.settings.exportBackup}
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              backupFile.current?.click();
+            }}
+          >
+            {S.settings.importBackup}
+          </button>
+          <input
+            ref={backupFile}
+            type="file"
+            accept=".json,application/json"
+            hidden
+            aria-hidden="true"
+            tabIndex={-1}
+            onChange={(e) => {
+              importAll(e.target.files?.[0] ?? null);
+              e.target.value = "";
+            }}
+          />
+        </div>
+        {backupNote !== null && (
+          <p className="note" role="status" hidden={hide("backup")}>
+            {backupNote}
+          </p>
+        )}
 
         <div hidden={hide("replay")}>
           <button

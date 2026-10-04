@@ -232,11 +232,17 @@ body {
 }
 
 .grabber-mark {
-  width: 18px;
-  height: 18px;
-  border-radius: 6px;
-  background: var(--accent);
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
   flex: 0 0 auto;
+}
+
+.grabber-mark .app-icon {
+  width: 22px;
+  height: 22px;
 }
 
 .grabber-appname {
@@ -325,12 +331,30 @@ body {
 }
 
 .grabber-nav-glyph {
-  width: 16px;
-  height: 16px;
-  border-radius: 5px;
-  border: 1.5px solid currentcolor;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
   flex: 0 0 auto;
-  opacity: 0.8;
+  opacity: 0.9;
+}
+
+.grabber-nav-glyph .app-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.grabber-nav-btn[aria-current="page"] .grabber-nav-glyph {
+  color: var(--fg-0);
+  opacity: 1;
+}
+
+.grabber-nav-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .grabber-nav-badge {
@@ -400,6 +424,31 @@ body {
 
 .grabber-main::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* ---- narrow windows (E6): the sidebar collapses to icons below 720px.
+   No mobile target exists; this keeps small desktop windows usable. ---- */
+@media (max-width: 720px) {
+  :root {
+    --sidebar-w: 64px;
+  }
+
+  .grabber-nav {
+    padding: var(--space-3) var(--space-2);
+  }
+
+  .grabber-nav-label,
+  .grabber-nav-foot {
+    display: none;
+  }
+
+  .grabber-nav-badge {
+    margin-left: 0;
+  }
+
+  .grabber-main {
+    padding: var(--space-4);
+  }
 }
 
 /* ---- mini mode (M4.4): compact always-on-top window ----
@@ -674,9 +723,81 @@ select.input {
   align-items: center;
   gap: var(--space-2);
   margin-top: var(--space-3);
+  padding: 3px 0;
+  min-height: 28px;
   font-size: var(--text-sm);
   color: var(--fg-1);
   cursor: pointer;
+}
+
+/* ---- custom checkboxes + radios (app-wide redesign) ----
+   Native inputs keep full keyboard/screen-reader behavior; only the paint
+   is custom. 18px boxes, accent fill when on, focus ring on keyboard focus.
+   No per-screen markup changes were needed: every toggle already lives in
+   a label next to its input. */
+input[type="checkbox"],
+input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg-2);
+  border: 1.5px solid var(--border);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
+}
+
+input[type="checkbox"] {
+  border-radius: 6px;
+}
+
+input[type="radio"] {
+  border-radius: 50%;
+}
+
+input[type="checkbox"]:hover,
+input[type="radio"]:hover {
+  border-color: var(--fg-2);
+}
+
+input[type="checkbox"]:checked,
+input[type="radio"]:checked {
+  background: var(--accent);
+  border-color: transparent;
+}
+
+input[type="checkbox"]:checked::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border: solid var(--accent-fg);
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg) translateY(-0.5px);
+}
+
+input[type="radio"]:checked::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-fg);
+}
+
+input[type="checkbox"]:focus-visible,
+input[type="radio"]:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .check-col {
@@ -1040,6 +1161,18 @@ video.preview-media {
   white-space: nowrap;
 }
 
+.dl-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.dl-head .dl-title {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
 .dl-track {
   height: 8px;
   border-radius: 999px;
@@ -1397,6 +1530,29 @@ video.preview-media {
   .grabber-dot[data-active="false"] {
     color: GrayText;
     border-color: GrayText;
+  }
+
+  /* Custom controls re-expressed: borders + ticks carry meaning here, so
+     they opt out of the OS palette replacement with system colors. */
+  input[type="checkbox"],
+  input[type="radio"] {
+    border-color: ButtonText;
+    background: ButtonFace;
+    forced-color-adjust: none;
+  }
+
+  input[type="checkbox"]:checked,
+  input[type="radio"]:checked {
+    background: Highlight;
+    border-color: Highlight;
+  }
+
+  input[type="checkbox"]:checked::after {
+    border-color: HighlightText;
+  }
+
+  input[type="radio"]:checked::after {
+    background: HighlightText;
   }
 
   /* Progress: the OS paints a solid bar, so keep our geometry but let the

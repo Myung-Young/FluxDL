@@ -49,6 +49,18 @@ export const LIVE_STATUSES: readonly LiveStatus[] = [
 ];
 
 /** What the window X button does: hide to tray, or quit the app. */
+/**
+ * A watched channel/playlist (A6). The app diffs fresh entries against
+ * `lastVideoId`: the first check only sets the baseline, later checks
+ * surface genuinely new uploads.
+ */
+export interface WatchChannel {
+  readonly url: string;
+  readonly title: string;
+  readonly lastVideoId: string | null;
+  readonly lastCheckedAt: number | null;
+}
+
 export type CloseBehavior = "tray" | "quit";
 
 export const CLOSE_BEHAVIORS: readonly CloseBehavior[] = ["tray", "quit"];
@@ -163,6 +175,10 @@ export interface DownloadJob {
   readonly durationSec?: number | null;
   /** Refetch even if the output file exists (M4.8). */
   readonly forceOverwrite?: boolean;
+  /** Do not start before this ms epoch (scheduled download, A4). */
+  readonly startAfter?: number | null;
+  /** Pinned jobs sort to the top of the list (B7). */
+  readonly pinned?: boolean;
 }
 
 export interface DownloadJobInput extends Pick<
@@ -182,6 +198,8 @@ export interface DownloadJobInput extends Pick<
   | "uploader"
   | "durationSec"
   | "forceOverwrite"
+  | "startAfter"
+  | "pinned"
 > {
   readonly useArchive?: boolean;
   /** Sanitized playlist subfolder (UI-side, when the setting is on). */
@@ -233,10 +251,33 @@ export interface AppSettings {
   readonly accentOverride: string | null;
   /** Playlist jobs download into a subfolder (M2.7, default ON). */
   readonly playlistSubfolder: boolean;
+  /**
+   * Last-used preset per extractor site ("youtube" -> Compatible MP4 …),
+   * applied automatically on the next analyze. Silent smart default.
+   */
+  readonly presetBySite: Record<string, DownloadPreset>;
+  /** Pinned Downloads searches (max 10) + recent ones (max 5). */
+  readonly savedSearches: readonly string[];
+  readonly recentSearches: readonly string[];
+  /** Remembered UI (D2): last view + last Downloads filter. */
+  readonly lastView: string;
+  readonly lastQueueFilter: string;
+  /** Unsent Batch textarea draft (D8), restored on boot. */
+  readonly batchDraft: string;
   /** UI language (M2.8). */
   readonly language: Language;
   /** Keep the last N history entries (M2.9). */
   readonly historyLimit: number;
+  /** OS notifications when downloads finish/fail (in-app toasts stay). */
+  readonly notifyFinished: boolean;
+  /** Follow the OS light/dark mode (light side is always Paper). */
+  readonly followSystemTheme: boolean;
+  /** Start with Windows (minimized to the tray). */
+  readonly launchAtLogin: boolean;
+  /** Sort downloads into Music/Videos(/Season NN) subfolders (F1/F3). */
+  readonly autoSort: boolean;
+  /** Experimental features (may change or break; off by default). */
+  readonly experimental: boolean;
   /** What the X button does (tray = hide, quit = terminate). */
   readonly closeBehavior: CloseBehavior;
   /** Minimizing also hides the window to the tray. */

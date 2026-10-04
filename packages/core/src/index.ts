@@ -17,6 +17,14 @@ export type {
   VideoPreset,
 } from "./types.js";
 export { CLOSE_BEHAVIORS } from "./types.js";
+export type { WatchChannel } from "./types.js";
+export { addWatchChannel, diffWatch, normalizeWatchlist, touchWatch } from "./watchlist.js";
+export { fuzzyMatch, fuzzyRank } from "./fuzzy.js";
+export { exportBackup, parseBackup } from "./backup.js";
+export type { BackupPayload, ParsedBackup } from "./backup.js";
+export { describeIntent, parseIntent, runIntent } from "./intent.js";
+export type { Intent, IntentLabel } from "./intent.js";
+export type { WatchDiff } from "./watchlist.js";
 export type {
   DeepLinkCallback,
   DownloadEngine,
@@ -26,6 +34,7 @@ export type {
   GetInfoInit,
   ProgressCallback,
   RepairReport,
+  StorageInsights,
   ThumbnailColor,
   Unsubscribe,
   UpdateStatus,
@@ -116,6 +125,10 @@ export { CHANGELOG_ENTRIES } from "./changelog.js";
 export type { ChangelogEntry } from "./changelog.js";
 export { PreviewModal } from "./PreviewModal.js";
 export type { PreviewModalProps } from "./PreviewModal.js";
+export { AppIcon } from "./icons.js";
+export type { IconName } from "./icons.js";
+export { ErrorBoundary } from "./ErrorBoundary.js";
+export type { ErrorBoundaryProps } from "./ErrorBoundary.js";
 export { SettingsScreen } from "./SettingsScreen.js";
 export type { SettingsScreenProps } from "./SettingsScreen.js";
 export { Logs } from "./Logs.js";
@@ -184,7 +197,15 @@ export type { VirtualListProps } from "./VirtualList.js";
 export { deriveEntryStates, sanitizePlaylistTitle } from "./playlist.js";
 export type { EntryState } from "./playlist.js";
 export { chunkDestinations, deriveMissingIds } from "./health.js";
-export { hasMojibake, isMediaFile, pickFallbackFile } from "./destination.js";
+export {
+  autoSortSubdir,
+  episodeSeasonFolder,
+  hasMojibake,
+  isExecutablePath,
+  isMediaFile,
+  mediaGroup,
+  pickFallbackFile,
+} from "./destination.js";
 export type { DirEntry } from "./destination.js";
 export { normalizeUrl, isValidUrl, UrlValidationError } from "./url.js";
 export {
@@ -194,6 +215,7 @@ export {
   buildUpdateArgs,
   buildVersionArgs,
   codecSortOf,
+  redactArgs,
 } from "./args.js";
 export type { DownloadArgsInput } from "./args.js";
 export { parseProgressLine, PROGRESS_TEMPLATE, parseSpeedBps } from "./progress.js";

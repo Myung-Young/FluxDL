@@ -1,7 +1,13 @@
 import { ipcMain } from "electron";
 import { IPC_CHANNELS } from "@grabber/core/engine.js";
 import { normalizeUrl } from "@grabber/core/url.js";
-import type { AudioPreset, DownloadJobInput, LiveStatus, VideoPreset } from "@grabber/core/types.js";
+import type {
+  AudioPreset,
+  DownloadJobInput,
+  LiveStatus,
+  VideoPreset,
+  WatchChannel,
+} from "@grabber/core/types.js";
 import { AUDIO_PRESETS, LIVE_STATUSES, VIDEO_PRESETS } from "@grabber/core/types.js";
 import { isAudioMetadata, normalizeAudioMetadata } from "@grabber/core/metadata.js";
 import type { DesktopEngine } from "./desktopEngine.js";
@@ -73,6 +79,10 @@ function parseJobInput(raw: unknown): DownloadJobInput {
     ...(raw["waitForVideo"] === true ? { waitForVideo: true as const } : {}),
     ...(raw["splitChapters"] === true ? { splitChapters: true as const } : {}),
     ...(raw["forceOverwrite"] === true ? { forceOverwrite: true as const } : {}),
+    ...(typeof raw["startAfter"] === "number" && Number.isFinite(raw["startAfter"])
+      ? { startAfter: raw["startAfter"] }
+      : {}),
+    ...(raw["pinned"] === true ? { pinned: true as const } : {}),
     // Audio tag overrides (M4.3): rebuilt from primitives, never trusted.
     ...(isAudioMetadata(raw["audioMetadata"])
       ? { audioMetadata: normalizeAudioMetadata(raw["audioMetadata"]) }
@@ -190,7 +200,10 @@ export function registerEngineIpc(engine: DesktopEngine): void {
   });
   ipcMain.handle(IPC_CHANNELS.saveSettings, async (_event, patch: unknown) => {
     if (!isRecord(patch)) throw new Error("Invalid settings patch.");
-    return engine.saveSettings(patch);
+    const saved = await engine.saveSettings(patch);
+    // Auto-start flips an OS registration, not just a JSON value (E5).
+    if ("launchAtLogin" in patch) engine.syncLoginSettings();
+    return saved;
   });
   ipcMain.handle(IPC_CHANNELS.loadQueue, async () => {
     return engine.loadQueue();
@@ -213,6 +226,31 @@ export function registerEngineIpc(engine: DesktopEngine): void {
   });
   ipcMain.handle(IPC_CHANNELS.clearHistory, async () => {
     await engine.clearHistory();
+  });
+  ipcMain.handle(IPC_CHANNELS.loadWatchlist, async () => {
+    return engine.loadWatchlist();
+  });
+  ipcMain.handle(IPC_CHANNELS.getDiskSpace, async (_event, rawPath: unknown) => {
+    const p = asNonEmptyString(rawPath);
+    if (p === null) throw new Error("Missing path.");
+    return engine.getDiskSpace(p);
+  });
+  ipcMain.handle(IPC_CHANNELS.getJobArgs, async (_event, rawId: unknown) => {
+    const id = asNonEmptyString(rawId);
+    if (id === null) throw new Error("Missing id.");
+    return engine.getJobArgs(id);
+  });
+  ipcMain.handle(IPC_CHANNELS.getStorageInsights, async () => {
+    return engine.getStorageInsights();
+  });
+  ipcMain.handle(IPC_CHANNELS.readClipboard, async () => {
+    return engine.readClipboard();
+  });
+  ipcMain.handle(IPC_CHANNELS.saveWatchlist, async (_event, raw: unknown) => {
+    if (!Array.isArray(raw)) throw new Error("Invalid watchlist.");
+    await engine.saveWatchlist(
+      raw.filter((c): c is WatchChannel => typeof c === "object" && c !== null),
+    );
   });
   ipcMain.handle(IPC_CHANNELS.getRawLog, (_event, rawId: unknown) => {
     const id = asNonEmptyString(rawId);

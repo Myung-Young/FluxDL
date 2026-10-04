@@ -1,6 +1,7 @@
 import type { DownloadJob, DownloadJobInput, JobStatus } from "./types.js";
 import type { ErrorCategory } from "./errors.js";
 import { isAudioMetadata, normalizeAudioMetadata } from "./metadata.js";
+import { fuzzyRank } from "./fuzzy.js";
 
 /**
  * Queue state machine (pure, no I/O). The orchestrator (`queueController.ts`)
@@ -223,8 +224,8 @@ function isDue(job: DownloadJob, now: number): boolean {
 }
 
 /**
- * FIFO: earliest-created queued job whose backoff has elapsed,
- * or null when all slots are busy / nothing is due.
+ * FIFO: earliest-created queued job whose backoff has elapsed AND whose
+ * schedule has arrived (A4), or null when all slots are busy / nothing due.
  */
 export function selectNextToStart(
   jobs: readonly DownloadJob[],
@@ -235,6 +236,7 @@ export function selectNextToStart(
   let best: DownloadJob | null = null;
   for (const j of jobs) {
     if (j.status !== "queued" || !isDue(j, now)) continue;
+    if (j.startAfter !== undefined && j.startAfter !== null && j.startAfter > now) continue;
     if (
       best === null ||
       j.createdAt < best.createdAt ||
@@ -289,6 +291,8 @@ type StartOptions = Partial<
     | "uploader"
     | "durationSec"
     | "forceOverwrite"
+    | "startAfter"
+    | "pinned"
   >
 >;
 
@@ -323,6 +327,10 @@ function pickJobOptions(source: DownloadJobInput): StartOptions {
     ...(typeof source.durationSec === "number" && Number.isFinite(source.durationSec)
       ? { durationSec: source.durationSec }
       : {}),
+    ...(typeof source.startAfter === "number" && Number.isFinite(source.startAfter)
+      ? { startAfter: source.startAfter }
+      : {}),
+    ...(source.pinned === true ? { pinned: true as const } : {}),
   };
 }
 
@@ -394,11 +402,15 @@ export function jobsEqual(
 }
 
 export function searchHistory(history: readonly DownloadJob[], query: string): DownloadJob[] {
-  const q = query.trim().toLowerCase();
+  const q = query.trim();
   if (q.length === 0) return [...history];
-  return history.filter(
-    (h) => h.title.toLowerCase().includes(q) || h.url.toLowerCase().includes(q),
-  );
+  // Fuzzy + typo-tolerant (B1): plain substrings still match, so every old
+  // test expectation holds; "big buk buni" now finds Big Buck Bunny too.
+  return history
+    .map((h) => ({ h, s: fuzzyRank(`${h.title} ${h.url}`, q) }))
+    .filter((r): r is { h: DownloadJob; s: number } => r.s !== null)
+    .sort((a, b) => b.s - a.s)
+    .map((r) => r.h);
 }
 
 /** Newest-first, capped. */

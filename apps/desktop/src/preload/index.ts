@@ -1,7 +1,13 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { IpcRendererEvent } from "electron";
 import { IPC_CHANNELS } from "@grabber/core/engine.js";
-import type { AppSettings, DownloadJob, DownloadJobInput, MediaInfo } from "@grabber/core/types.js";
+import type {
+  AppSettings,
+  DownloadJob,
+  DownloadJobInput,
+  MediaInfo,
+  WatchChannel,
+} from "@grabber/core/types.js";
 import type {
   AggregateProgressState,
   DeepLinkCallback,
@@ -10,6 +16,7 @@ import type {
   GetInfoInit,
   ProgressCallback,
   RepairReport,
+  StorageInsights,
   ThumbnailColor,
   Unsubscribe,
   UpdateStatus,
@@ -54,8 +61,15 @@ export interface GrabberApi {
   loadHistory(): Promise<DownloadJob[]>;
   removeHistory(id: string): Promise<void>;
   clearHistory(): Promise<void>;
+  loadWatchlist(): Promise<WatchChannel[]>;
+  saveWatchlist(channels: WatchChannel[]): Promise<void>;
+  getDiskSpace(path: string): Promise<{ freeBytes: number } | null>;
+  getJobArgs(id: string): Promise<string[] | null>;
+  getStorageInsights(): Promise<StorageInsights>;
   getRawLog(id: string): Promise<string | null>;
   onDeepLink(cb: DeepLinkCallback): Unsubscribe;
+  onBatchLink(cb: DeepLinkCallback): Unsubscribe;
+  readClipboard(): Promise<string | null>;
   checkForUpdates(): Promise<UpdateStatus>;
   getMediaUrl(path: string): Promise<string | null>;
   openExternal(url: string): Promise<void>;
@@ -123,6 +137,17 @@ const api: GrabberApi = {
   loadHistory: () => ipcRenderer.invoke(IPC_CHANNELS.loadHistory) as Promise<DownloadJob[]>,
   removeHistory: (id) => ipcRenderer.invoke(IPC_CHANNELS.removeHistory, id) as Promise<void>,
   clearHistory: () => ipcRenderer.invoke(IPC_CHANNELS.clearHistory) as Promise<void>,
+  loadWatchlist: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.loadWatchlist) as Promise<WatchChannel[]>,
+  saveWatchlist: (channels) =>
+    ipcRenderer.invoke(IPC_CHANNELS.saveWatchlist, channels) as Promise<void>,
+  getDiskSpace: (path) =>
+    ipcRenderer.invoke(IPC_CHANNELS.getDiskSpace, path) as Promise<{ freeBytes: number } | null>,
+  getJobArgs: (id) =>
+    ipcRenderer.invoke(IPC_CHANNELS.getJobArgs, id) as Promise<string[] | null>,
+  getStorageInsights: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.getStorageInsights) as Promise<StorageInsights>,
+  readClipboard: () => ipcRenderer.invoke(IPC_CHANNELS.readClipboard) as Promise<string | null>,
   getRawLog: (id) => ipcRenderer.invoke(IPC_CHANNELS.getRawLog, id) as Promise<string | null>,
   onDeepLink: (cb) => {
     const listener = (_event: IpcRendererEvent, url: string): void => {
@@ -131,6 +156,16 @@ const api: GrabberApi = {
     ipcRenderer.on(IPC_CHANNELS.onDeepLink, listener);
     const unsubscribe: Unsubscribe = () => {
       ipcRenderer.removeListener(IPC_CHANNELS.onDeepLink, listener);
+    };
+    return unsubscribe;
+  },
+  onBatchLink: (cb) => {
+    const listener = (_event: IpcRendererEvent, text: string): void => {
+      if (typeof text === "string") cb(text);
+    };
+    ipcRenderer.on(IPC_CHANNELS.onBatchLink, listener);
+    const unsubscribe: Unsubscribe = () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.onBatchLink, listener);
     };
     return unsubscribe;
   },

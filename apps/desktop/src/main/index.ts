@@ -1,7 +1,9 @@
-import { app, BrowserWindow, Menu, Tray, nativeImage, protocol, session } from "electron";
+import { app, BrowserWindow, Menu, Tray, nativeImage, protocol, session, shell } from "electron";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { APP_NAME } from "@grabber/core/branding.js";
 import { IPC_CHANNELS } from "@grabber/core/engine.js";
+import { STRINGS, STRINGS_MS } from "@grabber/core/strings.js";
 import type { AggregateProgressState } from "@grabber/core/engine.js";
 import { extractDeepLinkTarget } from "@grabber/core/deeplink.js";
 import { ensureUserDataBinary } from "./binaries.js";
@@ -27,10 +29,19 @@ if (!gotLock) {
 
 /** Deep-link URL captured before the window exists (boot arg / protocol). */
 let bootLink: string | null = null;
+/** Batch-file text + jump-list intents captured the same way. */
+let bootBatch: string | null = null;
+const bootMinimized = process.argv.includes("--minimized");
+const bootOpenFolder = process.argv.includes("--open-downloads");
 try {
   bootLink = extractDeepLinkTarget(process.argv);
 } catch {
   bootLink = null;
+}
+try {
+  bootBatch = extractBatchText(process.argv);
+} catch {
+  bootBatch = null;
 }
 
 function focusWindow(): void {
@@ -52,8 +63,23 @@ function handleDeepLink(url: string): void {
   }
 }
 
-// Second instance: argv arrives here (Windows/Linux protocol + CLI args).
+// Second instance: argv arrives here (Windows/Linux protocol + CLI args,
+// jump-list tasks, associated files).
 app.on("second-instance", (_event, argv) => {
+  if (argv.includes("--open-downloads")) {
+    openDownloadsFolder();
+    return;
+  }
+  let batch: string | null = null;
+  try {
+    batch = extractBatchText(argv);
+  } catch {
+    batch = null;
+  }
+  if (batch !== null) {
+    handleBatchText(batch);
+    return;
+  }
   let target: string | null = null;
   try {
     target = extractDeepLinkTarget(argv);
@@ -68,6 +94,19 @@ app.on("second-instance", (_event, argv) => {
 app.on("open-url", (event, url) => {
   event.preventDefault();
   handleDeepLink(url);
+});
+
+// macOS file-open (associated .fluxdl files).
+app.on("open-file", (event, path) => {
+  event.preventDefault();
+  let batch: string | null = null;
+  try {
+    batch = extractBatchText([path]);
+  } catch {
+    batch = null;
+  }
+  if (batch !== null) handleBatchText(batch);
+  else focusWindow();
 });
 
 let mainWindow: BrowserWindow | null = null;
@@ -96,8 +135,92 @@ function overlayIconPath(): string {
   return join(__dirname, "../../resources/icons/overlay-dot.png");
 }
 
+function taskStrings(): { newDownload: string; newDownloadDesc: string; openFolder: string; openFolderDesc: string } {
+  try {
+    return app.getLocale().toLowerCase().startsWith("ms") ? STRINGS_MS.tasks : STRINGS.tasks;
+  } catch {
+    return STRINGS.tasks;
+  }
+}
+
+/** Windows taskbar Jump List: fresh-download + open-folder tasks (E4). */
+function applyJumpList(): void {
+  if (process.platform !== "win32") return;
+  try {
+    const t = taskStrings();
+    app.setJumpList([
+      {
+        type: "tasks",
+        items: [
+          {
+            type: "task",
+            program: process.execPath,
+            args: "--open-downloads",
+            title: t.openFolder,
+            description: t.openFolderDesc,
+          },
+          {
+            type: "task",
+            program: process.execPath,
+            title: t.newDownload,
+            description: t.newDownloadDesc,
+          },
+        ],
+      },
+    ]);
+  } catch {
+    // Best effort; a missing list never blocks boot.
+  }
+}
+
+function openDownloadsFolder(): void {
+  let dir = "";
+  try {
+    const saved = loadSettingsFromDisk(app.getPath("userData")).downloadDir;
+    dir = saved.trim().length > 0 ? saved : app.getPath("downloads");
+  } catch {
+    dir = app.getPath("downloads");
+  }
+  focusWindow();
+  void shell.openPath(dir).catch(() => undefined);
+}
+
+/**
+ * Batch-file routing (E7): a `.fluxdl` links file opened from Explorer.
+ * Capped at 1 MB of text; anything else is ignored (never executed).
+ */
+function extractBatchText(argv: readonly string[]): string | null {
+  for (const arg of argv) {
+    const t = arg.trim().replace(/^["']|["']$/g, "");
+    if (!/\.fluxdl(\.txt)?$/i.test(t) || !existsSync(t)) continue;
+    try {
+      if (statSync(t).size > 1024 * 1024) continue;
+      const text = readFileSync(t, "utf8");
+      if (text.trim().length > 0) return text;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function handleBatchText(text: string): void {
+  focusWindow();
+  try {
+    getEngine().emitBatchLink(text);
+  } catch {
+    // Engine failure here is fatal elsewhere already.
+  }
+}
+
 function refreshTaskbar(): void {
   if (mainWindow === null) return;
+  // Taskbar badge mirrors the active count (E4).
+  try {
+    app.setBadgeCount(aggState.active);
+  } catch {
+    // Cosmetic only.
+  }
   const cmd = resolveTaskbarCommand(
     aggState,
     { error: taskError, finishedHidden },
@@ -131,6 +254,19 @@ function iconPath(): string {
 }
 
 function applyCsp(): void {
+  // Belt-and-suspenders for the DOM clipboard path (the primary read path
+  // is now main-side, but Ctrl+C / copy buttons still use the DOM API).
+  try {
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+      if (permission === "clipboard-read" || permission === "clipboard-sanitized-write") {
+        callback(true);
+        return;
+      }
+      callback(false);
+    });
+  } catch {
+    // Permissions API unavailable — the main-side clipboard still works.
+  }
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
@@ -152,6 +288,9 @@ async function createWindow(): Promise<void> {
   const win = new BrowserWindow({
     width: size.width,
     height: size.height,
+    // The layout is designed for the default 1120x760 window; fullscreen
+    // maximize is disabled so the UI never stretches past its usable size.
+    maximizable: false,
     ...(state.mini ? { alwaysOnTop: true } : {}),
     title: APP_NAME,
     backgroundColor: colors.bg,
@@ -214,7 +353,7 @@ async function createWindow(): Promise<void> {
   } else {
     await win.loadFile(join(__dirname, "../renderer/index.html"));
   }
-  // Deliver a boot-time deep link once the renderer can receive it.
+  // Deliver boot-time links once the renderer can receive them.
   win.webContents.on("did-finish-load", () => {
     if (bootLink !== null) {
       const url = bootLink;
@@ -225,7 +364,18 @@ async function createWindow(): Promise<void> {
         // Engine failure here is fatal elsewhere already.
       }
     }
+    if (bootBatch !== null) {
+      const text = bootBatch;
+      bootBatch = null;
+      try {
+        getEngine().emitBatchLink(text);
+      } catch {
+        // Engine failure here is fatal elsewhere already.
+      }
+    }
   });
+  // Auto-start boots straight into the tray (E5).
+  if (bootMinimized) win.hide();
 }
 
 function setupTray(): void {
@@ -289,6 +439,9 @@ function getEngine(): DesktopEngine {
       broadcastDeepLink: (url) => {
         mainWindow?.webContents.send(IPC_CHANNELS.onDeepLink, url);
       },
+      broadcastBatchLink: (text) => {
+        mainWindow?.webContents.send(IPC_CHANNELS.onBatchLink, text);
+      },
       broadcast: (event) => {
         mainWindow?.webContents.send(IPC_CHANNELS.onProgress, event);
         if (event.stage === "error") taskError = true;
@@ -345,11 +498,18 @@ void app.whenReady().then(() => {
   }
   getEngine();
   setupTray();
+  applyJumpList();
+  try {
+    getEngine().syncLoginSettings();
+  } catch {
+    // Best effort; the setting itself persists regardless.
+  }
   void ensureUserDataBinary(app.getPath("userData"), bundledBinDir()).catch((err: unknown) => {
     // Non-fatal: engine falls back to bundled/PATH copies.
     console.warn("[binaries] userData copy skipped:", err instanceof Error ? err.message : err);
   });
   void createWindow();
+  if (bootOpenFolder) openDownloadsFolder();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       void createWindow();
@@ -357,6 +517,20 @@ void app.whenReady().then(() => {
       mainWindow?.show();
     }
   });
+});
+
+// Ghost-tray fix: Windows keeps a dead tray icon painted until the next
+// mouse-over when the process exits without destroying it (kill, crash, or
+// a quit path that never runs cleanup). Destroying on will-quit covers every
+// real exit; nothing can resurrect the icon afterwards.
+app.on("will-quit", () => {
+  try {
+    tray?.destroy();
+  } catch {
+    // Already gone — nothing to do.
+  }
+  tray = null;
+  trayMenu = null;
 });
 
 let shuttingDown = false;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, mergeSettings } from "./settings.js";
+import type { DownloadPreset } from "./types.js";
 
 describe("mergeSettings", () => {
   it("clamps concurrency to 1-5 and keeps the rest", () => {
@@ -82,6 +83,54 @@ describe("mergeSettings", () => {
     expect(mergeSettings(DEFAULT_SETTINGS, { historyLimit: 99999 }).historyLimit).toBe(5000);
   });
 
+  it("keeps per-site presets and drops garbage entries", () => {
+    expect(DEFAULT_SETTINGS.presetBySite).toEqual({});
+    const good = {
+      YouTube: { kind: "video", videoPreset: "720", audioPreset: "MP3", rawFormat: "x" },
+      bogus: { kind: "video", videoPreset: "Nope", audioPreset: "MP3" },
+      empty: null,
+    } as unknown as Record<string, DownloadPreset>;
+    const m = mergeSettings(DEFAULT_SETTINGS, { presetBySite: good });
+    expect(m.presetBySite).toEqual({
+      youtube: { kind: "video", videoPreset: "720", audioPreset: "MP3", rawFormat: null },
+    });
+    expect(
+      mergeSettings(DEFAULT_SETTINGS, {
+        presetBySite: ["x"] as unknown as Record<string, DownloadPreset>,
+      }).presetBySite,
+    ).toEqual({});
+  });
+
+  it("caps search lists and drops junk", () => {
+    expect(DEFAULT_SETTINGS.savedSearches).toEqual([]);
+    expect(DEFAULT_SETTINGS.recentSearches).toEqual([]);
+    const m = mergeSettings(DEFAULT_SETTINGS, {
+      savedSearches: ["  Big  ", "", 42 as never, "Big", "x".repeat(50)],
+      recentSearches: "nope" as never,
+    });
+    expect(m.savedSearches).toEqual(["Big", "x".repeat(40)]);
+    expect(m.recentSearches).toEqual([]);
+    const many = Array.from({ length: 12 }, (_, i) => `q${String(i)}`);
+    expect(mergeSettings(DEFAULT_SETTINGS, { savedSearches: many }).savedSearches).toHaveLength(
+      10,
+    );
+  });
+
+  it("remembers UI state and restores safe fallbacks", () => {
+    expect(DEFAULT_SETTINGS.lastView).toBe("home");
+    expect(DEFAULT_SETTINGS.lastQueueFilter).toBe("all");
+    expect(DEFAULT_SETTINGS.batchDraft).toBe("");
+    const m = mergeSettings(DEFAULT_SETTINGS, {
+      lastView: "logs",
+      lastQueueFilter: "bogus",
+      batchDraft: "https://example.com/a",
+    });
+    expect(m.lastView).toBe("logs");
+    expect(m.lastQueueFilter).toBe("all");
+    expect(m.batchDraft).toBe("https://example.com/a");
+    expect(mergeSettings(DEFAULT_SETTINGS, { lastView: "nope" }).lastView).toBe("home");
+  });
+
   it("pins the settings shape so mocks cannot drift silently (M3.3)", () => {
     // When this fails, update the mirrors too:
     // apps/desktop/e2e/smoke.e2e.ts installMock settings + any fake engines.
@@ -89,6 +138,8 @@ describe("mergeSettings", () => {
       "accentOverride",
       "analyzeTimeoutSec",
       "autoCheckUpdate",
+      "autoSort",
+      "batchDraft",
       "closeBehavior",
       "codecPreference",
       "concurrency",
@@ -100,16 +151,25 @@ describe("mergeSettings", () => {
       "embedMetadata",
       "embedSubs",
       "embedThumbnail",
+      "experimental",
       "filenameTemplate",
+      "followSystemTheme",
       "historyLimit",
       "includeAutoSubs",
       "language",
+      "lastQueueFilter",
+      "lastView",
+      "launchAtLogin",
       "mergeContainer",
       "minimizeToTray",
+      "notifyFinished",
       "onboardingDone",
       "playlistSubfolder",
       "postDownloadAction",
+      "presetBySite",
       "proxy",
+      "recentSearches",
+      "savedSearches",
       "skipArchived",
       "speedLimit",
       "sponsorBlock",

@@ -273,6 +273,22 @@ export function buildDownloadArgs(input: DownloadArgsInput): string[] {
   return args;
 }
 
+const SECRET_FLAGS: ReadonlySet<string> = new Set(["--cookies", "--proxy"]);
+
+/**
+ * Redact secret-adjacent argv values (cookie file paths, proxy credentials)
+ * before a command is shown anywhere (Logs "show command", diagnostics).
+ * Shape-preserving: flags stay, values become "(redacted)".
+ */
+export function redactArgs(args: readonly string[]): string[] {
+  const out = [...args];
+  for (let i = 0; i < out.length; i += 1) {
+    if (!SECRET_FLAGS.has(out[i] ?? "")) continue;
+    if (i + 1 < out.length) out[i + 1] = "(redacted)";
+  }
+  return out;
+}
+
 export function buildVersionArgs(): string[] {
   return ["--version"];
 }

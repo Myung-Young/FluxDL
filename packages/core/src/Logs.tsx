@@ -38,6 +38,7 @@ export function Logs({ engine, queue, settings, toast }: LogsProps): React.JSX.E
   const [report, setReport] = useState<string | null>(null);
   const [diagNote, setDiagNote] = useState<string | null>(null);
   const [logQuery, setLogQuery] = useState<string>("");
+  const [cmdArgs, setCmdArgs] = useState<string[] | null>(null);
   const [errorsOnly, setErrorsOnly] = useState<boolean>(false);
   const [follow, setFollow] = useState<boolean>(true);
   const [logNote, setLogNote] = useState<string | null>(null);
@@ -89,7 +90,7 @@ export function Logs({ engine, queue, settings, toast }: LogsProps): React.JSX.E
   // the same toast the auto-check would (same message + Get update action).
   const demoReminder = async (): Promise<void> => {
     const v = await engine.getEngineVersion().catch(() => null);
-    const cur = v?.app ?? "1.5.1";
+    const cur = v?.app ?? "1.6.0";
     const fake: UpdateStatus = {
       appCurrent: cur,
       appLatest: nextPatchVersion(cur),
@@ -130,8 +131,16 @@ export function Logs({ engine, queue, settings, toast }: LogsProps): React.JSX.E
 
   const viewLog = async (id: string): Promise<void> => {
     setSelectedId(id);
+    setCmdArgs(null);
     const text = await engine.getRawLog(id).catch(() => null);
     setLogText(text);
+  };
+
+  // Transparency (C6): the exact (redacted) yt-dlp argv behind a job.
+  const viewCommand = async (): Promise<void> => {
+    if (selectedId === null) return;
+    const argv = await engine.getJobArgs(selectedId).catch(() => null);
+    setCmdArgs(argv);
   };
 
   // Follow live output: pin the scroll to the tail on new log text.
@@ -397,7 +406,25 @@ export function Logs({ engine, queue, settings, toast }: LogsProps): React.JSX.E
           >
             {S.logs.copyLog}
           </button>
+          <button
+            type="button"
+            className="btn btn-small"
+            disabled={selectedId === null}
+            onClick={() => {
+              void viewCommand();
+            }}
+          >
+            {S.logs.showCommand}
+          </button>
         </div>
+        {cmdArgs !== null && (
+          <details open>
+            <summary>{S.logs.showCommand}</summary>
+            <pre className="log-pre" data-testid="job-command">
+              {cmdArgs.join(" ")}
+            </pre>
+          </details>
+        )}
         {matchCount !== null && (
           <p className="muted" role="status">
             {matchCount === 0

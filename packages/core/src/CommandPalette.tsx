@@ -9,6 +9,16 @@ import {
   type CommandContext,
   type CommandDef,
 } from "./commands.js";
+import { describeIntent, parseIntent, runIntent, type Intent } from "./intent.js";
+import { fuzzyRank } from "./fuzzy.js";
+import type { DownloadJob } from "./types.js";
+
+interface PaletteRow {
+  readonly key: string;
+  readonly label: string;
+  readonly sub: string | null;
+  readonly run: () => void;
+}
 
 export interface CommandPaletteProps {
   readonly open: boolean;
@@ -49,6 +59,9 @@ export function CommandPalette({ open, context, onClose }: CommandPaletteProps):
     [available, labels, query, usage],
   );
 
+  // Unified content search (B2): matching queue jobs + history entries ride
+  // along below the smart row, jumping straight to their views.
+  const [hist, setHist] = useState<readonly DownloadJob[]>([]);
   useEffect(() => {
     if (!open) return;
     lastFocus.current = document.activeElement;
@@ -56,11 +69,101 @@ export function CommandPalette({ open, context, onClose }: CommandPaletteProps):
     setActive(0);
     inputRef.current?.focus();
     if (listRef.current !== null) staggerIn(listRef.current, "[role='option']");
+    context.engine
+      .loadHistory()
+      .then((h) => {
+        setHist(h.slice(-200));
+      })
+      .catch(() => undefined);
     return () => {
       const back = lastFocus.current;
       if (back instanceof HTMLElement) back.focus();
     };
-  }, [open]);
+  }, [open, context.engine]);
+
+  const intent: Intent | null = useMemo(() => parseIntent(query), [query]);
+
+  const intentLabel = (i: Intent): string => {
+    const d = describeIntent(i);
+    switch (d.key) {
+      case "pauseAll":
+        return S.downloads.pauseAll;
+      case "resumeAll":
+        return S.downloads.resumeAll;
+      case "retryAll":
+        return S.downloads.retryAll;
+      case "clearFinished":
+        return S.downloads.clearFinished;
+      case "go": {
+        const titles: Record<string, string> = {
+          home: S.home.title,
+          downloads: S.downloads.title,
+          library: S.library.title,
+          stats: S.stats.title,
+          settings: S.settings.title,
+          logs: S.logs.title,
+          changelog: S.changelog.title,
+        };
+        return titles[d.view] ?? d.view;
+      }
+      case "theme":
+        return S.settings.themes[d.theme];
+      case "throttle":
+        return d.limit === null ? S.downloads.throttleUnlimited : `${d.limit}/s`;
+      case "analyze":
+        return d.url;
+    }
+  };
+
+  const rows: readonly PaletteRow[] = useMemo(() => {
+    const out: PaletteRow[] = [];
+    if (intent !== null) {
+      out.push({
+        key: "smart",
+        label: `${S.commands.smartAction}: ${intentLabel(intent)}`,
+        sub: null,
+        run: () => {
+          runIntent(context, intent);
+        },
+      });
+    }
+    const q = query.trim();
+    if (q.length > 0) {
+      const jobs = context.jobs
+        .map((j) => ({ j, s: fuzzyRank(`${j.title} ${j.url}`, q) }))
+        .filter((r): r is { j: DownloadJob; s: number } => r.s !== null)
+        .sort((a, b) => b.s - a.s)
+        .slice(0, 3);
+      for (const { j } of jobs) {
+        out.push({
+          key: `job:${j.id}`,
+          label: j.title,
+          sub: `${S.downloads.title} · ${j.status}`,
+          run: () => {
+            context.navigate("downloads");
+          },
+        });
+      }
+      const past = hist
+        .map((j) => ({ j, s: fuzzyRank(`${j.title} ${j.url}`, q) }))
+        .filter((r): r is { j: DownloadJob; s: number } => r.s !== null)
+        .sort((a, b) => b.s - a.s)
+        .slice(0, 3);
+      for (const { j } of past) {
+        out.push({
+          key: `hist:${j.id}`,
+          label: j.title,
+          sub: S.library.title,
+          run: () => {
+            context.navigate("library");
+          },
+        });
+      }
+    }
+    return out;
+    // intentLabel closes over S/context — recompute with the rows.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intent, query, context, hist, S]);
 
   useEffect(() => {
     setActive(0);
@@ -85,6 +188,17 @@ export function CommandPalette({ open, context, onClose }: CommandPaletteProps):
     }
   };
 
+  const runRow = (row: PaletteRow): void => {
+    onClose();
+    try {
+      row.run();
+    } catch {
+      // Row actions never throw into the render loop.
+    }
+  };
+
+  const total = rows.length + ranked.length;
+
   const onKeyDown = (e: React.KeyboardEvent): void => {
     if (e.key === "Escape") {
       e.preventDefault();
@@ -93,15 +207,20 @@ export function CommandPalette({ open, context, onClose }: CommandPaletteProps):
     }
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      if (ranked.length === 0) return;
+      if (total === 0) return;
       const dir = e.key === "ArrowDown" ? 1 : -1;
-      setActive((i) => (i + dir + ranked.length) % ranked.length);
+      setActive((i) => (i + dir + total) % total);
       return;
     }
     if (e.key === "Enter") {
       e.preventDefault();
-      const pick = ranked[active];
-      if (pick !== undefined) run(pick.def);
+      if (active < rows.length) {
+        const pick = rows[active];
+        if (pick !== undefined) runRow(pick);
+      } else {
+        const pick = ranked[active - rows.length];
+        if (pick !== undefined) run(pick.def);
+      }
       return;
     }
     if (e.key === "Tab") {
@@ -145,18 +264,34 @@ export function CommandPalette({ open, context, onClose }: CommandPaletteProps):
           }}
           onKeyDown={onKeyDown}
         />
-        {ranked.length === 0 ? (
+        {total === 0 ? (
           <p className="hint" role="status">
             {S.commands.empty}
           </p>
         ) : (
           <ul id="cmd-list" ref={listRef} role="listbox" className="entries">
+            {rows.map((row, i) => (
+              <li
+                key={row.key}
+                role="option"
+                aria-selected={i === active}
+                data-active={i === active}
+                className="format-row cmd-option"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  runRow(row);
+                }}
+              >
+                <span>{row.label}</span>
+                {row.sub !== null && <span className="muted">{row.sub}</span>}
+              </li>
+            ))}
             {ranked.map(({ def }, i) => (
               <li
                 key={def.id}
                 role="option"
-                aria-selected={i === active}
-                data-active={i === active}
+                aria-selected={i + rows.length === active}
+                data-active={i + rows.length === active}
                 className="format-row cmd-option"
                 onPointerDown={(e) => {
                   e.preventDefault();

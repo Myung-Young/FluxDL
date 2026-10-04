@@ -1,7 +1,10 @@
 {
+  // NOTE: no "references" here on purpose. This repo typechecks with
+  // per-workspace `tsc --noEmit` and emits via bundlers, so solution-style
+  // references only produced false "composite/noEmit" errors in editors.
+  // Cross-project navigation still works through `paths` in tsconfig.base.json.
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "baseUrl": "."
-  },
-  "references": [{ "path": "./packages/core" }, { "path": "./apps/desktop" }]
+  }
 }

@@ -1,4 +1,10 @@
-import type { AppSettings, DownloadJob, DownloadJobInput, MediaInfo } from "./types.js";
+import type {
+  AppSettings,
+  DownloadJob,
+  DownloadJobInput,
+  MediaInfo,
+  WatchChannel,
+} from "./types.js";
 import type { ErrorCategory } from "./errors.js";
 
 /** Progress event pushed by the engine. */
@@ -74,6 +80,18 @@ export interface UpdateStatus {
 /** Deep-link listener (fluxdl:// URL or CLI URL forwarded to the UI). */
 export type DeepLinkCallback = (url: string) => void;
 
+/** Scanned totals for the Stats storage card (best-effort, capped). */
+export interface StorageInsights {
+  readonly audioFiles: number;
+  readonly audioBytes: number;
+  readonly videoFiles: number;
+  readonly videoBytes: number;
+  readonly otherFiles: number;
+  readonly otherBytes: number;
+  readonly orphans: readonly string[];
+  readonly orphanBytes: number;
+}
+
 /** Desired window chrome (M4.4 mini mode, M4.6 theme colors). */
 export type { WindowChromeState } from "./window.js";
 import type { WindowChromeState } from "./window.js";
@@ -138,6 +156,15 @@ export interface DownloadEngine {
   updateHistory(job: DownloadJob): Promise<void>;
   /** Delete the yt-dlp download-archive file (re-allow archived entries). */
   clearArchive(): Promise<void>;
+  /** Watched channels for new-upload checks (persisted main-side). */
+  loadWatchlist(): Promise<WatchChannel[]>;
+  saveWatchlist(channels: WatchChannel[]): Promise<void>;
+  /** Free space for a path's drive (null when unknown). Never throws. */
+  getDiskSpace(path: string): Promise<{ freeBytes: number } | null>;
+  /** Redacted yt-dlp argv of a job (null when unknown). For transparency. */
+  getJobArgs(id: string): Promise<string[] | null>;
+  /** Storage breakdown of the download folder + orphan partials (F2). */
+  getStorageInsights(): Promise<StorageInsights>;
   /** Raw console of a job for the Logs screen (kept by the engine). */
   getRawLog(id: string): Promise<string | null>;
   /**
@@ -148,6 +175,13 @@ export interface DownloadEngine {
   shutdown(): Promise<void>;
   /** Subscribe to deep-link URLs (second-instance / protocol / CLI arg). */
   onDeepLink(cb: DeepLinkCallback): Unsubscribe;
+  /** Subscribe to batch-file text (.fluxdl opened from Explorer). */
+  onBatchLink(cb: DeepLinkCallback): Unsubscribe;
+  /**
+   * System clipboard text (main-side Electron clipboard, no DOM permission
+   * involved). Null when empty or unreadable — never throws.
+   */
+  readClipboard(): Promise<string | null>;
   /**
    * One round trip for both updatables: the app itself (GitHub Releases)
    * and yt-dlp. Best-effort: offline checkers resolve update=false, never
@@ -215,8 +249,15 @@ export const IPC_CHANNELS = {
   loadHistory: "store:loadHistory",
   removeHistory: "store:removeHistory",
   clearHistory: "store:clearHistory",
+  loadWatchlist: "store:loadWatchlist",
+  saveWatchlist: "store:saveWatchlist",
+  getDiskSpace: "engine:diskSpace",
+  getJobArgs: "engine:jobArgs",
+  getStorageInsights: "engine:storage",
   getRawLog: "engine:getLog",
   onDeepLink: "app:deepLink",
+  onBatchLink: "app:batchLink",
+  readClipboard: "app:readClipboard",
   checkForUpdates: "engine:checkUpdates",
   getMediaUrl: "engine:mediaUrl",
   openExternal: "app:openExternal",

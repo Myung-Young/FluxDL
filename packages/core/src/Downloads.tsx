@@ -8,6 +8,7 @@ import { useStrings } from "./locale.js";
 import { formatStr, localeTag, resolveLanguage } from "./locale.js";
 import { formatSize } from "./media.js";
 import { aggregateStatus, formatEta, queueEta } from "./aggregate.js";
+import { fuzzyRank } from "./fuzzy.js";
 import { retryInSeconds } from "./queue.js";
 import { sendNotification } from "./notify.js";
 import { flipShift, pressScale, tweenProgress } from "./motion.js";
@@ -18,12 +19,15 @@ import { ContextMenu, type MenuItemDef } from "./ContextMenu.js";
 import { buildJobMenu } from "./JobMenu.js";
 import { writeClipboardText } from "./clipboard.js";
 
+/** Downloads navigates home (empty state) plus the error-action targets. */
+export type DownloadsNavigate = (view: "home" | "settings" | "logs", section?: string) => void;
+
 export interface DownloadsProps {
   readonly engine: DownloadEngine;
   readonly queue: StoreApi<QueueStoreState>;
   readonly settings: StoreApi<SettingsStoreState>;
   readonly toast: StoreApi<ToastStoreState>;
-  readonly navigate: ErrorNavigate;
+  readonly navigate: DownloadsNavigate;
 }
 
 function Bar({ ratio }: { ratio: number | null }): React.JSX.Element {
@@ -50,6 +54,12 @@ function Bar({ ratio }: { ratio: number | null }): React.JSX.Element {
   );
 }
 
+function toLocalInput(ts: number): string {
+  const d = new Date(ts);
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return `${String(d.getFullYear())}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function statusLine(job: DownloadJob, strings: Strings, locale: string): string {
   if (job.stage === "recording") {
     const bits: string[] = [strings.downloads.recording];
@@ -65,6 +75,13 @@ function statusLine(job: DownloadJob, strings: Strings, locale: string): string 
     return bits.join(" · ");
   }
   const bits: string[] = [job.status];
+  if (job.status === "queued" && job.startAfter !== undefined && job.startAfter !== null) {
+    bits.push(
+      formatStr(strings.downloads.startsAt, {
+        when: new Date(job.startAfter).toLocaleString(locale),
+      }),
+    );
+  }
   if (job.speed !== null) bits.push(job.speed);
   if (job.eta !== null) bits.push(job.eta);
   if (job.stage !== null && job.stage !== job.status) bits.push(job.stage);
@@ -84,6 +101,8 @@ function Card({
   strings,
   locale,
   now,
+  selected,
+  onToggleSelect,
 }: {
   job: DownloadJob;
   engine: DownloadEngine;
@@ -98,11 +117,17 @@ function Card({
   strings: Strings;
   locale: string;
   now: number;
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
 }): React.JSX.Element {
   const actions = queue.getState();
   const run = (fn: () => Promise<void>): void => {
     fn().catch(() => undefined);
   };
+  const [schedOpen, setSchedOpen] = useState<boolean>(false);
+  const [schedVal, setSchedVal] = useState<string>(() =>
+    toLocalInput(job.startAfter ?? Date.now() + 3_600_000),
+  );
   const openMenuAt = (x: number, y: number): void => {
     onMenu(job, x, y);
   };
@@ -129,7 +154,20 @@ function Card({
         }
       }}
     >
-      <h2 className="dl-title">{job.title}</h2>
+      <div className="dl-head">
+        <input
+          type="checkbox"
+          checked={selected}
+          aria-label={job.title}
+          onChange={() => {
+            onToggleSelect(job.id);
+          }}
+        />
+        <h2 className="dl-title">
+          {job.pinned === true && <span className="badge">{strings.downloads.pinned}</span>}{" "}
+          {job.title}
+        </h2>
+      </div>
       <p className="muted">{statusLine(job, strings, locale)}</p>
       <Bar ratio={job.progress !== null ? job.progress / 100 : null} />
       {job.error !== null && (
@@ -221,6 +259,30 @@ function Card({
             {strings.downloads.cancel}
           </button>
         )}
+        <button
+          type="button"
+          className="btn btn-small"
+          aria-label={job.pinned === true ? strings.downloads.unpin : strings.downloads.pin}
+          aria-pressed={job.pinned === true}
+          onClick={() => {
+            run(() => actions.togglePin(job.id));
+          }}
+        >
+          {job.pinned === true ? strings.downloads.unpin : strings.downloads.pin}
+        </button>
+        {job.status === "queued" && (
+          <button
+            type="button"
+            className="btn btn-small"
+            aria-label={strings.downloads.schedule}
+            onClick={() => {
+              setSchedVal(toLocalInput(job.startAfter ?? Date.now() + 3_600_000));
+              setSchedOpen((v) => !v);
+            }}
+          >
+            {strings.downloads.schedule}
+          </button>
+        )}
         {job.destination !== null ? (
           job.splitChapters === true ? (
             <button
@@ -276,6 +338,43 @@ function Card({
           </button>
         )}
       </div>
+      {schedOpen && job.status === "queued" && (
+        <div className="url-row">
+          <input
+            type="datetime-local"
+            className="input"
+            aria-label={strings.downloads.schedule}
+            value={schedVal}
+            onChange={(e) => {
+              setSchedVal(e.target.value);
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={() => {
+              const t = new Date(schedVal).getTime();
+              if (!Number.isFinite(t)) return;
+              run(() => actions.setJobSchedule(job.id, t));
+              setSchedOpen(false);
+            }}
+          >
+            {strings.downloads.applySchedule}
+          </button>
+          {job.startAfter !== undefined && job.startAfter !== null && (
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => {
+                run(() => actions.setJobSchedule(job.id, null));
+                setSchedOpen(false);
+              }}
+            >
+              {strings.downloads.clearSchedule}
+            </button>
+          )}
+        </div>
+      )}
     </article>
   );
 }
@@ -291,9 +390,28 @@ export function Downloads({
   const settingsState = useStore(settings, (s) => s.settings);
   const locale = localeTag(resolveLanguage(settingsState.language));
   const jobs = useStore(queue, (s) => s.jobs);
+  const ready = useStore(settings, (s) => s.ready);
   const speedLimit = useStore(settings, (s) => s.settings.speedLimit);
+  const savedSearches = useStore(settings, (s) => s.settings.savedSearches);
+  const recentSearches = useStore(settings, (s) => s.settings.recentSearches);
   const [query, setQuery] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "error" | "done">("all");
+  const filterRestored = useRef<boolean>(false);
+
+  // Remember the filter across restarts (D2).
+  useEffect(() => {
+    if (!ready || filterRestored.current) return;
+    filterRestored.current = true;
+    const f = settings.getState().settings.lastQueueFilter;
+    if (f === "all" || f === "active" || f === "error" || f === "done") {
+      setStatusFilter(f);
+    }
+  }, [ready, settings]);
+
+  useEffect(() => {
+    if (!filterRestored.current) return;
+    void settings.getState().save({ lastQueueFilter: statusFilter }).catch(() => undefined);
+  }, [statusFilter, settings]);
   const prevIds = useRef<ReadonlySet<string>>(new Set());
   const [menu, setMenu] = useState<{ job: DownloadJob; x: number; y: number } | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -306,18 +424,58 @@ export function Downloads({
   } | null>(null);
 
   const queuedIds = jobs.filter((j) => j.status === "queued").map((j) => j.id);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
 
-  // Search + status filter (mirrors the Library pattern, local only).
-  const visible = jobs.filter((j) => {
-    if (statusFilter === "active" && !(j.status === "queued" || j.status === "analyzing" || j.status === "downloading" || j.status === "processing")) return false;
-    if (statusFilter === "error" && j.status !== "error") return false;
-    if (statusFilter === "done" && !(j.status === "done" || j.status === "cancelled")) return false;
-    const q = query.trim().toLowerCase();
-    if (q.length > 0 && !`${j.title} ${j.url}`.toLowerCase().includes(q)) return false;
-    return true;
-  });
+  const toggleSelect = (id: string): void => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const runMany = (fn: (id: string) => Promise<void>): void => {
+    const ids = visible.filter((j) => selected.has(j.id)).map((j) => j.id);
+    void Promise.allSettled(ids.map((id) => fn(id))).then(() => {
+      setSelected(new Set());
+    });
+  };
+
+  // Search (fuzzy + typo-tolerant) + status filter, best matches first.
+  const visible = jobs
+    .map((j) => {
+      if (statusFilter === "active" && !(j.status === "queued" || j.status === "analyzing" || j.status === "downloading" || j.status === "processing")) return null;
+      if (statusFilter === "error" && j.status !== "error") return null;
+      if (statusFilter === "done" && !(j.status === "done" || j.status === "cancelled")) return null;
+      const q = query.trim();
+      if (q.length === 0) return { j, s: 0 };
+      const s = fuzzyRank(`${j.title} ${j.url}`, q);
+      return s === null ? null : { j, s };
+    })
+    .filter((r): r is { j: DownloadJob; s: number } => r !== null)
+    .sort((a, b) => b.s - a.s)
+    .map((r) => r.j);
 
   const eta = queueEta(jobs, aggregateStatus(jobs).speedBps);
+
+  const commitSearch = (value: string): void => {
+    const t = value.trim().slice(0, 40);
+    if (t.length === 0) return;
+    const cur = settings.getState().settings.recentSearches.filter((r) => r !== t);
+    void settings
+      .getState()
+      .save({ recentSearches: [t, ...cur].slice(0, 5) })
+      .catch(() => undefined);
+  };
+
+  const toggleSaved = (value: string): void => {
+    const t = value.trim().slice(0, 40);
+    if (t.length === 0) return;
+    const cur = settings.getState().settings.savedSearches;
+    const next = cur.includes(t) ? cur.filter((s) => s !== t) : [...cur, t].slice(0, 10);
+    void settings.getState().save({ savedSearches: next }).catch(() => undefined);
+  };
 
   const setThrottle = (value: string | null): void => {
     settings.getState().save({ speedLimit: value }).catch(() => undefined);
@@ -518,8 +676,43 @@ export function Downloads({
     void (async () => {
       const hist = await engine.loadHistory().catch(() => []);
       const action = settings.getState().settings.postDownloadAction;
+      const notify = settings.getState().settings.notifyFinished;
+      const done: DownloadJob[] = [];
+      const failed: DownloadJob[] = [];
       for (const id of vanished) {
         const h = hist.find((x) => x.id === id);
+        if (h?.status === "done") done.push(h);
+        else if (h?.status === "error") failed.push(h);
+      }
+      // Digest (C8): one summary instead of N toasts + N OS notifications.
+      if (done.length + failed.length > 1) {
+        toast
+          .getState()
+          .push(
+            formatStr(S.toast.finishedSummary, { done: done.length, failed: failed.length }),
+            failed.length > 0 ? "error" : "success",
+          );
+        if (notify) {
+          sendNotification(
+            failed.length > 0 ? S.toast.failed : S.toast.finished,
+            formatStr(S.toast.finishedSummary, { done: done.length, failed: failed.length }),
+          );
+        }
+      }
+      for (const id of vanished) {
+        const h = hist.find((x) => x.id === id);
+        if (done.length + failed.length > 1) {
+          // Summary above already covered this job; only post-download
+          // actions (open/reveal) still run per file.
+          if (h?.status === "done" && action !== "none" && h.destination !== null) {
+            if (action === "open-file" || h.splitChapters === true) {
+              await engine.openPath(h.destination).catch(() => undefined);
+            } else {
+              await engine.revealInFolder(h.destination).catch(() => undefined);
+            }
+          }
+          continue;
+        }
         if (h?.status === "done") {
           const dest = h.destination;
           const toastLabel = h.splitChapters === true ? S.downloads.showFolder : S.downloads.openFile;
@@ -537,7 +730,7 @@ export function Downloads({
                     },
                   },
             );
-          sendNotification(S.toast.finished, h.title);
+          if (notify) sendNotification(S.toast.finished, h.title);
           if (action !== "none" && h.destination !== null) {
             if (action === "open-file" || h.splitChapters === true) {
               await engine.openPath(h.destination).catch(() => undefined);
@@ -563,7 +756,7 @@ export function Downloads({
                   .catch(() => undefined);
               },
             });
-          sendNotification(S.toast.failed, h.title);
+          if (notify) sendNotification(S.toast.failed, h.title);
         }
       }
     })();
@@ -593,7 +786,64 @@ export function Downloads({
             onChange={(e) => {
               setQuery(e.target.value);
             }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitSearch(query);
+            }}
           />
+          {savedSearches.length > 0 && (
+            <div className="chip-row" role="group" aria-label={S.downloads.savedSearches}>
+              <span className="muted">{S.downloads.savedSearches}:</span>
+              {savedSearches.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className="chip"
+                  aria-pressed={query === s}
+                  title={S.downloads.removeSaved}
+                  onClick={() => {
+                    setQuery(s);
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    toggleSaved(s);
+                  }}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+          {query.trim().length === 0 && recentSearches.length > 0 && (
+            <div className="chip-row" role="group" aria-label={S.downloads.recentSearches}>
+              <span className="muted">{S.downloads.recentSearches}:</span>
+              {recentSearches.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  className="chip"
+                  onClick={() => {
+                    setQuery(s);
+                  }}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
+          {query.trim().length > 0 && (
+            <div className="chip-row">
+              <button
+                type="button"
+                className="chip"
+                aria-pressed={savedSearches.includes(query.trim().slice(0, 40))}
+                onClick={() => {
+                  toggleSaved(query);
+                }}
+              >
+                {S.downloads.saveSearch}
+              </button>
+            </div>
+          )}
           <div className="chip-row" role="group" aria-label={S.downloads.bulkActions}>
             {(
               [
@@ -645,11 +895,14 @@ export function Downloads({
               type="button"
               className="chip"
               aria-pressed={speedLimit !== null && speedLimit !== "2M" && speedLimit !== "8M"}
+              title={S.settings.speedLimit}
               onClick={() => {
                 navigate("settings", "speed");
               }}
             >
-              …
+              {speedLimit !== null && speedLimit !== "2M" && speedLimit !== "8M"
+                ? `${speedLimit}/s`
+                : "…"}
             </button>
             <span className="muted">({S.downloads.throttleNote})</span>
           </div>
@@ -690,8 +943,24 @@ export function Downloads({
             className="btn btn-small"
             disabled={!hasQueued}
             onClick={() => {
-              if (!window.confirm(S.downloads.cancelQueuedConfirm)) return;
-              queue.getState().cancelQueued().catch(failBulk);
+              // No confirm: the sweep is undoable from its toast (C2).
+              queue
+                .getState()
+                .cancelQueued()
+                .then((n) => {
+                  if (n === 0) return;
+                  toast.getState().push(
+                    formatStr(S.downloads.cancelledNote, { count: n }),
+                    "info",
+                    {
+                      label: S.downloads.undo,
+                      run: () => {
+                        queue.getState().undoSweep().catch(() => undefined);
+                      },
+                    },
+                  );
+                })
+                .catch(failBulk);
             }}
           >
             {S.downloads.cancelQueued}
@@ -706,12 +975,91 @@ export function Downloads({
           >
             {S.downloads.retryAll}
           </button>
+          {selected.size > 0 && (
+            <>
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={() => {
+                  runMany((id) => queue.getState().pause(id));
+                }}
+              >
+                {S.downloads.bulkPause}
+              </button>
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={() => {
+                  runMany((id) => queue.getState().resume(id));
+                }}
+              >
+                {S.downloads.bulkResume}
+              </button>
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={() => {
+                  runMany((id) => queue.getState().retry(id));
+                }}
+              >
+                {S.downloads.bulkRetry}
+              </button>
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={() => {
+                  runMany((id) => queue.getState().cancel(id));
+                }}
+              >
+                {S.downloads.bulkCancel}
+              </button>
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={() => {
+                  setSelected(new Set());
+                }}
+              >
+                {formatStr(S.downloads.selectedCount, { n: selected.size })} ·{" "}
+                {S.downloads.clearSelection}
+              </button>
+            </>
+          )}
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={() => {
+              void writeClipboardText(visible.map((j) => j.url).join("\n")).then((ok) => {
+                toast
+                  .getState()
+                  .push(ok ? S.downloads.linksCopied : S.menu.copyFailed, ok ? "success" : "error");
+              });
+            }}
+          >
+            {S.downloads.copyLinks}
+          </button>
           <button
             type="button"
             className="btn btn-small"
             disabled={!hasClearable}
             onClick={() => {
-              queue.getState().clearFinished().catch(failBulk);
+              queue
+                .getState()
+                .clearFinished()
+                .then((n) => {
+                  if (n === 0) return;
+                  toast.getState().push(
+                    formatStr(S.downloads.clearedNote, { count: n }),
+                    "info",
+                    {
+                      label: S.downloads.undo,
+                      run: () => {
+                        queue.getState().undoSweep().catch(() => undefined);
+                      },
+                    },
+                  );
+                })
+                .catch(failBulk);
             }}
           >
             {S.downloads.clearFinished}
@@ -723,12 +1071,35 @@ export function Downloads({
           <p className="muted" role="status">
             {S.downloads.empty}
           </p>
+          <div className="chip-row">
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => {
+                navigate("home");
+              }}
+            >
+              {S.downloads.goHome}
+            </button>
+          </div>
         </div>
       ) : visible.length === 0 ? (
         <div className="grabber-card">
           <p className="muted" role="status">
             {S.downloads.noMatch}
           </p>
+          <div className="chip-row">
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => {
+                setQuery("");
+                setStatusFilter("all");
+              }}
+            >
+              {S.downloads.clearFilters}
+            </button>
+          </div>
         </div>
       ) : (
         <div
@@ -757,6 +1128,8 @@ export function Downloads({
                 strings={S}
                 locale={locale}
                 now={now}
+                selected={selected.has(j.id)}
+                onToggleSelect={toggleSelect}
                 onMenu={(target, x, y) => {
                   setMenu({ job: target, x, y });
                 }}

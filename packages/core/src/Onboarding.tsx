@@ -167,9 +167,14 @@ export function Onboarding({ engine, settings, onDone }: OnboardingProps): React
                   }}
                   onClick={() => {
                     setDraft({ ...draft, theme: t });
-                    // Live preview: apply immediately so the user sees the
-                    // difference before Done. The draft commit keeps it;
-                    // Skip leaves the last-picked theme (a deliberate pick).
+                    // Live preview, two layers: flip the theme attribute
+                    // synchronously so the change is visible THIS frame even
+                    // if the IPC save round-trip lags, then persist it so the
+                    // Shell effect (and every later boot) agrees with the DOM.
+                    // The draft commit keeps it; Skip leaves the last pick.
+                    if (typeof document !== "undefined") {
+                      document.documentElement.dataset["theme"] = t;
+                    }
                     void settings
                       .getState()
                       .save({ theme: t })

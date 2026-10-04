@@ -23,6 +23,7 @@ import { formatStr, localeTag, resolveLanguage, useStrings } from "./locale.js";
 import { pressScale, tweenAccentVar } from "./motion.js";
 import { BatchPanel } from "./BatchPanel.js";
 import { parseBatchText } from "./batch.js";
+import { autoSortSubdir } from "./destination.js";
 import { useDuplicateGuard } from "./DuplicatePrompt.js";
 import type { GuardInput } from "./identity.js";
 import { identityKey } from "./identity.js";
@@ -170,8 +171,9 @@ export function Home({
     [engine, settingsState.thumbnailAccent],
   );
 
-  // Multiline input routing: 0-1 valid URLs stay here, 2+ go to Batch.
-  // Returns true when the text was routed to Batch (caller: show nothing else).
+  // Input modes: single-link card vs batch panel (never both on screen).
+  // Multiline routing (2+ URLs) flips to batch automatically.
+  const [mode, setMode] = useState<"single" | "batch">("single");
   const [batchSeed, setBatchSeed] = useState<string | null>(null);
   const routeText = useCallback(
     (text: string): boolean => {
@@ -179,6 +181,7 @@ export function Home({
       if (valid.length >= 2) {
         setError(null);
         setBatchSeed(text);
+        setMode("batch");
         setQueuedNote(formatStr(S.home.multiToBatch, { count: valid.length }));
         return true;
       }
@@ -346,6 +349,24 @@ export function Home({
     await analyzeValue(url);
   };
 
+  // Smart default per site (A2): when a remembered preset exists for the
+  // analyzed extractor, pre-select it. Runs once per analyzed URL so manual
+  // tweaks afterwards are never clobbered.
+  const appliedSite = useRef<string | null>(null);
+  useEffect(() => {
+    if (info === null || info.extractor === null) return;
+    const key = `${info.extractor.toLowerCase()}::${info.url}`;
+    if (appliedSite.current === key) return;
+    appliedSite.current = key;
+    const remembered = settings.getState().settings.presetBySite[info.extractor.toLowerCase()];
+    if (remembered !== undefined) {
+      setKind(remembered.kind);
+      setVideoPreset(remembered.videoPreset);
+      setAudioPreset(remembered.audioPreset);
+      setRawFormat(null);
+    }
+  }, [info, settings]);
+
   useEffect(() => {
     if (pendingPaste === null) return;
     // Defensive: a multiline paste reaching here is routed to Batch.
@@ -353,6 +374,7 @@ export function Home({
       onPasteConsumed();
       return;
     }
+    setMode("single");
     setUrl(pendingPaste);
     onPasteConsumed();
     void analyzeValue(pendingPaste);
@@ -381,6 +403,52 @@ export function Home({
     });
   }, [info, entryFilter, hideDownloaded, entryStates]);
 
+  // Next-best action (A1): of a playlist, how many entries are NOT done yet.
+  const remainingIds = useMemo<readonly string[]>(() => {
+    if (info === null || !info.isPlaylist) return [];
+    return info.entries
+      .filter((e) => {
+        const st = entryStates?.get(e.id);
+        return st === undefined || !(st.archived || st.exists);
+      })
+      .map((e) => e.id);
+  }, [info, entryStates]);
+  const downloadedCount =
+    info !== null && info.isPlaylist ? info.entries.length - remainingIds.length : 0;
+
+  // Upgrade suggestion (A5): this exact video already lives in history.
+  const [upgradeNote, setUpgradeNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (info === null || info.isPlaylist) {
+      setUpgradeNote(null);
+      return;
+    }
+    let live = true;
+    void engine
+      .loadHistory()
+      .then((history) => {
+        if (!live) return;
+        const match = history.find(
+          (h) =>
+            (info.videoId !== null &&
+              h.videoId === info.videoId &&
+              (h.extractor ?? null) === (info.extractor ?? null)) ||
+            h.url === info.url,
+        );
+        if (match === undefined) {
+          setUpgradeNote(null);
+          return;
+        }
+        const p =
+          match.preset.kind === "video" ? match.preset.videoPreset : match.preset.audioPreset;
+        setUpgradeNote(formatStr(S.home.upgradeHint, { preset: p }));
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [info, engine, S]);
+
   const chapters = useMemo<readonly ChapterInfo[]>(
     () =>
       info !== null && !info.isPlaylist && info.chapters !== undefined && info.chapters !== null
@@ -406,7 +474,8 @@ export function Home({
 
   const renderEntryRow = (e: PlaylistEntry, i: number): React.JSX.Element => {
     const st = entryStates?.get(e.id);
-    const downloaded = st !== undefined && (st.archived || st.exists);
+    const onDisk = st !== undefined && st.exists;
+    const inArchive = st !== undefined && st.archived && !st.exists;
     const override = entryPresets[e.id] ?? null;
     const overrideValue =
       override === null
@@ -427,7 +496,8 @@ export function Home({
         <span className="entry-title" title={e.title}>
           {e.title}
         </span>
-        {downloaded && <span className="badge">{S.playlist.downloaded}</span>}
+        {onDisk && <span className="badge">{S.playlist.downloaded}</span>}
+        {inArchive && <span className="badge badge-warn">{S.playlist.archived}</span>}
         <select
           className="input"
           aria-label={S.batch.presetLabel}
@@ -480,13 +550,42 @@ export function Home({
     setQueuedNote(null);
     setQueueing(true);
     try {
+      // Disk-space precheck (C4): the drive must hold the estimate (or at
+      // least 1 GB for playlists whose total is unknowable up front).
       const preset: DownloadPreset = { kind, videoPreset, audioPreset, rawFormat };
       const outputDir = settingsState.downloadDir;
+      const needBytes = info.isPlaylist
+        ? 0
+        : (estimatePresetSize(info, preset, settingsState.codecPreference)?.bytes ?? 0);
+      const space = await engine.getDiskSpace(outputDir).catch(() => null);
+      if (
+        space !== null &&
+        space.freeBytes < Math.max(1_073_741_824, needBytes) &&
+        !window.confirm(
+          formatStr(S.home.lowDiskConfirm, { free: formatSize(space.freeBytes, locale) }),
+        )
+      ) {
+        return;
+      }
+      // Remember this preset for the site (silent smart default for next time).
+      if (info.extractor !== null) {
+        const site = info.extractor.toLowerCase();
+        const known = settings.getState().settings.presetBySite;
+        void settings
+          .getState()
+          .save({ presetBySite: { ...known, [site]: preset } })
+          .catch(() => undefined);
+      }
       const playlist = info.isPlaylist && info.entries.length > 0;
-      const subdir =
+      const playlistDir =
         playlist && settingsState.playlistSubfolder
           ? sanitizePlaylistTitle(info.title)
           : null;
+      // Auto-sort (F1/F3): category folders (and season folders) when no
+      // playlist folder already applies.
+      const subdir =
+        playlistDir ??
+        (settingsState.autoSort ? autoSortSubdir(preset.kind, info.title) : null);
       const rawTargets = playlist
         ? info.entries
             .filter((e) => selected.includes(e.id))
@@ -558,6 +657,17 @@ export function Home({
     }
   };
 
+  // One-click quick download (D4): analyze, then queue with the current
+  // preset through the exact same path (guard included).
+  const autoQueueRef = useRef<boolean>(false);
+  const enqueueRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  enqueueRef.current = enqueueAll;
+  useEffect(() => {
+    if (info === null || analyzing || !autoQueueRef.current) return;
+    autoQueueRef.current = false;
+    void enqueueRef.current();
+  }, [info, analyzing]);
+
   const onDrop = (e: React.DragEvent): void => {
     e.preventDefault();
     const text =
@@ -575,9 +685,29 @@ export function Home({
   return (
     <section className="grabber-view" aria-label={S.home.title}>
       <h1>{S.home.title}</h1>
+      <div className="segmented" role="group" aria-label={S.home.inputMode}>
+        {(["single", "batch"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            className="chip"
+            data-testid={`home-mode-${m}`}
+            aria-pressed={mode === m}
+            onPointerDown={(e) => {
+              pressScale(e.currentTarget);
+            }}
+            onClick={() => {
+              setMode(m);
+            }}
+          >
+            {m === "single" ? S.home.modeSingle : S.home.modeBatch}
+          </button>
+        ))}
+      </div>
       <div
         className="grabber-card"
         aria-busy={analyzing}
+        hidden={mode !== "single"}
         onDragOver={(e) => {
           e.preventDefault();
         }}
@@ -624,6 +754,21 @@ export function Home({
           >
             {analyzing ? S.home.analyzing : S.home.analyze}
           </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={analyzing}
+            title={S.home.quickDownload}
+            onPointerDown={(e) => {
+              pressScale(e.currentTarget);
+            }}
+            onClick={() => {
+              autoQueueRef.current = true;
+              void analyze();
+            }}
+          >
+            {S.home.quickDownload}
+          </button>
           {analyzing && (
             <button
               type="button"
@@ -655,16 +800,18 @@ export function Home({
         )}
       </div>
 
-      <BatchPanel
-        engine={engine}
-        queue={queue}
-        settings={settings}
-        seedText={batchSeed}
-        onSeedConsumed={consumeSeed}
-      />
+      <div hidden={mode !== "batch"}>
+        <BatchPanel
+          engine={engine}
+          queue={queue}
+          settings={settings}
+          seedText={batchSeed}
+          onSeedConsumed={consumeSeed}
+        />
+      </div>
 
       {analyzing && info === null && (
-        <div className="grabber-card" aria-busy="true">
+        <div className="grabber-card" aria-busy="true" hidden={mode !== "single"}>
           <p className="muted" role="status">
             {S.home.analyzing}
           </p>
@@ -678,6 +825,7 @@ export function Home({
       {info !== null && (
         <div
           className="grabber-card"
+          hidden={mode !== "single"}
           ref={previewRef}
           data-accent={thumbAccent !== null ? "true" : undefined}
           style={
@@ -692,6 +840,7 @@ export function Home({
                 className="preview-thumb"
                 src={info.thumbnail}
                 alt=""
+                loading="lazy"
                 referrerPolicy="no-referrer"
               />
             ) : (
@@ -928,6 +1077,17 @@ export function Home({
                 >
                   {S.home.selectNone}
                 </button>
+                {downloadedCount > 0 && remainingIds.length > 0 && (
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    onClick={() => {
+                      setSelected([...remainingIds]);
+                    }}
+                  >
+                    {formatStr(S.home.downloadRemaining, { n: remainingIds.length })}
+                  </button>
+                )}
               </div>
               <div className="chip-row">
                 <input
@@ -972,6 +1132,11 @@ export function Home({
             </div>
           )}
 
+          {upgradeNote !== null && (
+            <p className="note" role="status">
+              {upgradeNote}
+            </p>
+          )}
           <button
             type="button"
             className="btn btn-primary"

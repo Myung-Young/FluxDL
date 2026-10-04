@@ -3,6 +3,7 @@ import type {
   AudioPreset,
   CodecPreference,
   Density,
+  DownloadPreset,
   Language,
   VideoPreset,
 } from "./types.js";
@@ -40,6 +41,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
   accentOverride: null,
   playlistSubfolder: true,
   language: "auto",
+  notifyFinished: true,
+  followSystemTheme: false,
+  launchAtLogin: false,
+  autoSort: false,
+  experimental: false,
+  lastView: "home",
+  lastQueueFilter: "all",
+  batchDraft: "",
+  presetBySite: {},
+  savedSearches: [],
+  recentSearches: [],
   historyLimit: 500,
   // X quits by default: hiding to tray only when the user opts in.
   // (An earlier default of "tray" made X ignore the minimize-to-tray toggle
@@ -81,6 +93,78 @@ function cleanAccentOverride(value: unknown): string | null {
 function clampHistoryLimit(n: unknown): number {
   if (typeof n !== "number" || !Number.isFinite(n)) return 500;
   return Math.min(5000, Math.max(10, Math.floor(n)));
+}
+
+/** Per-site preset map: garbage keys/presets are dropped, never defaulted. */
+function cleanPresetBySite(value: unknown): Record<string, DownloadPreset> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const out: Record<string, DownloadPreset> = {};
+  for (const [rawKey, rawVal] of Object.entries(value)) {
+    const key = rawKey.trim().toLowerCase().slice(0, 64);
+    if (key.length === 0 || typeof rawVal !== "object" || rawVal === null) continue;
+    const rec = rawVal as Record<string, unknown>;
+    const kind = rec["kind"];
+    const videoPreset = rec["videoPreset"];
+    const audioPreset = rec["audioPreset"];
+    if (kind !== "video" && kind !== "audio") continue;
+    if (
+      typeof videoPreset !== "string" ||
+      !(VIDEO_PRESETS as readonly string[]).includes(videoPreset)
+    ) {
+      continue;
+    }
+    if (
+      typeof audioPreset !== "string" ||
+      !(AUDIO_PRESETS as readonly string[]).includes(audioPreset)
+    ) {
+      continue;
+    }
+    out[key] = {
+      kind,
+      videoPreset: videoPreset as VideoPreset,
+      audioPreset: audioPreset as AudioPreset,
+      rawFormat: null,
+    };
+  }
+  return out;
+}
+
+/** Search lists: trimmed non-empty strings, capped. */
+const SHELL_VIEWS: readonly string[] = [
+  "home",
+  "downloads",
+  "library",
+  "stats",
+  "settings",
+  "logs",
+  "changelog",
+];
+const QUEUE_FILTERS: readonly string[] = ["all", "active", "error", "done"];
+
+function cleanView(value: unknown): string {
+  return typeof value === "string" && SHELL_VIEWS.includes(value) ? value : "home";
+}
+
+function cleanQueueFilter(value: unknown): string {
+  return typeof value === "string" && QUEUE_FILTERS.includes(value) ? value : "all";
+}
+
+function cleanDraft(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.slice(0, 102_400);
+}
+
+function cleanSearchList(value: unknown, cap: number): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const t = item.trim().slice(0, 40);
+    if (t.length === 0 || out.includes(t)) continue;
+    out.push(t);
+    if (out.length >= cap) break;
+  }
+  return out;
 }
 
 function cleanPreset(
@@ -169,11 +253,31 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
         : cleanAccentOverride(patch.accentOverride),
     playlistSubfolder: cleanBool(patch.playlistSubfolder, base.playlistSubfolder),
     language: LANGUAGES.includes(languageRaw) ? languageRaw : base.language,
+    presetBySite:
+      patch.presetBySite === undefined ? base.presetBySite : cleanPresetBySite(patch.presetBySite),
+    savedSearches:
+      patch.savedSearches === undefined ? base.savedSearches : cleanSearchList(patch.savedSearches, 10),
+    recentSearches:
+      patch.recentSearches === undefined
+        ? base.recentSearches
+        : cleanSearchList(patch.recentSearches, 5),
     historyLimit:
       patch.historyLimit === undefined
         ? base.historyLimit
         : clampHistoryLimit(patch.historyLimit),
+    lastView: patch.lastView === undefined ? base.lastView : cleanView(patch.lastView),
+    lastQueueFilter:
+      patch.lastQueueFilter === undefined
+        ? base.lastQueueFilter
+        : cleanQueueFilter(patch.lastQueueFilter),
+    batchDraft:
+      patch.batchDraft === undefined ? base.batchDraft : cleanDraft(patch.batchDraft),
+    followSystemTheme: cleanBool(patch.followSystemTheme, base.followSystemTheme),
+    launchAtLogin: cleanBool(patch.launchAtLogin, base.launchAtLogin),
+    autoSort: cleanBool(patch.autoSort, base.autoSort),
+    experimental: cleanBool(patch.experimental, base.experimental),
     closeBehavior: CLOSE_BEHAVIORS.includes(closeRaw) ? closeRaw : base.closeBehavior,
     minimizeToTray: cleanBool(patch.minimizeToTray, base.minimizeToTray),
+    notifyFinished: cleanBool(patch.notifyFinished, base.notifyFinished),
   };
 }

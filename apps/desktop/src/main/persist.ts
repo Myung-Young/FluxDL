@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { AppSettings, DownloadJob, JobStatus } from "@grabber/core/types.js";
+import type { AppSettings, DownloadJob, JobStatus, WatchChannel } from "@grabber/core/types.js";
 import { DEFAULT_SETTINGS, mergeSettings } from "@grabber/core/settings.js";
+import { normalizeWatchlist } from "@grabber/core/watchlist.js";
 
 /**
  * File persistence (main process only).
@@ -24,6 +25,8 @@ const SETTINGS_TMP = "grabber-settings.json.tmp";
 const QUEUE_FILE = "queue.json";
 const QUEUE_TMP = "queue.json.tmp";
 const HISTORY_FILE = "history.jsonl";
+const WATCHLIST_FILE = "watchlist.json";
+const WATCHLIST_TMP = "watchlist.json.tmp";
 
 const STATUSES: readonly JobStatus[] = [
   "queued",
@@ -182,4 +185,28 @@ export async function updateHistoryOnDisk(userDataDir: string, job: DownloadJob)
 export async function clearHistoryOnDisk(userDataDir: string): Promise<void> {
   await mkdir(userDataDir, { recursive: true });
   await writeFile(join(userDataDir, HISTORY_FILE), "", "utf8");
+}
+
+/** Watched channels (atomic JSON like the queue snapshot). */
+export async function loadWatchlistFromDisk(userDataDir: string): Promise<WatchChannel[]> {
+  const file = join(userDataDir, WATCHLIST_FILE);
+  if (!existsSync(file)) return [];
+  try {
+    const raw = JSON.parse(await readFile(file, "utf8")) as unknown;
+    return normalizeWatchlist(raw);
+  } catch {
+    return [];
+  }
+}
+
+export async function saveWatchlistToDisk(
+  userDataDir: string,
+  channels: readonly WatchChannel[],
+): Promise<void> {
+  const clean = normalizeWatchlist(channels);
+  await mkdir(userDataDir, { recursive: true });
+  const finalPath = join(userDataDir, WATCHLIST_FILE);
+  const tmpPath = join(userDataDir, WATCHLIST_TMP);
+  await writeFile(tmpPath, JSON.stringify(clean), "utf8");
+  await rename(tmpPath, finalPath);
 }

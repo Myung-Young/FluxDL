@@ -14,9 +14,25 @@ export class UrlValidationError extends Error {
 /**
  * Trim, add https:// when the scheme is missing, and require http(s).
  * Returns the normalized URL string. Throws UrlValidationError otherwise.
+ *
+ * Copy-paste hardening: clipboard text can carry invisible characters
+ * (zero-width spaces from share sheets) and wrapping quotes — both are
+ * stripped so a freshly-copied YouTube link is never "invalid".
  */
+/** Invisible hitchhikers from share sheets (ZWSP/ZWNJ/ZWJ/BOM). */
+const INVISIBLE_CHARS: readonly string[] = [0x200b, 0x200c, 0x200d, 0xfeff].map((c) =>
+  String.fromCharCode(c),
+);
+
 export function normalizeUrl(input: string): string {
-  const trimmed = input.trim().replace(/^<(.+)>$/, "$1");
+  let cleaned = input;
+  for (const ch of INVISIBLE_CHARS) cleaned = cleaned.split(ch).join("");
+  cleaned = cleaned
+    .trim()
+    .replace(/^<(.+)>$/, "$1")
+    .replace(/^["'“”‘’](.+)["'“”‘’]$/, "$1")
+    .trim();
+  const trimmed = cleaned;
   if (trimmed.length === 0) {
     throw new UrlValidationError("Enter a link first.");
   }

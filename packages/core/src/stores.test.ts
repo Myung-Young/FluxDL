@@ -49,6 +49,11 @@ function makeEngine() {
       history.push(job);
       return Promise.resolve();
     },
+    removeHistory: (id: string): Promise<void> => {
+      const i = history.findIndex((h) => h.id === id);
+      if (i >= 0) history.splice(i, 1);
+      return Promise.resolve();
+    },
     loadQueue: (): Promise<DownloadJob[]> => Promise.resolve([...snapshot]),
     loadSettings: (): Promise<AppSettings> => Promise.resolve(storedSettings),
     saveSettings: (patch: Partial<AppSettings>): Promise<AppSettings> => {

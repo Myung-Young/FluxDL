@@ -3,6 +3,46 @@
 All notable changes to FluxDL are documented here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.6.0] — 2026-10-04
+
+"Frictionless & Trustworthy": every control redesigned, the Home page
+split into Single/Batch modes, original icons throughout, and the full
+Smart Queue + Search + States + Workflow + OS + Data batches.
+
+### Fixed
+
+- Paste reported "invalid link" on freshly-copied YouTube URLs. Two real
+  causes: the clipboard read was unbound (`Illegal invocation`, so it
+  always failed) and could be denied inside the sandbox. Reads now go
+  through the main process, with invisible characters and wrapping quotes
+  stripped from pasted text.
+- Tray icon could ghost after terminate; it is now destroyed on will-quit.
+- Onboarding theme picks apply live (synchronous flip + persisted save).
+- The X button quits by default; hiding to tray is opt-in.
+- Playlist entries distinguish Archived from On-disk.
+
+### Added
+
+- Original hand-drawn SVG icon set (logo + every nav view).
+- Home Single/Batch modes with auto-routing; maximize is disabled.
+- Smart Queue: download-remaining, per-site presets, resume banner,
+  scheduled downloads, upgrade hints, channel watchlist.
+- Search & Command: fuzzy typo-tolerant search everywhere, unified palette
+  content results, local-language intents, saved/recent searches, view
+  history (Alt+Left/Right), pinned jobs, PiP + fullscreen preview.
+- States & Undo: actionable empties, 5 s undo for sweeps, offline banner,
+  disk-space precheck, executable-open guard, show-command, digest
+  notifications with a preference toggle.
+- Workflow: one-click profiles, remembered view/filter, multi-select bulk
+  bar, quick download, filename token builder, dependent fields, backup &
+  restore, copy-links.
+- OS integration: screen-reader sparkline labels, preview focus trap,
+  system theme sync, jump list, taskbar badge, auto-start, icon-only
+  sidebar under 720 px, `.fluxdl` batch files.
+- Data & performance: auto-sort folders, episode detection, storage
+  insights with orphan cleaner, per-site + per-preset stats, lazy views,
+  per-view error boundaries, experimental flag, release checklist.
+
 ## [1.5.1] — 2026-10-04
 
 ### Fixed

@@ -14,6 +14,7 @@ export type QueueStoreEngine = Pick<
   | "onProgress"
   | "saveQueue"
   | "appendHistory"
+  | "removeHistory"
   | "loadQueue"
 >;
 
@@ -28,12 +29,15 @@ export interface QueueStoreState {
   retry(id: string): Promise<void>;
   setJobCookies(id: string, browser: string | null): Promise<void>;
   setJobPreset(id: string, preset: DownloadJob["preset"]): Promise<void>;
+  setJobSchedule(id: string, startAfter: number | null): Promise<void>;
+  togglePin(id: string): Promise<void>;
   remove(id: string): Promise<void>;
   reorder(id: string, toIndex: number): Promise<void>;
   pauseAll(): Promise<void>;
   resumeAll(): Promise<void>;
-  cancelQueued(): Promise<void>;
-  clearFinished(): Promise<void>;
+  cancelQueued(): Promise<number>;
+  clearFinished(): Promise<number>;
+  undoSweep(): Promise<number>;
   retryAll(): Promise<void>;
   /** Drive due starts + backoff retries (reentrancy-guarded, cheap). */
   pump(): Promise<void>;
@@ -89,6 +93,12 @@ export function createQueueStore(
     setJobPreset: async (id, preset) => {
       await getController(set).setJobPreset(id, preset);
     },
+    setJobSchedule: async (id, startAfter) => {
+      await getController(set).setJobSchedule(id, startAfter);
+    },
+    togglePin: async (id) => {
+      await getController(set).togglePin(id);
+    },
     remove: async (id) => {
       await getController(set).remove(id);
     },
@@ -101,12 +111,9 @@ export function createQueueStore(
     resumeAll: async () => {
       await getController(set).resumeAll();
     },
-    cancelQueued: async () => {
-      await getController(set).cancelQueued();
-    },
-    clearFinished: async () => {
-      await getController(set).clearFinished();
-    },
+    cancelQueued: async () => getController(set).cancelQueued(),
+    clearFinished: async () => getController(set).clearFinished(),
+    undoSweep: async () => getController(set).undoSweep(),
     retryAll: async () => {
       await getController(set).retryAll();
     },

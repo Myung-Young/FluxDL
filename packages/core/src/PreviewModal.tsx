@@ -34,6 +34,7 @@ export function PreviewModal({
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState<boolean>(false);
   const boxRef = useRef<HTMLDivElement | null>(null);
+  const mediaRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -56,7 +57,24 @@ export function PreviewModal({
     const box = boxRef.current;
     box?.querySelector<HTMLButtonElement>("button")?.focus();
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      // Focus trap (same pattern as the other dialogs).
+      if (e.key !== "Tab" || box === null) return;
+      const items = Array.from(box.querySelectorAll<HTMLElement>("button, audio, video"));
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (first === undefined || last === undefined) return;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => {
@@ -90,6 +108,7 @@ export function PreviewModal({
           </p>
         ) : isVideo(path) ? (
           <video
+            ref={mediaRef}
             className="preview-media"
             src={url}
             controls
@@ -106,6 +125,30 @@ export function PreviewModal({
           />
         )}
         <div className="chip-row">
+          {isVideo(path) && url !== null && (
+            <>
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={() => {
+                  // Both APIs exist in Electron 36; failures (e.g. no video
+                  // track loaded yet) stay silent by design.
+                  mediaRef.current?.requestPictureInPicture().catch(() => undefined);
+                }}
+              >
+                {S.library.previewPip}
+              </button>
+              <button
+                type="button"
+                className="btn btn-small"
+                onClick={() => {
+                  mediaRef.current?.requestFullscreen().catch(() => undefined);
+                }}
+              >
+                {S.library.previewFullscreen}
+              </button>
+            </>
+          )}
           <button type="button" className="btn" onClick={onClose}>
             {S.shortcuts.close}
           </button>

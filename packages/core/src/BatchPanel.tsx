@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { readClipboardText } from "./clipboard.js";
+import { autoSortSubdir } from "./destination.js";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
@@ -100,7 +102,17 @@ export function BatchPanel({
   onSeedConsumed,
 }: BatchPanelProps): React.JSX.Element {
   const [entries, setEntriesState] = useState<readonly BatchEntry[]>([]);
-  const [text, setText] = useState<string>("");
+  // Unsent draft survives restarts (D8): seeded on boot, saved debounced.
+  const [text, setText] = useState<string>(() => settings.getState().settings.batchDraft);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void settings.getState().save({ batchDraft: text }).catch(() => undefined);
+    }, 500);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [text, settings]);
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<boolean>(false);
   const [queueing, setQueueing] = useState<boolean>(false);
@@ -282,10 +294,15 @@ export function BatchPanel({
         if (row === undefined || info === null || info === undefined) continue;
         const preset = row.preset ?? globalPreset;
         const playlist = info.isPlaylist && info.entries.length > 0;
-        const subdir =
+        const playlistDir =
           playlist && settingsState.playlistSubfolder
             ? sanitizePlaylistTitle(info.title)
             : null;
+        const subdir =
+          playlistDir ??
+          (settingsState.autoSort && !playlist
+            ? autoSortSubdir(preset.kind, info.title)
+            : null);
         const targets = playlist
           ? info.entries.map((en) => ({
               url: en.url,
@@ -430,9 +447,24 @@ export function BatchPanel({
         ))}
       </div>
       {entries.length === 0 ? (
-        <p className="hint" role="status">
-          {S.batch.empty}
-        </p>
+        <>
+          <p className="hint" role="status">
+            {S.batch.empty}
+          </p>
+          <div className="chip-row">
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => {
+                void readClipboardText().then((clip) => {
+                  if (clip !== null && clip.trim().length > 0) setText(clip);
+                });
+              }}
+            >
+              {S.batch.pasteClipboard}
+            </button>
+          </div>
+        </>
       ) : (
         <ul className="entries">
           {entries.map((e) => (

@@ -14,6 +14,8 @@ import { buildJobMenu } from "./JobMenu.js";
 import { writeClipboardText } from "./clipboard.js";
 import { PreviewModal } from "./PreviewModal.js";
 import { isMediaFile } from "./destination.js";
+import { addWatchChannel, diffWatch, touchWatch } from "./watchlist.js";
+import type { PlaylistEntry, WatchChannel } from "./types.js";
 
 export interface LibraryProps {
   readonly engine: DownloadEngine;
@@ -33,6 +35,12 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
   const [missing, setMissing] = useState<ReadonlySet<string>>(new Set());
   const [checking, setChecking] = useState<boolean>(false);
   const [preview, setPreview] = useState<DownloadJob | null>(null);
+  // Watchlist (A6): channels checked for new uploads.
+  const [watch, setWatch] = useState<readonly WatchChannel[]>([]);
+  const [watchUrl, setWatchUrl] = useState<string>("");
+  const [watchNote, setWatchNote] = useState<string | null>(null);
+  const [fresh, setFresh] = useState<Readonly<Record<string, readonly PlaylistEntry[]>>>({});
+  const [freshFrom, setFreshFrom] = useState<Readonly<Record<string, string | null>>>({});
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -79,6 +87,87 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    void engine
+      .loadWatchlist()
+      .then((w) => {
+        setWatch(w);
+      })
+      .catch(() => undefined);
+  }, [engine]);
+
+  const persistWatch = async (next: readonly WatchChannel[]): Promise<void> => {
+    setWatch(next);
+    await engine.saveWatchlist([...next]).catch(() => undefined);
+  };
+
+  const addWatch = async (): Promise<void> => {
+    const url = watchUrl.trim();
+    if (url.length === 0) return;
+    setBusy(true);
+    try {
+      const info = await engine.getInfo(url);
+      const next = addWatchChannel(watch, info.url, info.title);
+      setWatchUrl("");
+      setWatchNote(null);
+      await persistWatch(next);
+    } catch {
+      setWatchNote(S.home.invalidUrl);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const checkWatch = async (channel: WatchChannel): Promise<void> => {
+    setBusy(true);
+    try {
+      const info = await engine.getInfo(channel.url);
+      const diff = diffWatch(info, channel.lastVideoId);
+      const next = touchWatch(watch, channel.url, {
+        title: info.title,
+        lastVideoId: diff.baseline,
+        lastCheckedAt: Date.now(),
+      });
+      await persistWatch(next);
+      setFresh((prev) => ({ ...prev, [channel.url]: diff.fresh }));
+      setFreshFrom((prev) => ({ ...prev, [channel.url]: info.extractor }));
+      setWatchNote(
+        diff.isFirstCheck
+          ? S.library.watchFirstCheck
+          : formatStr(S.library.watchNew, { n: diff.fresh.length }),
+      );
+    } catch {
+      setWatchNote(S.home.analyzeFailed);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const queueFresh = async (channel: WatchChannel): Promise<void> => {
+    const entries = fresh[channel.url] ?? [];
+    if (entries.length === 0) return;
+    setBusy(true);
+    try {
+      const preset = settings.getState().settings.defaultPreset;
+      const outputDir = settings.getState().settings.downloadDir;
+      const extractor = freshFrom[channel.url] ?? null;
+      for (const e of entries) {
+        await queue.getState().enqueue({
+          url: e.url,
+          title: e.title,
+          preset,
+          outputDir,
+          extractor,
+          videoId: e.id,
+        });
+      }
+      setFresh((prev) => ({ ...prev, [channel.url]: [] }));
+      toast.getState().push(S.toast.queued, "info");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const visible = useMemo(
     () => searchHistory(history, debouncedQuery),
@@ -321,6 +410,97 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
           }}
         />
         {checking && <p className="muted">{S.library.checking}</p>}
+      </div>
+      <div className="grabber-card">
+        <h2 className="dl-title">{S.library.watchTitle}</h2>
+        <div className="url-row">
+          <input
+            className="input"
+            placeholder={S.library.watchPlaceholder}
+            value={watchUrl}
+            aria-label={S.library.watchPlaceholder}
+            spellCheck={false}
+            disabled={busy}
+            onChange={(e) => {
+              setWatchUrl(e.target.value);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void addWatch();
+            }}
+          />
+          <button
+            type="button"
+            className="btn"
+            disabled={busy}
+            onClick={() => {
+              void addWatch();
+            }}
+          >
+            {S.library.watchAdd}
+          </button>
+        </div>
+        {watchNote !== null && (
+          <p className="note" role="status">
+            {watchNote}
+          </p>
+        )}
+        {watch.length === 0 ? (
+          <p className="muted" role="status">
+            {S.library.watchEmpty}
+          </p>
+        ) : (
+          <ul className="entries">
+            {watch.map((c) => {
+              const freshCount = fresh[c.url]?.length ?? 0;
+              return (
+                <li key={c.url} className="batch-row">
+                  <span className="batch-title" title={c.url}>
+                    {c.title}
+                  </span>
+                  {c.lastCheckedAt !== null && (
+                    <span className="muted">
+                      {formatStr(S.library.watchLastChecked, {
+                        when: new Date(c.lastCheckedAt).toLocaleString(),
+                      })}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    disabled={busy}
+                    onClick={() => {
+                      void checkWatch(c);
+                    }}
+                  >
+                    {S.library.watchCheck}
+                  </button>
+                  {freshCount > 0 && (
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      disabled={busy}
+                      onClick={() => {
+                        void queueFresh(c);
+                      }}
+                    >
+                      {formatStr(S.library.watchQueueNew, { n: freshCount })}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    disabled={busy}
+                    onClick={() => {
+                      void persistWatch(watch.filter((w) => w.url !== c.url));
+                    }}
+                  >
+                    {S.library.watchRemove}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
       </div>
       {loading ? (
         <div className="grabber-card">

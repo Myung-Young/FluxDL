@@ -13,6 +13,22 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
+    version: "1.6.0",
+    date: "2026-10-04",
+    en: [
+      "Redesigned checkboxes/radios, original icons, Single/Batch Home modes.",
+      "Smart Queue: remaining-only, per-site presets, scheduling, watchlist.",
+      "Fuzzy search, smart palette intents, undo, backup/restore, storage insights.",
+      "Paste fixed: clipboard reads via the main process, invisible junk stripped.",
+    ],
+    ms: [
+      "Kotak semak/radio direka semula, ikon original, mod Tunggal/Kelompok.",
+      "Baris Pintar: baki sahaja, pratetap per-tapak, jadual, senarai pantau.",
+      "Carian fuzzy, niat palet pintar, buat-asal, sandaran, cerapan storan.",
+      "Tampal dibaiki: bacaan papan klip via proses main, aksara halimunan dibuang.",
+    ],
+  },
+  {
     version: "1.5.1",
     date: "2026-10-04",
     en: [

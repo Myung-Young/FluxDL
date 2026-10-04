@@ -16,6 +16,7 @@ function makeEngine() {
     broadcastDeepLink: (url) => {
       links.push(url);
     },
+    broadcastBatchLink: () => undefined,
     onAggregate: () => undefined,
   });
   return { engine, base, links };
@@ -78,6 +79,31 @@ describe("engine addons (lifecycle/deeplink/media/updates)", () => {
   it("openExternal rejects non-Releases URLs", async () => {
     const { engine } = makeEngine();
     await expect(engine.openExternal("https://evil.example/")).rejects.toThrow(/not allowed/);
+  });
+
+  it("readClipboard resolves null-or-text, never throws", async () => {
+    const { engine } = makeEngine();
+    const text = await engine.readClipboard();
+    expect(text === null || typeof text === "string").toBe(true);
+  });
+
+  it("scans storage totals and orphans (F2)", async () => {
+    const { engine, base } = makeEngine();
+    const { mkdirSync } = await import("node:fs");
+    const dl = join(base, "dl");
+    mkdirSync(dl, { recursive: true });
+    writeFileSync(join(dl, "song.mp3"), "12345678");
+    writeFileSync(join(dl, "movie.mp4"), "1234567890123456");
+    writeFileSync(join(dl, "movie.mp4.part"), "xyz");
+    writeFileSync(join(dl, "notes.txt"), "hi");
+    await engine.saveSettings({ downloadDir: dl });
+    const insights = await engine.getStorageInsights();
+    expect(insights.audioFiles).toBe(1);
+    expect(insights.audioBytes).toBe(8);
+    expect(insights.videoFiles).toBe(1);
+    expect(insights.otherFiles).toBe(1);
+    expect(insights.orphans).toHaveLength(1);
+    expect(insights.orphanBytes).toBe(3);
   });
 
   it("checkForUpdates resolves the status shape (best-effort network)", async () => {

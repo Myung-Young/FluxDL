@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import { APP_NAME } from "./branding.js";
@@ -13,13 +13,22 @@ import { NAV_VIEWS, comboFromEvent, isCommandPalette, isEditableTarget, isMiniMo
 import { ShortcutsDialog } from "./ShortcutsDialog.js";
 import { CommandPalette } from "./CommandPalette.js";
 import type { CommandContext } from "./commands.js";
-import { Home } from "./Home.js";
-import { Downloads } from "./Downloads.js";
-import { Library } from "./Library.js";
-import { Stats } from "./StatsScreen.js";
-import { SettingsScreen } from "./SettingsScreen.js";
-import { Logs } from "./Logs.js";
-import { ChangelogScreen } from "./ChangelogScreen.js";
+import { AppIcon } from "./icons.js";
+import { ErrorBoundary } from "./ErrorBoundary.js";
+import { diffWatch } from "./watchlist.js";
+// Views load on demand (F4): the boot bundle stays lean, each screen is its
+// own chunk. Static imports would defeat the split, hence the wrappers.
+const Home = lazy(() => import("./Home.js").then((m) => ({ default: m.Home })));
+const Downloads = lazy(() => import("./Downloads.js").then((m) => ({ default: m.Downloads })));
+const Library = lazy(() => import("./Library.js").then((m) => ({ default: m.Library })));
+const Stats = lazy(() => import("./StatsScreen.js").then((m) => ({ default: m.Stats })));
+const SettingsScreen = lazy(() =>
+  import("./SettingsScreen.js").then((m) => ({ default: m.SettingsScreen })),
+);
+const Logs = lazy(() => import("./Logs.js").then((m) => ({ default: m.Logs })));
+const ChangelogScreen = lazy(() =>
+  import("./ChangelogScreen.js").then((m) => ({ default: m.ChangelogScreen })),
+);
 import { Toasts } from "./Toasts.js";
 import { Onboarding } from "./Onboarding.js";
 import { MiniView } from "./MiniView.js";
@@ -45,7 +54,13 @@ export type ShellView = "home" | "downloads" | "library" | "stats" | "settings" 
  * aggregate samples (no chart library). Static geometry per render, so
  * there is nothing to animate and `prefers-reduced-motion` needs no carve-out.
  */
-function Sparkline({ samples }: { samples: readonly number[] }): React.JSX.Element | null {
+function Sparkline({
+  samples,
+  label,
+}: {
+  samples: readonly number[];
+  label: string;
+}): React.JSX.Element | null {
   if (samples.length < 2 || samples.every((v) => v <= 0)) return null;
   const w = 180;
   const h = 28;
@@ -63,7 +78,8 @@ function Sparkline({ samples }: { samples: readonly number[] }): React.JSX.Eleme
       width={w}
       height={h}
       viewBox={`0 0 ${String(w)} ${String(h)}`}
-      aria-hidden="true"
+      role="img"
+      aria-label={label}
       focusable="false"
     >
       <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="1.5" />
@@ -85,6 +101,10 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   const [etaText, setEtaText] = useState<string>("");
   const [speedSamples, setSpeedSamples] = useState<readonly number[]>([]);
   const [updateNoted, setUpdateNoted] = useState<boolean>(false);
+  const [online, setOnline] = useState<boolean>(
+    () => typeof navigator === "undefined" || navigator.onLine,
+  );
+  const wasOnline = useRef<boolean>(true);
   const [pendingSection, setPendingSection] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState<boolean>(false);
   const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
@@ -98,6 +118,30 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   const aggTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const jobs = useStore(queue, (s) => s.jobs);
   const theme = useStore(settings, (s) => s.settings.theme);
+  const followSystem = useStore(settings, (s) => s.settings.followSystemTheme);
+  const [systemLight, setSystemLight] = useState<boolean>(() =>
+    typeof window !== "undefined" && typeof window.matchMedia === "function"
+      ? window.matchMedia("(prefers-color-scheme: light)").matches
+      : false,
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia("(prefers-color-scheme: light)");
+    const flip = (): void => {
+      setSystemLight(mq.matches);
+    };
+    mq.addEventListener("change", flip);
+    return () => {
+      mq.removeEventListener("change", flip);
+    };
+  }, []);
+
+  // Effective theme (E3): the saved theme is the dark side; Paper is the
+  // light side when following the OS. Dots + onboarding keep the saved one.
+  let effectiveTheme: ThemeName = theme;
+  if (followSystem && systemLight) effectiveTheme = "paper";
+  else if (followSystem && theme === "paper") effectiveTheme = "obsidian";
   const density = useStore(settings, (s) => s.settings.density);
   const accentOverride = useStore(settings, (s) => s.settings.accentOverride);
   const S = useStrings(settings);
@@ -117,6 +161,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   const navRef = useRef<HTMLElement | null>(null);
   const mainRef = useRef<HTMLElement | null>(null);
 
+  const resumedOnce = useRef<boolean>(false);
   useEffect(() => {
     void settings
       .getState()
@@ -125,12 +170,30 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
     void queue
       .getState()
       .refresh()
+      .then(() => {
+        // Resume-session banner (A3): paused jobs survived the restart while
+        // everything else re-queues itself, so offer one-click resume once.
+        if (resumedOnce.current) return;
+        resumedOnce.current = true;
+        const paused = queue.getState().jobs.filter((j) => j.status === "paused");
+        if (paused.length === 0) return;
+        toast.getState().push(
+          formatStr(S.status.pausedResume, { count: paused.length }),
+          "info",
+          {
+            label: S.downloads.resumeAll,
+            run: () => {
+              queue.getState().resumeAll().catch(() => undefined);
+            },
+          },
+        );
+      })
       .catch(() => undefined);
-  }, [queue, settings]);
+  }, [queue, settings, toast, S]);
 
   useEffect(() => {
-    document.documentElement.dataset["theme"] = theme;
-  }, [theme]);
+    document.documentElement.dataset["theme"] = effectiveTheme;
+  }, [effectiveTheme]);
 
   useEffect(() => {
     document.documentElement.dataset["density"] = density;
@@ -146,9 +209,9 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
 
   useEffect(() => {
     void engine
-      .applyWindowChrome({ mini, theme })
+      .applyWindowChrome({ mini, theme: effectiveTheme })
       .catch(() => undefined);
-  }, [engine, mini, theme]);
+  }, [engine, mini, effectiveTheme]);
 
   useEffect(() => {
     const unsub = engine.onWindowChrome((state) => {
@@ -183,17 +246,58 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
     if (navRef.current !== null) staggerIn(navRef.current, "[data-nav]");
   }, []);
 
-  const switchView = useCallback(
-    (next: ShellView): void => {
+  // View history (B6): Alt+Left/Right walks it, scroll is remembered per view.
+  const viewHist = useRef<ShellView[]>(["home"]);
+  const viewIdx = useRef<number>(0);
+  const scrollPos = useRef<Partial<Record<ShellView, number>>>({});
+
+  const goView = useCallback(
+    (next: ShellView, push: boolean): void => {
       if (next === view) return;
+      if (mainRef.current !== null) {
+        scrollPos.current[view] = mainRef.current.scrollTop;
+      }
+      if (push) {
+        viewHist.current = [...viewHist.current.slice(0, viewIdx.current + 1), next];
+        viewIdx.current = viewHist.current.length - 1;
+        // Remember the view across restarts (D2, fire-and-forget).
+        void settings
+          .getState()
+          .save({ lastView: next })
+          .catch(() => undefined);
+      }
       const apply = (): void => {
         setView(next);
       };
       if (mainRef.current !== null) fadeSwap(mainRef.current, apply);
       else apply();
     },
-    [view],
+    [view, settings],
   );
+
+  const switchView = useCallback(
+    (next: ShellView): void => {
+      goView(next, true);
+    },
+    [goView],
+  );
+
+  const stepHistory = useCallback(
+    (delta: -1 | 1): void => {
+      const next = viewIdx.current + delta;
+      const target = viewHist.current[next];
+      if (target === undefined) return;
+      viewIdx.current = next;
+      goView(target, false);
+    },
+    [goView],
+  );
+
+  // Restore the remembered scroll after each view lands.
+  useEffect(() => {
+    const el = mainRef.current;
+    if (el !== null) el.scrollTop = scrollPos.current[view] ?? 0;
+  }, [view]);
 
   // Move keyboard focus into the new view (SPA nav pattern).
   useEffect(() => {
@@ -229,6 +333,81 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
       if (aggTimer.current !== null) clearTimeout(aggTimer.current);
     };
   }, [jobs, engine, S, locale]);
+
+  // Connection state (C3): one quiet toast per offline episode; the 1 s
+  // pump already resumes everything when the network returns.
+  useEffect(() => {
+    const flip = (): void => {
+      const up = navigator.onLine;
+      setOnline(up);
+      if (!up && wasOnline.current) {
+        toast.getState().push(S.status.offline, "info");
+      }
+      wasOnline.current = up;
+    };
+    window.addEventListener("online", flip);
+    window.addEventListener("offline", flip);
+    return () => {
+      window.removeEventListener("online", flip);
+      window.removeEventListener("offline", flip);
+    };
+  }, [toast, S]);
+
+  // Experimental: check watched channels on launch (F6). Baselines are
+  // always saved; the toast only fires when something is actually new.
+  const [watchChecked, setWatchChecked] = useState<boolean>(false);
+  useEffect(() => {
+    if (!settingsReady || watchChecked) return;
+    if (!settings.getState().settings.experimental) return;
+    setWatchChecked(true);
+    void (async (): Promise<void> => {
+      try {
+        const channels = await engine.loadWatchlist();
+        if (channels.length === 0) return;
+        let freshTotal = 0;
+        const updated = [...channels];
+        for (let i = 0; i < channels.length; i += 1) {
+          const c = channels[i];
+          if (c === undefined) continue;
+          try {
+            const info = await engine.getInfo(c.url);
+            const d = diffWatch(info, c.lastVideoId);
+            updated[i] = {
+              ...c,
+              title: info.title,
+              lastVideoId: d.baseline,
+              lastCheckedAt: Date.now(),
+            };
+            freshTotal += d.fresh.length;
+          } catch {
+            // One bad channel never blocks the rest.
+          }
+        }
+        await engine.saveWatchlist(updated).catch(() => undefined);
+        if (freshTotal > 0) {
+          toast.getState().push(formatStr(S.library.watchNew, { n: freshTotal }), "info", {
+            label: S.library.watchTitle,
+            run: () => {
+              switchView("library");
+            },
+          });
+        }
+      } catch {
+        // Silent: watchlist must never break launch.
+      }
+    })();
+  }, [settingsReady, watchChecked, engine, settings, toast, switchView, S]);
+
+  // Restore the last view once settings arrive (D2).
+  const viewRestored = useRef<boolean>(false);
+  useEffect(() => {
+    if (!settingsReady || viewRestored.current) return;
+    viewRestored.current = true;
+    const v = settings.getState().settings.lastView;
+    if ((NAV_VIEWS as readonly string[]).includes(v) && v !== view) {
+      switchView(v as ShellView);
+    }
+  }, [settingsReady, settings, switchView, view]);
 
   // Window title carries the active count (M3.8): `(N) FluxDL` or `FluxDL`.
   useEffect(() => {
@@ -313,14 +492,20 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   );
 
   // Deep links (fluxdl:// URL, CLI arg, second-instance forward): land on
-  // Home and analyze like a paste. Registered once; the engine owns delivery.
+  // Home and analyze like a paste. Batch files (.fluxdl) seed the Batch
+  // panel instead. Registered once; the engine owns delivery.
   useEffect(() => {
     const unsub = engine.onDeepLink((url) => {
       setPendingPaste(url);
       setView("home");
     });
+    const unsubBatch = engine.onBatchLink((text) => {
+      setPendingBatch(text);
+      setView("home");
+    });
     return () => {
       unsub();
+      unsubBatch();
     };
   }, [engine]);
 
@@ -345,9 +530,18 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
 
   // Global shortcuts: Ctrl+, opens Settings; Ctrl+V pastes + analyzes
   // when focus is outside editable fields; Ctrl+K opens the palette
-  // everywhere except inside editable fields; ? opens shortcut help.
+  // everywhere except inside editable fields; ? opens shortcut help;
+  // Alt+Left/Right walks the view history.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+          if (isEditableTarget(e.target)) return;
+          e.preventDefault();
+          stepHistory(e.key === "ArrowLeft" ? -1 : 1);
+          return;
+        }
+      }
       const combo = comboFromEvent(e);
       if (isShortcutHelp(combo)) {
         if (isEditableTarget(e.target)) return;
@@ -400,7 +594,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
     return () => {
       window.removeEventListener("keydown", onKey);
     };
-  }, [switchView]);
+  }, [switchView, stepHistory]);
 
   const consumePaste = useCallback((): void => {
     setPendingPaste(null);
@@ -458,7 +652,9 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
         {S.skipToContent}
       </a>
       <header className="grabber-titlebar">
-        <span className="grabber-mark" aria-hidden="true" />
+        <span className="grabber-mark" aria-hidden="true">
+          <AppIcon name="logo" />
+        </span>
         <span className="grabber-appname">{APP_NAME}</span>
         <span className="grabber-viewtitle">{nav.find((n) => n.id === view)?.label ?? ""}</span>
         <span
@@ -504,8 +700,10 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
                 switchView(item.id);
               }}
             >
-              <span className="grabber-nav-glyph" aria-hidden="true" />
-              <span>{item.label}</span>
+              <span className="grabber-nav-glyph" aria-hidden="true">
+                <AppIcon name={item.id} />
+              </span>
+              <span className="grabber-nav-label">{item.label}</span>
               {item.id === "downloads" && jobs.length > 0 && (
                 <span className="grabber-nav-badge" data-testid="downloads-nav-badge">
                   {jobs.length}
@@ -515,11 +713,25 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
           ))}
           <div className="grabber-nav-foot" data-testid="aggregate" role="status">
             {aggregateText}
+            {!online && <div className="muted">{S.status.offline}</div>}
             {etaText.length > 0 && <div className="muted">{etaText}</div>}
-            <Sparkline samples={speedSamples} />
+            <Sparkline samples={speedSamples} label={aggregateText} />
           </div>
         </nav>
         <main ref={mainRef} id="grabber-main" className="grabber-main" tabIndex={-1}>
+          <ErrorBoundary
+            title={S.errors.viewCrashed}
+            message={S.errors.viewCrashedHint}
+            resetLabel={S.errors.reloadView}
+            resetKey={view}
+          >
+          <Suspense
+            fallback={
+              <div className="grabber-card" aria-busy="true">
+                <p className="muted">{S.settings.loading}</p>
+              </div>
+            }
+          >
           {mini && (
             <MiniView
               jobs={jobs}
@@ -561,6 +773,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
             <SettingsScreen
               engine={engine}
               settings={settings}
+              queue={queue}
               onReplay={() => {
                 setReplayOnboarding(true);
                 setOnboardingDismissed(false);
@@ -571,6 +784,8 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
             <Logs engine={engine} queue={queue} settings={settings} toast={toast} />
           )}
           {!mini && view === "changelog" && <ChangelogScreen settings={settings} />}
+          </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
       <Toasts toast={toast} strings={S} />

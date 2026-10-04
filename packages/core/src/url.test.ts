@@ -20,6 +20,18 @@ describe("normalizeUrl", () => {
     expect(() => normalizeUrl("file:///C:/video.mp4")).toThrow(UrlValidationError);
   });
 
+  it("strips invisible characters and wrapping quotes from pasted links", () => {
+    const base = "https://youtu.be/aqz-KE-bpKQ";
+    const zwsp = String.fromCharCode(0x200b);
+    const zwnj = String.fromCharCode(0x200c);
+    const bom = String.fromCharCode(0xfeff);
+    expect(normalizeUrl(base + zwsp)).toBe(base);
+    expect(normalizeUrl(bom + base)).toBe(base);
+    expect(normalizeUrl(zwnj + base + zwsp)).toBe(base);
+    expect(normalizeUrl(`"${base}"`)).toBe(base);
+    expect(isValidUrl(`  ${base}  `)).toBe(true);
+  });
+
   it("handles unicode domains and paths with spaces", () => {
     const out = normalizeUrl("  youtube.com/watch?v=aqz-KE-bpKQ  ");
     expect(out.startsWith("https://")).toBe(true);

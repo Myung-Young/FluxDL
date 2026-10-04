@@ -26,6 +26,14 @@ export interface PresetMixEntry {
   readonly count: number;
 }
 
+export interface PresetSuccess {
+  readonly label: string;
+  readonly done: number;
+  readonly total: number;
+  /** done/total, or null when the preset has no finished-or-failed runs. */
+  readonly rate: number | null;
+}
+
 export interface DownloadStats {
   /** Records with status "done". */
   readonly completed: number;
@@ -42,6 +50,10 @@ export interface DownloadStats {
   readonly weeks: readonly WeekBucket[];
   readonly topUploaders: readonly TopUploader[];
   readonly presets: readonly PresetMixEntry[];
+  /** Top extractors ("youtube", …; "?" when the record predates identity). */
+  readonly sites: readonly TopUploader[];
+  /** Per-preset success rates over done + error runs (local insight, F7). */
+  readonly presetSuccess: readonly PresetSuccess[];
   /** True when history holds nothing at all. */
   readonly empty: boolean;
 }
@@ -133,6 +145,9 @@ export function computeStats(history: readonly DownloadJob[], now: number): Down
   let unknownDuration = 0;
   const uploaders = new Map<string, number>();
   const presets = new Map<string, number>();
+  const sites = new Map<string, number>();
+  const presetDone = new Map<string, number>();
+  const presetRuns = new Map<string, number>();
   const weekCounts = new Map<number, number>();
 
   const thisWeek = startOfWeek(now);
@@ -165,6 +180,15 @@ export function computeStats(history: readonly DownloadJob[], now: number): Down
     }
     const label = presetLabel(record);
     presets.set(label, (presets.get(label) ?? 0) + 1);
+    if (record.status === "done" || record.status === "error") {
+      presetRuns.set(label, (presetRuns.get(label) ?? 0) + 1);
+      if (record.status === "done") presetDone.set(label, (presetDone.get(label) ?? 0) + 1);
+    }
+    const site =
+      typeof record.extractor === "string" && record.extractor.trim().length > 0
+        ? record.extractor.trim().toLowerCase()
+        : "?";
+    sites.set(site, (sites.get(site) ?? 0) + 1);
 
     const week = startOfWeek(timeOf(record));
     if (week >= oldestWeek && week <= thisWeek) {
@@ -187,6 +211,18 @@ export function computeStats(history: readonly DownloadJob[], now: number): Down
     .map(([label, count]) => ({ label, count }))
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 
+  const topSites = [...sites.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    .slice(0, TOP_UPLOADERS);
+
+  const presetSuccess: PresetSuccess[] = [...presetRuns.entries()]
+    .map(([label, total]) => {
+      const done = presetDone.get(label) ?? 0;
+      return { label, done, total, rate: total > 0 ? done / total : null };
+    })
+    .sort((a, b) => (b.rate ?? -1) - (a.rate ?? -1) || a.label.localeCompare(b.label));
+
   return {
     completed: completed.length,
     failed,
@@ -198,6 +234,8 @@ export function computeStats(history: readonly DownloadJob[], now: number): Down
     weeks,
     topUploaders,
     presets: presetMix,
+    sites: topSites,
+    presetSuccess,
     empty: history.length === 0,
   };
 }

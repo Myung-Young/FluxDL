@@ -141,6 +141,12 @@ describe("queue state machine", () => {
     const waiting = { ...a, nextRetryAt: 9999 };
     expect(selectNextToStart([waiting], 5, 0)).toBeNull();
     expect(selectNextToStart([waiting], 5, 9999)?.id).toBe("a");
+    // Scheduled jobs wait for their time (A4).
+    const later = { ...a, startAfter: 5000 };
+    expect(selectNextToStart([later, b], 5, 1000)?.id).toBe("b");
+    expect(selectNextToStart([later], 5, 1000)).toBeNull();
+    expect(selectNextToStart([later], 5, 5000)?.id).toBe("a");
+    expect(selectNextToStart([{ ...a, startAfter: null }], 5, 0)?.id).toBe("a");
     expect(clampConcurrency(0)).toBe(1);
     expect(clampConcurrency(99)).toBe(5);
   });

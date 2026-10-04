@@ -71,6 +71,10 @@ function makeFake(): Fake {
       fake.history.push(job);
       return Promise.resolve();
     },
+    removeHistory: (id) => {
+      fake.history = fake.history.filter((h) => h.id !== id);
+      return Promise.resolve();
+    },
   };
   return fake;
 }
@@ -318,6 +322,72 @@ describe("QueueController", () => {
     ctrl.dispose();
   });
 
+  it("schedules queued jobs and rejects anything else (A4)", async () => {
+    const fake = makeFake();
+    let n = 0;
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 1,
+      maxRetries: 3,
+      createId: () => `q${String((n += 1))}`,
+    });
+    await ctrl.enqueue(input);
+    await ctrl.enqueue({ ...input, title: "B" });
+    // q1 started; q2 waits queued.
+    await ctrl.setJobSchedule("q2", 2000);
+    expect(ctrl.getJobs().find((j) => j.id === "q2")?.startAfter).toBe(2000);
+    await ctrl.setJobSchedule("q2", null);
+    expect(ctrl.getJobs().find((j) => j.id === "q2")?.startAfter).toBeNull();
+    await expect(ctrl.setJobSchedule("q1", 2000)).rejects.toThrow(/queued/);
+    await expect(ctrl.setJobSchedule("q2", Number.NaN)).rejects.toThrow(/Invalid/);
+    await expect(ctrl.setJobSchedule("missing", 2000)).rejects.toThrow();
+    ctrl.dispose();
+  });
+
+  it("undoes a sweep exactly (C2)", async () => {
+    const fake = makeFake();
+    let n = 0;
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 1,
+      maxRetries: 3,
+      createId: () => `q${String((n += 1))}`,
+    });
+    await ctrl.enqueue(input);
+    await ctrl.enqueue({ ...input, title: "B" });
+    // q1 runs; q2 + q3 wait queued.
+    await ctrl.enqueue({ ...input, title: "C" });
+    const swept = await ctrl.cancelQueued();
+    expect(swept).toBe(2);
+    expect(ctrl.getJobs()).toHaveLength(1);
+    expect(fake.history).toHaveLength(2);
+    expect(await ctrl.undoSweep()).toBe(2);
+    expect(ctrl.getJobs()).toHaveLength(3);
+    expect(fake.history).toHaveLength(0);
+    // Second undo is a no-op.
+    expect(await ctrl.undoSweep()).toBe(0);
+    ctrl.dispose();
+  });
+
+  it("pins jobs to the top without disturbing the pump (B7)", async () => {
+    const fake = makeFake();
+    let n = 0;
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 1,
+      maxRetries: 3,
+      createId: () => `q${String((n += 1))}`,
+    });
+    await ctrl.enqueue(input);
+    await ctrl.enqueue({ ...input, title: "B" });
+    await ctrl.togglePin("q2");
+    expect(ctrl.getJobs().map((j) => j.id)).toEqual(["q2", "q1"]);
+    await ctrl.togglePin("q2");
+    expect(ctrl.getJobs().map((j) => j.id)).toEqual(["q1", "q2"]);
+    await expect(ctrl.togglePin("missing")).rejects.toThrow();
+    ctrl.dispose();
+  });
+
   it("reorders queued jobs, persists the order, and hydrates it back", async () => {
     const fake = makeFake();
     let n = 0;
@@ -505,6 +575,7 @@ describe("QueueController", () => {
       onProgress: () => () => undefined,
       saveQueue: () => Promise.resolve(),
       appendHistory: () => Promise.resolve(),
+      removeHistory: () => Promise.resolve(),
     };
     const ctrl = new QueueController({
       engine: slow,

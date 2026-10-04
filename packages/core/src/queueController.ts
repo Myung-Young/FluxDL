@@ -15,7 +15,14 @@ import { normalizeUrl } from "./url.js";
 
 export type QueueEngine = Pick<
   DownloadEngine,
-  "start" | "pause" | "resume" | "cancel" | "onProgress" | "saveQueue" | "appendHistory"
+  | "start"
+  | "pause"
+  | "resume"
+  | "cancel"
+  | "onProgress"
+  | "saveQueue"
+  | "appendHistory"
+  | "removeHistory"
 >;
 
 export interface QueueClock {
@@ -79,8 +86,13 @@ export class QueueController {
   }
 
   getJobs(): DownloadJob[] {
+    // Pinned jobs float to the top (display order only — the FIFO pump in
+    // selectNextToStart is untouched, so nothing starves).
     return [...this.jobs.values()].sort(
-      (a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1),
+      (a, b) =>
+        (b.pinned === true ? 1 : 0) - (a.pinned === true ? 1 : 0) ||
+        a.createdAt - b.createdAt ||
+        (a.id < b.id ? -1 : 1),
     );
   }
 
@@ -161,6 +173,28 @@ export class QueueController {
     await this.persist();
   }
 
+  /** Schedule a queued job (epoch ms) or clear its schedule (null). */
+  async setJobSchedule(queueId: string, startAfter: number | null): Promise<void> {
+    const job = this.require(queueId);
+    if (job.status !== "queued") {
+      throw new Error(`Only queued downloads can be scheduled: ${job.status}`);
+    }
+    if (startAfter !== null && (!Number.isFinite(startAfter) || startAfter < 0)) {
+      throw new Error("Invalid scheduled time.");
+    }
+    this.jobs.set(queueId, { ...job, startAfter });
+    this.emit();
+    await this.persist();
+  }
+
+  /** Pin/unpin a job (top of the list, survives restarts). */
+  async togglePin(queueId: string): Promise<void> {
+    const job = this.require(queueId);
+    this.jobs.set(queueId, { ...job, pinned: job.pinned !== true });
+    this.emit();
+    await this.persist();
+  }
+
   /** Swap the preset of a failed job (retry-with-another-preset). */
   async setJobPreset(queueId: string, preset: DownloadJob["preset"]): Promise<void> {
     const job = this.require(queueId);
@@ -235,25 +269,60 @@ export class QueueController {
     if (pumped) await this.pump();
   }
 
+  /**
+   * Jobs swept by the last cancelQueued/clearFinished (C2 undo). Restored
+   * with their original statuses; their just-appended history rows are
+   * retracted so undo is a true inverse, not a duplicate.
+   */
+  private lastSweep: DownloadJob[] | null = null;
+
+  /** Undo the last sweep; returns how many jobs came back (0 = nothing). */
+  async undoSweep(): Promise<number> {
+    const swept = this.lastSweep;
+    this.lastSweep = null;
+    if (swept === null || swept.length === 0) return 0;
+    let restored = 0;
+    for (const job of swept) {
+      if (this.jobs.has(job.id)) continue;
+      this.jobs.set(job.id, job);
+      await this.engine.removeHistory(job.id).catch(() => undefined);
+      restored += 1;
+    }
+    this.emit();
+    await this.persist();
+    await this.pump();
+    return restored;
+  }
+
   /** Cancel every queued job (each lands in history, like single cancel). */
-  async cancelQueued(): Promise<void> {
+  async cancelQueued(): Promise<number> {
     const ids = [...this.jobs.values()]
       .filter((j) => j.status === "queued")
       .map((j) => j.id);
+    const swept: DownloadJob[] = [];
     for (const id of ids) {
+      const job = this.jobs.get(id);
+      if (job !== undefined) swept.push(job);
       await this.cancel(id);
     }
+    this.lastSweep = swept;
+    return swept.length;
   }
 
   /** Sweep error, done, or cancelled jobs into history (abandon their retries). */
-  async clearFinished(): Promise<void> {
+  async clearFinished(): Promise<number> {
     const ids = [...this.jobs.values()]
       .filter((j) => j.status === "error" || j.status === "done" || j.status === "cancelled")
       .map((j) => j.id);
+    const swept: DownloadJob[] = [];
     for (const id of ids) {
       const job = this.jobs.get(id);
-      if (job !== undefined) await this.finish(job);
+      if (job === undefined) continue;
+      swept.push(job);
+      await this.finish(job);
     }
+    this.lastSweep = swept;
+    return swept.length;
   }
 
   /** Manual retry: fresh attempts, immediate re-queue. */

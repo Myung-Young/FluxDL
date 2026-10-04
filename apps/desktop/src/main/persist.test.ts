@@ -9,9 +9,11 @@ import {
   loadHistoryFromDisk,
   loadQueueFromDisk,
   loadSettingsFromDisk,
+  loadWatchlistFromDisk,
   removeHistoryFromDisk,
   saveQueueToDisk,
   saveSettingsToDisk,
+  saveWatchlistToDisk,
   updateHistoryOnDisk,
 } from "./persist.js";
 import type { DownloadJob } from "@grabber/core/types.js";
@@ -212,5 +214,21 @@ describe("settings persistence (no electron-store)", () => {
     const d = dir("bad-patch");
     expect(() => saveSettingsToDisk(d, null as never)).toThrow();
     expect(() => saveSettingsToDisk(d, [] as never)).toThrow();
+  });
+});
+
+describe("watchlist persistence (A6)", () => {
+  it("round-trips channels and sanitizes on load", async () => {
+    const d = dir("watchlist");
+    expect(await loadWatchlistFromDisk(d)).toEqual([]);
+    await saveWatchlistToDisk(d, [
+      { url: "https://example.com/c1", title: "C1", lastVideoId: "v1", lastCheckedAt: 7 },
+    ]);
+    const loaded = await loadWatchlistFromDisk(d);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]).toMatchObject({ title: "C1", lastVideoId: "v1" });
+    // Garbage on disk never throws and never survives.
+    writeFileSync(join(d, "watchlist.json"), `[{"nope": true}]`, "utf8");
+    expect(await loadWatchlistFromDisk(d)).toEqual([]);
   });
 });

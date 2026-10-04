@@ -1,12 +1,18 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, statfsSync, statSync } from "node:fs";
 import { readFile, readdir, rm, stat, unlink } from "node:fs/promises";
 import { platform as osPlatform, release as osRelease } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { dialog, shell, app } from "electron";
+import { clipboard, dialog, shell, app } from "electron";
 import { APP_NAME } from "@grabber/core/branding.js";
-import type { AppSettings, DownloadJob, DownloadJobInput, MediaInfo } from "@grabber/core/types.js";
+import type {
+  AppSettings,
+  DownloadJob,
+  DownloadJobInput,
+  MediaInfo,
+  WatchChannel,
+} from "@grabber/core/types.js";
 import type {
   AggregateProgressState,
   DeepLinkCallback,
@@ -16,6 +22,7 @@ import type {
   GetInfoInit,
   ProgressCallback,
   RepairReport,
+  StorageInsights,
   ThumbnailColor,
   Unsubscribe,
   UpdateStatus,
@@ -40,7 +47,8 @@ import {
 } from "@grabber/core/args.js";
 import { toStartInput } from "@grabber/core/queue.js";
 import { cancelledMapped, mapDownloadError, timeoutMapped } from "@grabber/core/errors.js";
-import { hasMojibake, pickFallbackFile } from "@grabber/core/destination.js";
+import { hasMojibake, isExecutablePath, mediaGroup, pickFallbackFile } from "@grabber/core/destination.js";
+import { redactArgs } from "@grabber/core/args.js";
 import { normalizeUrl } from "@grabber/core/url.js";
 import { parseMediaInfo } from "@grabber/core/media.js";
 import { parseProgressLine } from "@grabber/core/progress.js";
@@ -58,9 +66,11 @@ import {
   loadHistoryFromDisk,
   loadQueueFromDisk,
   loadSettingsFromDisk,
+  loadWatchlistFromDisk,
   removeHistoryFromDisk,
   saveQueueToDisk,
   saveSettingsToDisk,
+  saveWatchlistToDisk,
   updateHistoryOnDisk,
 } from "./persist.js";
 import { thumbnailColor } from "./thumbnail.js";
@@ -87,6 +97,8 @@ export interface DesktopEngineDeps {
   readonly broadcast: (event: EngineProgress) => void;
   /** Main→renderer push for deep-link URLs (second instance/protocol/CLI). */
   readonly broadcastDeepLink: (url: string) => void;
+  /** Main→renderer push for .fluxdl batch-file text. */
+  readonly broadcastBatchLink: (text: string) => void;
   readonly onAggregate: (state: AggregateProgressState) => void;
   /**
    * Window chrome (M4.4/M4.6). Optional so headless tests can omit it;
@@ -254,6 +266,18 @@ export class DesktopEngine implements DownloadEngine {
   private readonly jobs = new Map<string, ActiveJob>();
   private readonly listeners = new Set<ProgressCallback>();
   private readonly finishedLogs = new Map<string, string>();
+  private readonly finishedArgs = new Map<string, string[]>();
+
+  private rememberFinished(id: string, log: string, argv: string[]): void {
+    this.finishedLogs.set(id, log);
+    this.finishedArgs.set(id, argv);
+    for (const store of [this.finishedLogs, this.finishedArgs] as const) {
+      if (store.size > 50) {
+        const oldest = store.keys().next();
+        if (!oldest.done) store.delete(oldest.value);
+      }
+    }
+  }
 
   constructor(deps: DesktopEngineDeps) {
     this.deps = deps;
@@ -314,6 +338,118 @@ export class DesktopEngine implements DownloadEngine {
     return Promise.resolve(this.jobs.get(id)?.rawLog ?? this.finishedLogs.get(id) ?? null);
   }
 
+  /** Redacted yt-dlp argv for the Logs "show command" toggle (C6). */
+  getJobArgs(id: string): Promise<string[] | null> {
+    const argv = this.jobs.get(id)?.downloadArgs ?? this.finishedArgs.get(id) ?? null;
+    return Promise.resolve(argv === null ? null : redactArgs(argv));
+  }
+
+  /**
+   * Storage breakdown of the download folder (F2): capped walk (3 levels,
+   * 5000 files), unreadable entries skipped. Orphans are yt-dlp leftovers
+   * (.part/.ytdl/.temp) the UI can trash through the normal guard.
+   */
+  getStorageInsights(): Promise<StorageInsights> {
+    const out: {
+      audioFiles: number;
+      audioBytes: number;
+      videoFiles: number;
+      videoBytes: number;
+      otherFiles: number;
+      otherBytes: number;
+      orphans: string[];
+      orphanBytes: number;
+    } = {
+      audioFiles: 0,
+      audioBytes: 0,
+      videoFiles: 0,
+      videoBytes: 0,
+      otherFiles: 0,
+      otherBytes: 0,
+      orphans: [],
+      orphanBytes: 0,
+    };
+    let root = "";
+    try {
+      const saved = loadSettingsFromDisk(this.deps.userDataDir).downloadDir;
+      root = saved.trim().length > 0 ? saved : this.deps.defaultOutputDir;
+    } catch {
+      root = this.deps.defaultOutputDir;
+    }
+    let seen = 0;
+    const walk = (dir: string, depth: number): void => {
+      if (depth > 3 || seen > 5000) return;
+      let names: string[];
+      try {
+        names = readdirSync(dir);
+      } catch {
+        return;
+      }
+      for (const name of names) {
+        if (name.startsWith(".")) continue;
+        const full = join(dir, name);
+        let st: { isDirectory(): boolean; isFile(): boolean; size: number };
+        try {
+          st = statSync(full);
+        } catch {
+          continue;
+        }
+        if (st.isDirectory()) {
+          walk(full, depth + 1);
+          continue;
+        }
+        if (!st.isFile()) continue;
+        seen += 1;
+        if (seen > 5000) return;
+        const lower = name.toLowerCase();
+        if (lower.endsWith(".part") || lower.endsWith(".ytdl") || lower.endsWith(".temp")) {
+          out.orphans.push(full);
+          out.orphanBytes += st.size;
+          continue;
+        }
+        const group = mediaGroup(name);
+        if (group === "audio") {
+          out.audioFiles += 1;
+          out.audioBytes += st.size;
+        } else if (group === "video") {
+          out.videoFiles += 1;
+          out.videoBytes += st.size;
+        } else {
+          out.otherFiles += 1;
+          out.otherBytes += st.size;
+        }
+      }
+    };
+    try {
+      walk(resolve(root), 0);
+    } catch {
+      // Best effort; partial totals still render.
+    }
+    return Promise.resolve(out);
+  }
+
+  /** System clipboard text via the Electron API (no DOM permission). */
+  readClipboard(): Promise<string | null> {
+    try {
+      const text = clipboard.readText();
+      return Promise.resolve(text.length > 0 ? text : null);
+    } catch {
+      return Promise.resolve(null);
+    }
+  }
+
+  /** Free space on the path's drive (statfs; null when unknowable). */
+  getDiskSpace(path: string): Promise<{ freeBytes: number } | null> {
+    try {
+      const st = statfsSync(resolve(path));
+      const free = st.bfree * st.bsize;
+      if (!Number.isFinite(free) || free < 0) return Promise.resolve(null);
+      return Promise.resolve({ freeBytes: Math.floor(free) });
+    } catch {
+      return Promise.resolve(null);
+    }
+  }
+
   /**
    * Graceful teardown for before-quit: terminate children but keep .part
    * files (pause semantics, not cancel) so the next boot re-queues and
@@ -341,6 +477,7 @@ export class DesktopEngine implements DownloadEngine {
   }
 
   private readonly deepListeners = new Set<DeepLinkCallback>();
+  private readonly batchListeners = new Set<DeepLinkCallback>();
   private lastUpdate: { at: number; status: UpdateStatus } | null = null;
 
   onDeepLink(cb: DeepLinkCallback): Unsubscribe {
@@ -348,6 +485,46 @@ export class DesktopEngine implements DownloadEngine {
     return () => {
       this.deepListeners.delete(cb);
     };
+  }
+
+  onBatchLink(cb: DeepLinkCallback): Unsubscribe {
+    this.batchListeners.add(cb);
+    return () => {
+      this.batchListeners.delete(cb);
+    };
+  }
+
+  /** Main calls this when a .fluxdl file arrives (boot, second instance). */
+  emitBatchLink(text: string): void {
+    for (const cb of this.batchListeners) {
+      try {
+        cb(text);
+      } catch {
+        // Listener errors must not break the engine loop.
+      }
+    }
+    try {
+      this.deps.broadcastBatchLink(text);
+    } catch {
+      // Broadcast failures (no window) are non-fatal.
+    }
+  }
+
+  /**
+   * Apply the launch-at-login setting to the OS (E5). Best-effort: the
+   * setting itself always persists; a denied registration just skips.
+   */
+  syncLoginSettings(): void {
+    try {
+      const on = loadSettingsFromDisk(this.deps.userDataDir).launchAtLogin;
+      app.setLoginItemSettings({
+        openAtLogin: on,
+        path: process.execPath,
+        args: on ? ["--minimized"] : [],
+      });
+    } catch {
+      // Best effort; never blocks downloads.
+    }
   }
 
   /** Main calls this when a URL arrives (boot arg, second instance, open-url). */
@@ -695,7 +872,7 @@ export class DesktopEngine implements DownloadEngine {
       if (code === 0) {
         void (async (): Promise<void> => {
           await this.repairDestination(current).catch(() => undefined);
-          this.finishedLogs.set(id, current.rawLog);
+          this.rememberFinished(id, current.rawLog, current.downloadArgs);
           this.jobs.delete(id);
           this.emit({
             id,
@@ -716,11 +893,7 @@ export class DesktopEngine implements DownloadEngine {
 
   private finishWithError(id: string, mapped: MappedError): void {
     const job = this.jobs.get(id);
-    this.finishedLogs.set(id, job?.rawLog ?? mapped.raw);
-    if (this.finishedLogs.size > 50) {
-      const oldest = this.finishedLogs.keys().next();
-      if (!oldest.done) this.finishedLogs.delete(oldest.value);
-    }
+    this.rememberFinished(id, job?.rawLog ?? mapped.raw, job?.downloadArgs ?? []);
     this.jobs.delete(id);
     this.emit({
       id,
@@ -943,6 +1116,22 @@ export class DesktopEngine implements DownloadEngine {
 
   async openPath(path: string): Promise<void> {
     await this.assertAllowed(path);
+    // Executables can run code: confirm in the app's own language (C5).
+    // One choke point, so every Open button/menu/toast is covered at once.
+    if (isExecutablePath(path)) {
+      const S = this.errorStrings();
+      const base = path.split(/[\\/]/).pop() ?? path;
+      const picked = dialog.showMessageBoxSync({
+        type: "warning",
+        title: APP_NAME,
+        message: S.safety.exeMessage.replace("{name}", base),
+        buttons: [S.safety.exeOpen, S.safety.exeCancel],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+      });
+      if (picked !== 0) return;
+    }
     const err = await shell.openPath(path);
     if (err.length > 0) throw new Error(err);
   }
@@ -1072,5 +1261,14 @@ export class DesktopEngine implements DownloadEngine {
 
   async clearHistory(): Promise<void> {
     await clearHistoryOnDisk(this.deps.userDataDir);
+  }
+
+  async loadWatchlist(): Promise<WatchChannel[]> {
+    return loadWatchlistFromDisk(this.deps.userDataDir);
+  }
+
+  async saveWatchlist(channels: WatchChannel[]): Promise<void> {
+    if (!Array.isArray(channels)) throw new Error("Invalid watchlist.");
+    await saveWatchlistToDisk(this.deps.userDataDir, channels);
   }
 }
