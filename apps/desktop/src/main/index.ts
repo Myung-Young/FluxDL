@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Tray, dialog, nativeImage, protocol, session, shell } from "electron";
+import { app, BrowserWindow, Menu, Tray, dialog, nativeImage, protocol, screen, session, shell } from "electron";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { APP_NAME } from "@grabber/core/branding.js";
@@ -11,7 +11,7 @@ import { DesktopEngine } from "./desktopEngine.js";
 import { registerEngineIpc } from "./ipc.js";
 import { resolveTaskbarCommand } from "./taskbar.js";
 import { loadSettingsFromDisk } from "./persist.js";
-import { boundsFor } from "@grabber/core/window.js";
+import { boundsFor, centerIn, fitToWorkArea } from "@grabber/core/window.js";
 import { colorsFor, createWindowChrome } from "./windowChrome.js";
 
 // Native dialogs (window.confirm, showOpenDialog) title themselves with the
@@ -292,13 +292,22 @@ async function createWindow(): Promise<void> {
   }
   const state = chrome.current();
   const colors = colorsFor(state.theme);
-  const size = boundsFor(false);
+  // The layout is designed for one exact size (1180x820) and the window is
+  // FIXED (D127): no maximize, no fullscreen, no edge drag. A fixed size can
+  // never be adjusted by the user, so it is clamped to the display work area
+  // instead — otherwise the title bar or the last row would sit off-screen on
+  // a 1366x768 laptop or a 150% scaled panel.
+  const workArea = screen.getPrimaryDisplay().workArea;
+  const size = fitToWorkArea(boundsFor(false), workArea);
+  const origin = centerIn(workArea, size);
   const win = new BrowserWindow({
+    ...origin,
     width: size.width,
     height: size.height,
-    // The layout is designed for the default 1120x760 window; fullscreen
-    // maximize is disabled so the UI never stretches past its usable size.
+    // Fixed size: the only size the app ever uses.
+    resizable: false,
     maximizable: false,
+    fullscreenable: false,
     title: APP_NAME,
     backgroundColor: colors.bg,
     autoHideMenuBar: true,
@@ -317,6 +326,11 @@ async function createWindow(): Promise<void> {
     },
   });
   mainWindow = win;
+  // Belt-and-suspenders: minimum == maximum == the fixed size, so the frame
+  // stays pinned to one size behind the `resizable: false` flag. Must run
+  // before mini mode ever resizes this window (D124: minimum first).
+  win.setMinimumSize(size.width, size.height);
+  win.setMaximumSize(size.width, size.height);
   win.on("closed", () => {
     if (mainWindow === win) mainWindow = null;
   });

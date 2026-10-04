@@ -1,8 +1,9 @@
 import type { BrowserWindow } from "electron";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { screen } from "electron";
 import type { WindowChromeState } from "@grabber/core/engine.js";
-import { boundsFor, MINI_HEIGHT, MINI_WIDTH, NORMAL_BOUNDS } from "@grabber/core/window.js";
+import { boundsFor, centerIn, fitToWorkArea, MINI_HEIGHT, MINI_WIDTH, NORMAL_BOUNDS } from "@grabber/core/window.js";
 
 /**
  * Window chrome (M4.4 mini mode, M4.6 theme colors) — main process only.
@@ -11,6 +12,12 @@ import { boundsFor, MINI_HEIGHT, MINI_WIDTH, NORMAL_BOUNDS } from "@grabber/core
  * preferences, and keeping them out of the settings shape means the pinned
  * settings test and the e2e mock cannot drift (D83). State is persisted in
  * `<userData>/window-state.json`.
+ *
+ * D127: the window is FIXED. Each mode has exactly one size (1180x820 normal,
+ * 360x520 mini, both clamped to the work area) and minimum == maximum, so the
+ * user cannot resize, maximize or fullscreen it. Nothing about the old size is
+ * remembered any more — a remembered size could resurrect a pre-fixed window
+ * (the D122 class of bug) and break the one-size guarantee.
  */
 const STATE_FILE = "window-state.json";
 
@@ -27,9 +34,6 @@ const FALLBACK_COLORS = THEME_COLORS["obsidian"] ?? { bg: "#0a0a0b", fg: "#f4f4f
 export interface WindowState {
   readonly mini: boolean;
   readonly theme: string;
-  /** Restored normal-mode size (null = use the default). */
-  readonly normalWidth: number | null;
-  readonly normalHeight: number | null;
   readonly miniX: number | null;
   readonly miniY: number | null;
 }
@@ -37,8 +41,6 @@ export interface WindowState {
 export const DEFAULT_WINDOW_STATE: WindowState = {
   mini: false,
   theme: "obsidian",
-  normalWidth: null,
-  normalHeight: null,
   miniX: null,
   miniY: null,
 };
@@ -58,8 +60,8 @@ export function sanitizeWindowState(raw: unknown): WindowState {
   return {
     mini: rec["mini"] === true,
     theme: colorsFor(theme) === FALLBACK_COLORS && theme !== "obsidian" ? "obsidian" : theme,
-    normalWidth: num(rec["normalWidth"]),
-    normalHeight: num(rec["normalHeight"]),
+    // Stored mini position only (a remembered normal size is never trusted:
+    // the window is fixed now, see the module note).
     miniX: num(rec["miniX"]),
     miniY: num(rec["miniY"]),
   };
@@ -92,18 +94,24 @@ export interface ResolvedBounds {
   readonly stored: boolean;
 }
 
+/**
+ * The one size for a mode, clamped to the display work area (D127).
+ *
+ * Normal mode is always `NORMAL_BOUNDS`: there is no remembered size to fall
+ * back to, so a stale `window-state.json` from a pre-fixed build can no longer
+ * restore an arbitrary window size.
+ */
 export function resolveBounds(state: WindowState, next: boolean): ResolvedBounds {
   if (next) {
-    const size = boundsFor(true);
     return {
-      width: Math.max(size.width, MINI_WIDTH),
-      height: Math.max(size.height, MINI_HEIGHT),
+      width: Math.max(boundsFor(true).width, MINI_WIDTH),
+      height: Math.max(boundsFor(true).height, MINI_HEIGHT),
       stored: state.miniX !== null && state.miniY !== null,
     };
   }
   return {
-    width: state.normalWidth ?? NORMAL_BOUNDS.width,
-    height: state.normalHeight ?? NORMAL_BOUNDS.height,
+    width: NORMAL_BOUNDS.width,
+    height: NORMAL_BOUNDS.height,
     stored: false,
   };
 }
@@ -120,22 +128,38 @@ export async function applyChrome(
   let miniY = state.miniY;
   if (win !== null && !win.isDestroyed()) {
     win.setAlwaysOnTop(next, "floating");
-    // Minimum first: shrinking below the *current* minimum (720x480 in
-    // normal mode) is clamped by Windows, which strands a wide window
-    // around the compact layout (v1.7.0 mini black-region report).
-    win.setMinimumSize(next ? MINI_WIDTH : 720, next ? MINI_HEIGHT : 480);
+    // The fixed size, shrunk only if the display is smaller than it (a fixed
+    // window can never be adjusted by the user). Minimum and maximum are both
+    // set to exactly that: a second lock behind `resizable: false`, and the
+    // one that does the work if that flag is ever dropped. Order still matters
+    // (D124): the minimum goes first, otherwise Windows keeps the old frame
+    // around the new, smaller layout. Note that under `resizable: false`
+    // Windows ignores the tracking, so the setBounds below is what actually
+    // sizes the window — it always passes the fixed size.
+    const workArea = screen.getDisplayMatching(win.getBounds()).workArea;
+    const fixed = fitToWorkArea(target, workArea);
+    win.setMinimumSize(fixed.width, fixed.height);
+    win.setMaximumSize(fixed.width, fixed.height);
     if (next) {
       // Center on the current window so the compact view appears in place.
+      // No clamping to 0: a monitor to the left of the primary one has
+      // negative coordinates and those positions are legitimate (D133).
       const size = win.getSize();
       const pos = win.getPosition();
       const w = size[0] ?? NORMAL_BOUNDS.width;
       const h = size[1] ?? NORMAL_BOUNDS.height;
-      miniX = target.stored ? (state.miniX ?? 0) : Math.max(0, (pos[0] ?? 0) + Math.round((w - target.width) / 2));
-      miniY = target.stored ? (state.miniY ?? 0) : Math.max(0, (pos[1] ?? 0) + Math.round((h - target.height) / 2));
-      win.setBounds({ x: miniX, y: miniY, width: target.width, height: target.height });
+      miniX = target.stored
+        ? (state.miniX ?? 0)
+        : (pos[0] ?? 0) + Math.round((w - fixed.width) / 2);
+      miniY = target.stored
+        ? (state.miniY ?? 0)
+        : (pos[1] ?? 0) + Math.round((h - fixed.height) / 2);
+      win.setBounds({ x: miniX, y: miniY, width: fixed.width, height: fixed.height });
     } else {
-      // Omitted x/y keep the current position.
-      win.setBounds({ width: target.width, height: target.height });
+      // Re-center on the display it came from: leaving mini would otherwise
+      // leave the full window at the compact window's top-left corner.
+      const origin = centerIn(workArea, fixed);
+      win.setBounds({ x: origin.x, y: origin.y, width: fixed.width, height: fixed.height });
     }
     const colors = colorsFor(state.theme);
     try {
@@ -151,22 +175,6 @@ export async function applyChrome(
   return saved;
 }
 
-/** Remember the normal-mode size so leaving mini mode restores it.
- * Only captures on the normal -> mini transition (`entering === true`):
- * capturing on exit would store the compact size as "normal" and the
- * window would stay small forever (v1.7.0 mini-restore bug). */
-export function rememberNormalSize(
-  state: WindowState,
-  win: BrowserWindow | null,
-  entering: boolean,
-): WindowState {
-  if (!entering || state.mini || win === null || win.isDestroyed()) return state;
-  const size = win.getSize();
-  const width = size[0];
-  const height = size[1];
-  if (width === undefined || height === undefined) return state;
-  return { ...state, normalWidth: width, normalHeight: height };
-}
 
 export interface WindowChromeController {
   /** Apply renderer-requested chrome (mini toggle, theme colors). */
@@ -206,7 +214,6 @@ export function createWindowChrome(deps: {
     apply: async (next) => {
       const win = deps.getWindow();
       const theme = next.theme;
-      state = rememberNormalSize(state, win, next.mini && !state.mini);
       state = await applyChrome(win, deps.userDataDir, { ...state, theme }, next.mini);
       notify();
     },

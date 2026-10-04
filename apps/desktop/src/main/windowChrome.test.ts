@@ -2,20 +2,18 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { BrowserWindow } from "electron";
 import {
   DEFAULT_WINDOW_STATE,
   colorsFor,
   loadWindowState,
-  rememberNormalSize,
   resolveBounds,
   sanitizeWindowState,
   saveWindowState,
 } from "./windowChrome.js";
-import { NORMAL_BOUNDS } from "@grabber/core/window.js";
+import { MINI_HEIGHT, MINI_WIDTH, NORMAL_BOUNDS } from "@grabber/core/window.js";
 
 /**
- * M4.4/M4.6: window geometry + persistence. The BrowserWindow itself is not
+ * M4.4/M4.6: window chrome + persistence. The BrowserWindow itself is not
  * constructed here (no Electron in vitest), so the pure parts are pinned here
  * and the live window behaviour is covered by the Playwright smoke test.
  */
@@ -34,17 +32,34 @@ describe("sanitizeWindowState", () => {
     const state = sanitizeWindowState({
       mini: true,
       theme: "paper",
-      normalWidth: 1200,
-      normalHeight: -5,
       miniX: Number.NaN,
       miniY: 40.6,
     });
-    expect(state.mini).toBe(true);
-    expect(state.theme).toBe("paper");
-    expect(state.normalWidth).toBe(1200);
-    expect(state.normalHeight).toBeNull();
-    expect(state.miniX).toBeNull();
-    expect(state.miniY).toBe(41);
+    expect(state).toEqual({
+      mini: true,
+      theme: "paper",
+      miniX: null,
+      miniY: 41,
+    });
+  });
+
+  it("drops a remembered normal size from a pre-fixed build (D127)", () => {
+    // A window-state.json written before the window was fixed must not be
+    // able to resurrect an arbitrary size (that was the D122 bug class).
+    const state = sanitizeWindowState({
+      mini: false,
+      theme: "obsidian",
+      normalWidth: 1600,
+      normalHeight: 900,
+      miniX: 10,
+      miniY: 20,
+    });
+    expect(state).toEqual({ mini: false, theme: "obsidian", miniX: 10, miniY: 20 });
+    expect(resolveBounds(state, false)).toEqual({
+      width: NORMAL_BOUNDS.width,
+      height: NORMAL_BOUNDS.height,
+      stored: false,
+    });
   });
 
   it("rejects unknown themes (renderer is untrusted)", () => {
@@ -74,16 +89,18 @@ describe("colorsFor", () => {
 describe("resolveBounds", () => {
   it("uses the compact size when entering mini mode", () => {
     const r = resolveBounds(DEFAULT_WINDOW_STATE, true);
-    expect(r).toEqual({ width: 360, height: 520, stored: false });
+    expect(r).toEqual({ width: MINI_WIDTH, height: MINI_HEIGHT, stored: false });
   });
 
-  it("restores the remembered normal size when leaving", () => {
-    const r = resolveBounds({ ...DEFAULT_WINDOW_STATE, normalWidth: 1440, normalHeight: 900 }, false);
-    expect(r).toEqual({ width: 1440, height: 900, stored: false });
-  });
-
-  it("falls back to the app default when nothing was remembered", () => {
+  it("always returns the fixed normal size when leaving (D127)", () => {
     expect(resolveBounds(DEFAULT_WINDOW_STATE, false)).toEqual({
+      width: NORMAL_BOUNDS.width,
+      height: NORMAL_BOUNDS.height,
+      stored: false,
+    });
+    // A stale stored size must not win: the window is not resizable.
+    const stale = { ...DEFAULT_WINDOW_STATE, mini: true, miniX: 5, miniY: 5 };
+    expect(resolveBounds(stale, false)).toEqual({
       width: NORMAL_BOUNDS.width,
       height: NORMAL_BOUNDS.height,
       stored: false,
@@ -96,45 +113,11 @@ describe("resolveBounds", () => {
   });
 });
 
-describe("rememberNormalSize", () => {
-  function fakeWin(width: number, height: number): { getSize: () => number[]; isDestroyed: () => boolean } {
-    return { getSize: () => [width, height], isDestroyed: () => false };
-  }
-
-  it("captures the normal size when entering mini mode", () => {
-    const win = fakeWin(1120, 760);
-    const next = rememberNormalSize(DEFAULT_WINDOW_STATE, win as unknown as BrowserWindow, true);
-    expect(next.normalWidth).toBe(1120);
-    expect(next.normalHeight).toBe(760);
-  });
-
-  it("never overwrites the remembered size when leaving mini mode", () => {
-    const mini = { ...DEFAULT_WINDOW_STATE, mini: true, normalWidth: 1120, normalHeight: 760 };
-    const win = fakeWin(360, 520);
-    const next = rememberNormalSize(mini, win as unknown as BrowserWindow, false);
-    // The v1.7.0 bug stored 360x520 here, shrinking the window forever.
-    expect(next.normalWidth).toBe(1120);
-    expect(next.normalHeight).toBe(760);
-    expect(next.mini).toBe(true);
-  });
-
-  it("ignores theme-only applies and missing windows", () => {
-    const win = fakeWin(360, 520);
-    const asWin = win as unknown as BrowserWindow;
-    // Already mini + entering flag false (e.g. a theme change in mini).
-    expect(rememberNormalSize({ ...DEFAULT_WINDOW_STATE, mini: true }, asWin, true)).toEqual({
-      ...DEFAULT_WINDOW_STATE,
-      mini: true,
-    });
-    expect(rememberNormalSize(DEFAULT_WINDOW_STATE, null, true)).toEqual(DEFAULT_WINDOW_STATE);
-  });
-});
-
 describe("window state persistence", () => {
   it("round-trips through userData", async () => {
     const base = dir();
     try {
-      const state = { ...DEFAULT_WINDOW_STATE, mini: true, theme: "paper", normalWidth: 1300 };
+      const state = { ...DEFAULT_WINDOW_STATE, mini: true, theme: "paper", miniX: 130, miniY: 60 };
       await saveWindowState(base, state);
       expect(await loadWindowState(base)).toEqual(state);
     } finally {

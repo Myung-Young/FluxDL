@@ -2,6 +2,10 @@
  * In-app changelog: the complete CHANGELOG.md history (v0.1.0 to current),
  * plain professional language, technical where it matters. Each card shows
  * one summary line; the chevron expands the full notes for that version.
+ *
+ * Kept newest-first and in step with CHANGELOG.md: release notes ship in two
+ * places (the file and this screen) and a release that updates only one of
+ * them reads as a missing version in the app.
  */
 
 export interface ChangelogEntry {
@@ -13,6 +17,45 @@ export interface ChangelogEntry {
 }
 
 export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
+  {
+    version: "1.7.1",
+    date: "2026-10-04",
+    summaryEn: "The window is now fixed at 1180x820 — no resize, no maximize, centred.",
+    summaryMs: "Window sekarang tetap 1180x820 — tak boleh resize, tak boleh maximize, di-center.",
+    full: [
+      "Fixed",
+      "- The window could still be resized by dragging its edges, even with maximize disabled. Resizing is now off at the window level, which also makes F11 / Alt+Enter fullscreen a no-op, and the minimum and maximum sizes are pinned to the exact size as a second lock.",
+      "- A window size left over from an older build could return on leaving mini mode. Nothing is remembered any more: each mode has exactly one size.",
+      "- On small or high-DPI screens the fixed size shrinks to fit the work area instead of pushing the title bar or the last row off-screen.",
+      "- Leaving mini mode no longer leaves the full window in the compact window's top-left corner; it re-centres on the current display.",
+      "- Centring no longer clamps the position to zero, so a monitor to the left of the primary one no longer gets the window thrown onto the wrong display.",
+      "",
+      "Changed",
+      "- Normal-mode size 1120x760 -> 1180x820: a little more room for the queue, settings and library.",
+      "- The window opens centred on the primary display.",
+      "- Mini mode (360x520) is fixed too, matching the main window.",
+    ].join("\n"),
+  },
+  {
+    version: "1.7.0",
+    date: "2026-10-04",
+    summaryEn: "Clean quit & stability: X really quits, bot checks explained, mini revamp.",
+    summaryMs: "Quit bersih & kestabilan: X betul-betul quit, bot check jelas, mini dibaikkan.",
+    full: [
+      "Fixed",
+      "- The X button could leave FluxDL (or orphaned yt-dlp/ffmpeg children) running in Task Manager. Quitting now tree-kills the whole child process tree and a force-exit timer bounds teardown at ~3.5 s.",
+      "- Closing with active downloads silently killed them. X now asks: Quit anyway (.part files kept for resume) / Hide to tray / Cancel.",
+      "- YouTube \"Sign in to confirm you're not a bot\" / PO Token failures were mislabelled as age-restriction. They now map to a dedicated bot-check error with cookie and engine-update actions.",
+      "- Metadata probes could fail on a yt-dlp warning preamble mixed into stdout; the JSON payload is now sliced before parsing.",
+      "- Log toolbar buttons sat glued to the search box; the filter/action row now has its own rhythm.",
+      "- Leaving mini mode kept the window at the compact 360x520 size; the app now always boots into the normal window and the minimum size is lowered before shrinking.",
+      "",
+      "Added",
+      "- Quit confirmation with the number of active downloads.",
+      "- Mini mode button in the titlebar (beside the theme dots) — no more tray-hunting. Ctrl+Shift+M still works.",
+      "- Mini view revamp: overall progress bar, per-row pause/resume/cancel, failed-jobs retry-all, speed/ETA/percent, scrolling list.",
+    ].join("\n"),
+  },
   {
     version: "1.6.1",
     date: "2026-10-04",

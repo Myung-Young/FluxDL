@@ -268,16 +268,17 @@ export { QueueController } from "./queueController.js";
 export type { QueueEngine, QueueClock, QueueControllerOptions } from "./queueController.js";
 export {
   MINI_HEIGHT,
-  MINI_MIN_HEIGHT,
-  MINI_MIN_WIDTH,
   MINI_WIDTH,
   NORMAL_BOUNDS,
+  WORK_AREA_MARGIN,
   boundsFor,
+  centerIn,
   chromeState,
+  fitToWorkArea,
   miniRows,
   miniSummary,
 } from "./window.js";
-export type { MiniSummary, WindowChromeState } from "./window.js";
+export type { MiniSummary, Rect, WindowChromeState, WindowSize } from "./window.js";
 export { THEMES, THEME_NAMES, isThemeName, themeSwatch } from "./themes.js";
 export type { ThemeDef } from "./themes.js";
 export { DEFAULT_SETTINGS, mergeSettings } from "./settings.js";

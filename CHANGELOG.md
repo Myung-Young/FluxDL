@@ -3,6 +3,38 @@
 All notable changes to FluxDL are documented here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.7.1] — 2026-10-04
+
+"One size, done right": the window is now a fixed 1180x820 — it cannot be
+resized, maximized or fullscreened, it opens centred, and mini mode is locked
+to its compact size the same way.
+
+### Fixed
+
+- The window could still be resized by dragging its edges, even with
+  maximize disabled. Resizing is now off at the window level, which also
+  makes F11 / Alt+Enter fullscreen a no-op, and the minimum and maximum
+  sizes are pinned to the exact size as a second lock.
+- A window size left over from an older build could come back on leaving
+  mini mode. No normal-mode size is stored or restored any more: each mode
+  has exactly one size, so a stale `window-state.json` cannot resurrect a
+  resizable-looking frame.
+- On small or high-DPI displays the fixed size is shrunk to the screen work
+  area instead of pushing the title bar or the last row off-screen (1366x768
+  laptops, 150% scaled 1920x1080 panels).
+- Leaving mini mode no longer leaves the full window at the compact
+  window's top-left corner; it re-centres on the display it is on.
+- Centring no longer clamps the position to zero, so a monitor to the left
+  of the primary one no longer gets the window thrown onto the wrong
+  display.
+
+### Changed
+
+- Normal-mode size 1120x760 -> 1180x820: a little more room for the queue,
+  settings and library, with the same layout.
+- The window opens centred on the primary display.
+- Mini mode (360x520) is fixed too, matching the main window.
+
 ## [1.7.0] — 2026-10-04
 
 "Clean quit & stability": the X button reliably terminates the app and
