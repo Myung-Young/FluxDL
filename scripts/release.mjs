@@ -1,17 +1,18 @@
 /**
  * One-command publish: tag + GitHub Release + asset upload.
  *
- * Usage: GH_TOKEN=... pnpm release
+ * Usage: pnpm release (or GH_TOKEN=... pnpm release)
  * Reads the version from the root package.json, takes the matching
  * CHANGELOG.md section as the notes, tags vX.Y.Z, and uploads
  * release/FluxDL-Setup-<v>.exe + release/FluxDL-Portable-<v>.exe.
- * Needs GH_TOKEN (or GITHUB_TOKEN) with contents:write.
+ * Uses GH_TOKEN/GITHUB_TOKEN if set, otherwise falls back to local git credentials.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const ROOT = new URL("..", import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
 function sh(cmd, args) {
   return execFileSync(cmd, args, { cwd: ROOT, encoding: "utf8" }).trim();
@@ -22,8 +23,25 @@ function fail(msg) {
   process.exit(1);
 }
 
-const token = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN ?? "";
-if (token.length === 0) fail("set GH_TOKEN (or GITHUB_TOKEN) with contents:write.");
+let token = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN ?? "";
+if (token.length === 0) {
+  try {
+    const creds = execFileSync("git", ["credential", "fill"], {
+      cwd: ROOT,
+      input: "protocol=https\nhost=github.com\n\n",
+      encoding: "utf8",
+    });
+    for (const line of creds.split("\n")) {
+      if (line.startsWith("password=")) {
+        token = line.slice("password=".length).trim();
+        break;
+      }
+    }
+  } catch {
+    // fallback
+  }
+}
+if (token.length === 0) fail("set GH_TOKEN (or GITHUB_TOKEN) with contents:write, or login with git.");
 
 const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 const version = typeof pkg.version === "string" ? pkg.version : "";
@@ -81,6 +99,11 @@ if (!existingTag) {
   console.log(`tagged + pushed ${tag}`);
 } else {
   console.log(`tag ${tag} already exists, reusing`);
+  try {
+    sh("git", ["push", "origin", tag]);
+  } catch {
+    // already pushed
+  }
 }
 
 const lookup = await fetch(
@@ -104,14 +127,35 @@ if (uploadUrl === null) {
   uploadUrl = created.upload_url;
   console.log(`created release ${tag}`);
 } else {
-  console.log(`release ${tag} already exists, uploading assets to it`);
+  console.log(`release ${tag} already exists, updating notes and assets`);
+  await api(`/repos/${slug}/releases/${existing.id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ name: tag, body, draft: false, prerelease: false }),
+  });
 }
 
 for (const file of [setup, portable]) {
   const name = file.split(/[\\/]/).pop();
   const size = statSync(file).size;
+
+  if (existing && Array.isArray(existing.assets)) {
+    const prev = existing.assets.find((a) => a.name === name);
+    if (prev) {
+      console.log(`deleting previous asset ${name}...`);
+      await fetch(prev.url, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "User-Agent": "FluxDL-release-script",
+        },
+      });
+    }
+  }
+
   const url = uploadUrl.replace(/\{.*\}$/, "") + `?name=${encodeURIComponent(name)}`;
   const buf = readFileSync(file);
+  console.log(`uploading ${name} (${(size / (1024 * 1024)).toFixed(1)} MB)...`);
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -125,4 +169,4 @@ for (const file of [setup, portable]) {
   if (!res.ok) fail(`asset upload failed (${res.status}) for ${name}`);
   console.log(`uploaded ${name} (${size} bytes)`);
 }
-console.log("done.");
+console.log(`\n🎉 Release published successfully!\nURL: https://github.com/${slug}/releases/tag/${tag}`);
