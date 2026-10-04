@@ -45,6 +45,19 @@ export function isNewerVersion(current: string, latest: string | null): boolean 
   return false;
 }
 
+/**
+ * Demo helper: bump the patch number ("1.4.1" -> "1.4.2") so the update
+ * reminder can be previewed without a real newer release. Falls back to a
+ * clearly-fake version when the current one is unparseable (dev builds).
+ */
+export function nextPatchVersion(current: string): string {
+  const parts = numericParts(current);
+  if (parts === null || parts.length === 0) return "9.9.9-demo";
+  const bumped = [...parts];
+  bumped[bumped.length - 1] = (bumped[bumped.length - 1] ?? 0) + 1;
+  return bumped.join(".");
+}
+
 /** Extract `tag_name` from a GitHub latest-release payload (null when absent). */
 export function latestTagFromRelease(payload: unknown): string | null {
   if (typeof payload !== "object" || payload === null) return null;

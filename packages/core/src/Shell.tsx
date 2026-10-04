@@ -565,7 +565,9 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
               }}
             />
           )}
-          {!mini && view === "logs" && <Logs engine={engine} queue={queue} settings={settings} />}
+          {!mini && view === "logs" && (
+            <Logs engine={engine} queue={queue} settings={settings} toast={toast} />
+          )}
         </main>
       </div>
       <Toasts toast={toast} strings={S} />

@@ -4,6 +4,7 @@ import {
   isAllowedExternalUrl,
   isNewerVersion,
   latestTagFromRelease,
+  nextPatchVersion,
 } from "./updates.js";
 
 describe("isNewerVersion", () => {
@@ -35,6 +36,19 @@ describe("isAllowedExternalUrl", () => {
     expect(isAllowedExternalUrl("https://github.com/Myung-Young/FluxDL/releases-evil")).toBe(
       false,
     );
+  });
+});
+
+describe("nextPatchVersion", () => {
+  it("bumps the patch number for the demo reminder", () => {
+    expect(nextPatchVersion("1.4.1")).toBe("1.4.2");
+    expect(nextPatchVersion("v1.4.1")).toBe("1.4.2");
+    expect(nextPatchVersion("2.0")).toBe("2.1");
+  });
+
+  it("falls back to a fake version for dev builds", () => {
+    expect(nextPatchVersion("0.0.0-e2e")).toBe("9.9.9-demo");
+    expect(nextPatchVersion("unknown")).toBe("9.9.9-demo");
   });
 });
 

@@ -38,6 +38,7 @@ export {
   isAllowedExternalUrl,
   isNewerVersion,
   latestTagFromRelease,
+  nextPatchVersion,
 } from "./updates.js";
 export {
   aggregateStatus,

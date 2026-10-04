@@ -10,14 +10,17 @@ import { buildDiagnostics } from "./diagnostics.js";
 import { countLogMatches, filterLogLines } from "./logFilter.js";
 import { writeClipboardText } from "./clipboard.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
+import type { ToastStoreState } from "./toast.js";
+import { nextPatchVersion } from "./updates.js";
 
 export interface LogsProps {
   readonly engine: DownloadEngine;
   readonly queue: StoreApi<QueueStoreState>;
   readonly settings: StoreApi<SettingsStoreState>;
+  readonly toast: StoreApi<ToastStoreState>;
 }
 
-export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element {
+export function Logs({ engine, queue, settings, toast }: LogsProps): React.JSX.Element {
   const S = useStrings(settings);
   const jobs = useStore(queue, (s) => s.jobs);
   const [versions, setVersions] = useState<EngineVersions | null>(null);
@@ -79,6 +82,36 @@ export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element 
     } finally {
       setChecking(false);
     }
+  };
+
+  // Demo: preview the exact launch reminder without a real newer release.
+  // Builds a fake "one patch ahead" status, fills the card above, and fires
+  // the same toast the auto-check would (same message + Get update action).
+  const demoReminder = async (): Promise<void> => {
+    const v = await engine.getEngineVersion().catch(() => null);
+    const cur = v?.app ?? "1.5.0";
+    const fake: UpdateStatus = {
+      appCurrent: cur,
+      appLatest: nextPatchVersion(cur),
+      appUpdate: true,
+      appUrl: "https://github.com/Myung-Young/FluxDL/releases",
+      ytdlpCurrent: v?.ytdlp ?? "unknown",
+      ytdlpLatest: null,
+      ytdlpUpdate: false,
+      checkedAt: Date.now(),
+    };
+    setCheckFailed(false);
+    setUpdateStatus(fake);
+    toast.getState().push(
+      formatStr(S.logs.appUpdateReady, { v: fake.appLatest ?? "?", cur: fake.appCurrent }),
+      "info",
+      {
+        label: S.logs.getUpdate,
+        run: () => {
+          engine.openExternal(fake.appUrl).catch(() => undefined);
+        },
+      },
+    );
   };
 
   const repair = async (): Promise<void> => {
@@ -233,6 +266,18 @@ export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element 
             }}
           >
             {checking ? S.logs.checkingUpdates : S.logs.checkUpdates}
+          </button>
+          <button
+            type="button"
+            className="btn btn-small"
+            onPointerDown={(e) => {
+              pressScale(e.currentTarget);
+            }}
+            onClick={() => {
+              void demoReminder();
+            }}
+          >
+            {S.logs.demoUpdate}
           </button>
           {updateStatus !== null && updateStatus.appUpdate && (
             <button
