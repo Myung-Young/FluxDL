@@ -131,6 +131,15 @@ describe("mergeSettings", () => {
     expect(mergeSettings(DEFAULT_SETTINGS, { lastView: "nope" }).lastView).toBe("home");
   });
 
+  it("tracks a skipped update tag, sanitized", () => {
+    expect(DEFAULT_SETTINGS.skippedUpdate).toBeNull();
+    expect(mergeSettings(DEFAULT_SETTINGS, { skippedUpdate: "v1.6.0" }).skippedUpdate).toBe(
+      "v1.6.0",
+    );
+    expect(mergeSettings(DEFAULT_SETTINGS, { skippedUpdate: "  " }).skippedUpdate).toBeNull();
+    expect(mergeSettings(DEFAULT_SETTINGS, { skippedUpdate: null }).skippedUpdate).toBeNull();
+  });
+
   it("pins the settings shape so mocks cannot drift silently (M3.3)", () => {
     // When this fails, update the mirrors too:
     // apps/desktop/e2e/smoke.e2e.ts installMock settings + any fake engines.
@@ -171,6 +180,7 @@ describe("mergeSettings", () => {
       "recentSearches",
       "savedSearches",
       "skipArchived",
+      "skippedUpdate",
       "speedLimit",
       "sponsorBlock",
       "subtitleLangs",

@@ -1,5 +1,5 @@
 import { app, BrowserWindow, Menu, Tray, nativeImage, protocol, session, shell } from "electron";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { APP_NAME } from "@grabber/core/branding.js";
 import { IPC_CHANNELS } from "@grabber/core/engine.js";
@@ -325,7 +325,11 @@ async function createWindow(): Promise<void> {
       behavior = "quit";
     }
     if (behavior === "quit") {
+      // Closing the last window does NOT quit a tray app by itself, so
+      // before-quit (graceful teardown) would never run. Drive it here.
       quitting = true;
+      event.preventDefault();
+      app.quit();
       return;
     }
     event.preventDefault();
@@ -469,8 +473,55 @@ function getEngine(): DesktopEngine {
   return engine;
 }
 
+/**
+ * Update completion note: when the running version differs from the last
+ * recorded one, the new version is confirmed alive — so leave the .txt
+ * proof in the download folder, then record the marker. First runs and
+ * same-version boots only record. Never breaks boot.
+ */
+function maybeWriteUpdateNote(): void {
+  try {
+    const userData = app.getPath("userData");
+    const marker = join(userData, "last-version.txt");
+    const cur = app.getVersion();
+    let prev: string | null = null;
+    try {
+      prev = readFileSync(marker, "utf8").trim() || null;
+    } catch {
+      prev = null;
+    }
+    try {
+      writeFileSync(marker, `${cur}\n`, "utf8");
+    } catch {
+      return;
+    }
+    if (prev === null || prev === cur) return;
+    let dir = app.getPath("downloads");
+    try {
+      const saved = loadSettingsFromDisk(userData).downloadDir;
+      if (saved.trim().length > 0) dir = saved;
+    } catch {
+      // Default stands.
+    }
+    const stamp = new Date().toISOString().slice(0, 10);
+    const body =
+      `FluxDL updated to v${cur} on ${stamp}.\n` +
+      "The update installed successfully and this version is now running.\n" +
+      "See the in-app Changelog tab for what's new.\n";
+    try {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, `FluxDL-updated-to-${cur}.txt`), body, "utf8");
+    } catch {
+      // Best effort.
+    }
+  } catch {
+    // Never break boot.
+  }
+}
+
 void app.whenReady().then(() => {
   applyCsp();
+  maybeWriteUpdateNote();
   // In-app preview serves allowlisted download outputs over media://
   // (never file://). Unknown/forbidden paths resolve to HTTP errors.
   protocol.handle("media", async (request) => {

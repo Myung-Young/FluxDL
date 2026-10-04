@@ -87,6 +87,16 @@ describe("engine addons (lifecycle/deeplink/media/updates)", () => {
     expect(text === null || typeof text === "string").toBe(true);
   });
 
+  it("update download starts idle and refuses without release info", async () => {
+    const { engine } = makeEngine();
+    await expect(engine.getUpdateDownloadProgress()).resolves.toMatchObject({
+      state: "idle",
+      receivedBytes: 0,
+    });
+    await expect(engine.cancelUpdateDownload()).resolves.toBeUndefined();
+    await expect(engine.startUpdateDownload()).rejects.toThrow(/Check for updates/);
+  });
+
   it("scans storage totals and orphans (F2)", async () => {
     const { engine, base } = makeEngine();
     const { mkdirSync } = await import("node:fs");

@@ -46,6 +46,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   launchAtLogin: false,
   autoSort: false,
   experimental: false,
+  skippedUpdate: null,
   lastView: "home",
   lastQueueFilter: "all",
   batchDraft: "",
@@ -276,6 +277,12 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
     launchAtLogin: cleanBool(patch.launchAtLogin, base.launchAtLogin),
     autoSort: cleanBool(patch.autoSort, base.autoSort),
     experimental: cleanBool(patch.experimental, base.experimental),
+    skippedUpdate:
+      patch.skippedUpdate === undefined
+        ? base.skippedUpdate
+        : typeof patch.skippedUpdate === "string" && patch.skippedUpdate.trim().length > 0
+          ? patch.skippedUpdate.trim().slice(0, 32)
+          : null,
     closeBehavior: CLOSE_BEHAVIORS.includes(closeRaw) ? closeRaw : base.closeBehavior,
     minimizeToTray: cleanBool(patch.minimizeToTray, base.minimizeToTray),
     notifyFinished: cleanBool(patch.notifyFinished, base.notifyFinished),

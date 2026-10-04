@@ -63,6 +63,19 @@ export interface ThumbnailColor {
   readonly b: number;
 }
 
+/** Release details behind an available app update (for the launch popup). */
+export interface AppReleaseInfo {
+  readonly tag: string;
+  readonly publishedAt: string | null;
+  readonly notes: string | null;
+  readonly setupName: string | null;
+  readonly setupSize: number | null;
+  readonly setupUrl: string | null;
+  readonly portableName: string | null;
+  readonly portableSize: number | null;
+  readonly portableUrl: string | null;
+}
+
 /** Result of checkForUpdates(): app + yt-dlp freshness in one round trip. */
 export interface UpdateStatus {
   readonly appCurrent: string;
@@ -70,11 +83,21 @@ export interface UpdateStatus {
   readonly appUpdate: boolean;
   /** Where to download the new release (GitHub Releases, allowlisted). */
   readonly appUrl: string;
+  /** Full release metadata when an update is available (popup content). */
+  readonly appRelease: AppReleaseInfo | null;
   readonly ytdlpCurrent: string;
   readonly ytdlpLatest: string | null;
   readonly ytdlpUpdate: boolean;
   /** ms epoch of this check (0 when never checked). */
   readonly checkedAt: number;
+}
+
+/** Polling snapshot of the in-app update download. */
+export interface UpdateDownloadProgress {
+  readonly state: "idle" | "downloading" | "done" | "installing" | "error";
+  readonly receivedBytes: number;
+  readonly totalBytes: number | null;
+  readonly error: string | null;
 }
 
 /** Deep-link listener (fluxdl:// URL or CLI URL forwarded to the UI). */
@@ -185,9 +208,18 @@ export interface DownloadEngine {
   /**
    * One round trip for both updatables: the app itself (GitHub Releases)
    * and yt-dlp. Best-effort: offline checkers resolve update=false, never
-   * throw for network reasons (invalid state still throws).
+   * throw for network reasons (invalid state still throws). Pass force=true
+   * to bypass the hourly cache (the Logs button does; launch uses cache).
    */
-  checkForUpdates(): Promise<UpdateStatus>;
+  checkForUpdates(force?: boolean): Promise<UpdateStatus>;
+  /**
+   * Download the Setup installer of the pending update (progress via
+   * getUpdateDownloadProgress). On completion the installer launches
+   * silently and the app quits — that IS the install step.
+   */
+  startUpdateDownload(): Promise<void>;
+  getUpdateDownloadProgress(): Promise<UpdateDownloadProgress>;
+  cancelUpdateDownload(): Promise<void>;
   /**
    * Safe local-media URL for in-app preview, or null when the path is
    * outside the download roots or not a playable audio/video file.
@@ -254,6 +286,9 @@ export const IPC_CHANNELS = {
   getDiskSpace: "engine:diskSpace",
   getJobArgs: "engine:jobArgs",
   getStorageInsights: "engine:storage",
+  startUpdateDownload: "engine:startUpdate",
+  getUpdateDownloadProgress: "engine:updateProgress",
+  cancelUpdateDownload: "engine:cancelUpdate",
   getRawLog: "engine:getLog",
   onDeepLink: "app:deepLink",
   onBatchLink: "app:batchLink",

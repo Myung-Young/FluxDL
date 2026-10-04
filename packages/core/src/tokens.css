@@ -411,18 +411,35 @@ body {
   box-shadow: var(--shadow-1);
 }
 
-/* thin dark scrollbars; never overlay content */
-.grabber-main::-webkit-scrollbar {
-  width: 10px;
+/* ---- themed scrollbars (app-wide) ----
+   Every scrollable surface (main view, entry lists, logs, textareas) shares
+   one professional look drawn from the active theme tokens — no more native
+   white bars inside dark cards. Never overlays content. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
 
-.grabber-main::-webkit-scrollbar-thumb {
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
   background: var(--bg-3);
   border-radius: 8px;
   border: 2px solid var(--bg-0);
 }
 
-.grabber-main::-webkit-scrollbar-track {
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--border);
+}
+
+*::-webkit-scrollbar-corner {
   background: transparent;
 }
 
@@ -670,17 +687,26 @@ select.input {
   min-width: 0;
 }
 
+/* Button tiers share fixed heights so side-by-side buttons always sync:
+   standard 40px, small 30px. inline-flex keeps them inline AND centers
+   labels with icons or mixed font sizes. */
 .btn {
   background: var(--bg-3);
   color: var(--fg-0);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  padding: 10px var(--space-4);
+  min-height: 40px;
+  padding: 6px var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
   font: inherit;
   font-size: var(--text-md);
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  vertical-align: middle;
   transition:
     background 120ms ease,
     transform 80ms ease;
@@ -714,7 +740,8 @@ select.input {
 }
 
 .btn-small {
-  padding: 6px var(--space-3);
+  min-height: 30px;
+  padding: 4px var(--space-3);
   font-size: var(--text-sm);
 }
 
@@ -1116,15 +1143,39 @@ input[type="radio"]:disabled {
   max-width: 100%;
 }
 
-/* In-app changelog entries. */
-.change-list {
-  margin: var(--space-2) 0 0;
-  padding-left: var(--space-4);
+/* In-app changelog entries: summary header + expanding full notes. */
+.change-head {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  font-size: var(--text-sm);
-  color: var(--fg-1);
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.change-head .dl-title {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.change-chevron .app-icon {
+  width: 16px;
+  height: 16px;
+  transition: transform 150ms ease;
+}
+
+.change-chevron.is-open .app-icon {
+  transform: rotate(180deg);
+}
+
+.change-full {
+  margin-top: var(--space-3);
+  max-height: 320px;
+  white-space: pre-wrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .change-chevron .app-icon {
+    transition: none;
+  }
 }
 
 /* In-app preview modal: media fills the card width, audio keeps its height. */
@@ -1226,6 +1277,12 @@ video.preview-media {
    UA [hidden] style, so filtered-out settings rows need an explicit kill. */
 .settings-grid [hidden] {
   display: none !important;
+}
+
+/* Settings cards breathe: every stacked row gets the same 12px rhythm
+   (sibling margins collapse, so nothing doubles up). */
+.settings-grid > .grabber-card > * + * {
+  margin-top: var(--space-3);
 }
 
 /* ---- M5: skip link, toasts ---- */
@@ -1561,6 +1618,11 @@ video.preview-media {
     border: 1px solid CanvasText;
     background: Canvas;
     forced-color-adjust: none;
+  }
+
+  /* Scrollbars defer to the OS palette in High Contrast mode. */
+  * {
+    scrollbar-color: auto;
   }
 
   .dl-fill,

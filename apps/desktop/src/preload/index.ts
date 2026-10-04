@@ -17,6 +17,7 @@ import type {
   ProgressCallback,
   RepairReport,
   StorageInsights,
+  UpdateDownloadProgress,
   ThumbnailColor,
   Unsubscribe,
   UpdateStatus,
@@ -70,7 +71,10 @@ export interface GrabberApi {
   onDeepLink(cb: DeepLinkCallback): Unsubscribe;
   onBatchLink(cb: DeepLinkCallback): Unsubscribe;
   readClipboard(): Promise<string | null>;
-  checkForUpdates(): Promise<UpdateStatus>;
+  checkForUpdates(force?: boolean): Promise<UpdateStatus>;
+  startUpdateDownload(): Promise<void>;
+  getUpdateDownloadProgress(): Promise<UpdateDownloadProgress>;
+  cancelUpdateDownload(): Promise<void>;
   getMediaUrl(path: string): Promise<string | null>;
   openExternal(url: string): Promise<void>;
 }
@@ -169,8 +173,14 @@ const api: GrabberApi = {
     };
     return unsubscribe;
   },
-  checkForUpdates: () =>
-    ipcRenderer.invoke(IPC_CHANNELS.checkForUpdates) as Promise<UpdateStatus>,
+  checkForUpdates: (force?: boolean) =>
+    ipcRenderer.invoke(IPC_CHANNELS.checkForUpdates, force) as Promise<UpdateStatus>,
+  startUpdateDownload: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.startUpdateDownload) as Promise<void>,
+  getUpdateDownloadProgress: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.getUpdateDownloadProgress) as Promise<UpdateDownloadProgress>,
+  cancelUpdateDownload: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.cancelUpdateDownload) as Promise<void>,
   getMediaUrl: (path) =>
     ipcRenderer.invoke(IPC_CHANNELS.getMediaUrl, path) as Promise<string | null>,
   openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.openExternal, url) as Promise<void>,

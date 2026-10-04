@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, statfsSync, statSync } from "node:fs";
-import { readFile, readdir, rm, stat, unlink } from "node:fs/promises";
+import { open, readFile, readdir, rm, stat, unlink } from "node:fs/promises";
 import { platform as osPlatform, release as osRelease } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { clipboard, dialog, shell, app } from "electron";
@@ -25,6 +25,7 @@ import type {
   StorageInsights,
   ThumbnailColor,
   Unsubscribe,
+  UpdateDownloadProgress,
   UpdateStatus,
   WindowChromeListener,
   WindowChromeState,
@@ -35,7 +36,10 @@ import {
   YTDLP_API_URL,
   isAllowedExternalUrl,
   isNewerVersion,
-  latestTagFromRelease,
+  parseReleasePayload,
+  pickPortableAsset,
+  pickSetupAsset,
+  type ParsedRelease,
 } from "@grabber/core/updates.js";
 import type { ErrorCategory, ErrorLocale, MappedError } from "@grabber/core/errors.js";
 import { STRINGS, STRINGS_MS } from "@grabber/core/strings.js";
@@ -210,6 +214,16 @@ function mimeFor(lowerPath: string): string | null {
 
 /** Best-effort GitHub latest-release tag (null on any failure). */
 async function fetchLatestTag(apiUrl: string): Promise<string | null> {
+  const payload = await fetchReleasePayload(apiUrl);
+  return payload === null ? null : payload.tag;
+}
+
+/**
+ * Best-effort GitHub latest-release payload (null on any failure:
+ * offline, rate-limited, malformed). Update checks must never throw
+ * for network reasons.
+ */
+async function fetchReleasePayload(apiUrl: string): Promise<ParsedRelease | null> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => {
     ctrl.abort();
@@ -220,7 +234,7 @@ async function fetchLatestTag(apiUrl: string): Promise<string | null> {
       headers: { Accept: "application/vnd.github+json", "User-Agent": APP_NAME },
     });
     if (!res.ok) return null;
-    return latestTagFromRelease((await res.json()) as unknown);
+    return parseReleasePayload((await res.json()) as unknown);
   } catch {
     return null;
   } finally {
@@ -546,24 +560,43 @@ export class DesktopEngine implements DownloadEngine {
   /**
    * One best-effort round trip for app + yt-dlp freshness (GitHub Releases
    * API, 8 s timeout each, hourly cache). Offline/malformed responses
-   * resolve update=false — they must never break launch.
+   * resolve update=false — they must never break launch. force=true
+   * bypasses the cache (the Logs button; launch uses the cache).
    */
-  async checkForUpdates(): Promise<UpdateStatus> {
+  async checkForUpdates(force = false): Promise<UpdateStatus> {
     const now = Date.now();
-    if (this.lastUpdate !== null && now - this.lastUpdate.at < 3_600_000) {
+    if (!force && this.lastUpdate !== null && now - this.lastUpdate.at < 3_600_000) {
       return this.lastUpdate.status;
     }
     const versions = await this.getEngineVersion().catch(() => null);
     const ytdlpCurrent = versions?.ytdlp ?? "unknown";
-    const [appLatest, ytdlpLatest] = await Promise.all([
-      fetchLatestTag(APP_API_URL),
+    const [appRelease, ytdlpLatest] = await Promise.all([
+      fetchReleasePayload(APP_API_URL),
       fetchLatestTag(YTDLP_API_URL),
     ]);
+    const appLatest = appRelease?.tag ?? null;
+    const appUpdate = isNewerVersion(this.deps.appVersion, appLatest);
+    const setup = appRelease === null ? null : pickSetupAsset(appRelease.assets);
+    const portable = appRelease === null ? null : pickPortableAsset(appRelease.assets);
     const status: UpdateStatus = {
       appCurrent: this.deps.appVersion,
       appLatest,
-      appUpdate: isNewerVersion(this.deps.appVersion, appLatest),
+      appUpdate,
       appUrl: APP_RELEASES_URL,
+      appRelease:
+        appUpdate && appRelease !== null
+          ? {
+              tag: appRelease.tag,
+              publishedAt: appRelease.publishedAt,
+              notes: appRelease.body,
+              setupName: setup?.name ?? null,
+              setupSize: setup?.sizeBytes ?? null,
+              setupUrl: setup?.url ?? null,
+              portableName: portable?.name ?? null,
+              portableSize: portable?.sizeBytes ?? null,
+              portableUrl: portable?.url ?? null,
+            }
+          : null,
       ytdlpCurrent,
       ytdlpLatest,
       ytdlpUpdate: isNewerVersion(ytdlpCurrent, ytdlpLatest),
@@ -571,6 +604,153 @@ export class DesktopEngine implements DownloadEngine {
     };
     this.lastUpdate = { at: now, status };
     return status;
+  }
+
+  private updateDl: {
+    ctrl: AbortController;
+    received: number;
+    total: number | null;
+    state: "downloading" | "done" | "installing" | "error";
+    error: string | null;
+    dest: string;
+    expectedSize: number | null;
+  } | null = null;
+
+  /**
+   * Download the pending Setup installer in the background (progress via
+   * getUpdateDownloadProgress). At 100% the installer launches silently and
+   * the app quits — that handoff IS the install step.
+   */
+  startUpdateDownload(): Promise<void> {
+    if (this.updateDl?.state === "downloading") return Promise.resolve();
+    const release = this.lastUpdate?.status.appRelease;
+    const url = release?.setupUrl ?? null;
+    if (release === null || release === undefined || url === null) {
+      return Promise.reject(new Error("Check for updates first."));
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return Promise.reject(new Error("The update link is invalid."));
+    }
+    // Only GitHub-hosted artifacts, never an arbitrary executable URL.
+    if (
+      parsed.protocol !== "https:" ||
+      (!parsed.hostname.endsWith("github.com") &&
+        !parsed.hostname.endsWith("githubusercontent.com"))
+    ) {
+      return Promise.reject(new Error("The update link is not allowed."));
+    }
+    const safeName =
+      (release.setupName ?? "FluxDL-Setup-update.exe").replace(/[\\/:*?"<>|]/g, "_").slice(0, 80) ||
+      "FluxDL-Setup-update.exe";
+    const dir = join(this.deps.userDataDir, "pending-updates");
+    try {
+      mkdirSync(dir, { recursive: true });
+    } catch {
+      return Promise.reject(new Error("Could not prepare the download folder."));
+    }
+    const dest = join(dir, safeName);
+    const ctrl = new AbortController();
+    this.updateDl = {
+      ctrl,
+      received: 0,
+      total: release.setupSize,
+      state: "downloading",
+      error: null,
+      dest,
+      expectedSize: release.setupSize,
+    };
+    void this.runUpdateDownload(url, dest, ctrl);
+    return Promise.resolve();
+  }
+
+  getUpdateDownloadProgress(): Promise<UpdateDownloadProgress> {
+    const dl = this.updateDl;
+    if (dl === null) {
+      return Promise.resolve({ state: "idle", receivedBytes: 0, totalBytes: null, error: null });
+    }
+    return Promise.resolve({
+      state: dl.state,
+      receivedBytes: dl.received,
+      totalBytes: dl.total,
+      error: dl.error,
+    });
+  }
+
+  cancelUpdateDownload(): Promise<void> {
+    const dl = this.updateDl;
+    if (dl === null || dl.state !== "downloading") return Promise.resolve();
+    dl.ctrl.abort();
+    return Promise.resolve();
+  }
+
+  private async runUpdateDownload(url: string, dest: string, ctrl: AbortController): Promise<void> {
+    const dl = this.updateDl;
+    if (dl === null || dl.ctrl !== ctrl) return;
+    try {
+      const res = await fetch(url, {
+        signal: ctrl.signal,
+        headers: { Accept: "application/octet-stream", "User-Agent": APP_NAME },
+      });
+      if (!res.ok || res.body === null) {
+        throw new Error(`Download failed (HTTP ${String(res.status)}).`);
+      }
+      const headerTotal = Number(res.headers.get("content-length") ?? "NaN");
+      if (Number.isFinite(headerTotal) && headerTotal > 0) dl.total = Math.floor(headerTotal);
+      const fh = await open(dest, "w");
+      const reader = res.body.getReader();
+      try {
+        for (;;) {
+          if (ctrl.signal.aborted) throw new DOMException("Cancelled", "AbortError");
+          const { done, value } = await reader.read();
+          if (done) break;
+          await fh.write(value);
+          dl.received += value.length;
+        }
+      } finally {
+        await fh.close().catch(() => undefined);
+      }
+      if (dl.expectedSize !== null && dl.expectedSize > 0) {
+        const actual = statSync(dest).size;
+        if (actual !== dl.expectedSize) {
+          throw new Error("The download was incomplete. Please retry.");
+        }
+      }
+      dl.state = "done";
+      // Hand off to the installer: silent NSIS install, then quit so locked
+      // files can be replaced. Detached + unref'd, so quitting is safe.
+      dl.state = "installing";
+      const child = spawn(dest, ["/S"], {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true,
+        shell: false,
+      });
+      child.unref();
+      setTimeout(() => {
+        try {
+          app.quit();
+        } catch {
+          // Already quitting.
+        }
+      }, 1200);
+    } catch (err) {
+      if (this.updateDl !== null && this.updateDl.ctrl === ctrl) {
+        if (ctrl.signal.aborted) {
+          this.updateDl = null;
+          try {
+            await rm(dest, { force: true });
+          } catch {
+            // Best effort.
+          }
+          return;
+        }
+        this.updateDl.state = "error";
+        this.updateDl.error = err instanceof Error ? err.message : "Download failed.";
+      }
+    }
   }
 
   /**

@@ -120,17 +120,33 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
       { id: "set-cookies", label: S.settings.cookies, keywords: ["cookies", "browser"] },
       { id: "set-cookies-file", label: S.settings.cookiesFile, keywords: ["cookies", "file"] },
       {
-        id: "toggles",
+        id: "togglesQuality",
         label: [
           S.settings.embedThumbnail,
           S.settings.embedMetadata,
-          S.settings.subtitles,
-          S.settings.embedSubs,
-          S.settings.includeAutoSubs,
           S.settings.sponsorBlock,
           S.settings.skipArchived,
           S.settings.playlistSubfolder,
-          S.settings.thumbnailAccent,
+        ].join(" "),
+        keywords: ["toggle", "embed", "sponsorblock", "archive"],
+      },
+      {
+        id: "togglesSubs",
+        label: [
+          S.settings.subtitles,
+          S.settings.embedSubs,
+          S.settings.includeAutoSubs,
+        ].join(" "),
+        keywords: ["toggle", "embed", "subtitle"],
+      },
+      {
+        id: "togglesAppearance",
+        label: [S.settings.thumbnailAccent].join(" "),
+        keywords: ["toggle", "thumbnail", "accent"],
+      },
+      {
+        id: "togglesWindow",
+        label: [
           S.settings.autoCheckUpdate,
           S.settings.minimizeToTray,
           S.settings.notifyFinished,
@@ -139,7 +155,7 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
           S.settings.autoSort,
           S.settings.experimental,
         ].join(" "),
-        keywords: ["toggle", "embed", "subtitle", "sponsorblock", "archive", "update"],
+        keywords: ["toggle", "update", "tray", "startup", "experimental"],
       },
       { id: "set-close", label: S.settings.closeBehavior, keywords: ["close", "quit", "tray", "window", "minimize"] },
       { id: "set-profiles", label: S.settings.profiles, keywords: ["profile", "preset", "music", "video", "bundle"] },
@@ -162,8 +178,55 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
     [fields, query],
   );
   const hide = (id: string): boolean => query.trim().length > 0 && !visible.has(id);
+  const hideSection = (ids: readonly string[]): boolean =>
+    query.trim().length > 0 && !ids.some((id) => visible.has(id));
   const backupFile = useRef<HTMLInputElement | null>(null);
   const [backupNote, setBackupNote] = useState<string | null>(null);
+
+  // Toggle rows live in four groups so each settings section owns its
+  // switches instead of one endless wall of checkboxes.
+  const toggleRows = [
+    ["embedThumbnail", S.settings.embedThumbnail],
+    ["embedMetadata", S.settings.embedMetadata],
+    ["subtitles", S.settings.subtitles],
+    ["embedSubs", S.settings.embedSubs],
+    ["includeAutoSubs", S.settings.includeAutoSubs],
+    ["sponsorBlock", S.settings.sponsorBlock],
+    ["skipArchived", S.settings.skipArchived],
+    ["playlistSubfolder", S.settings.playlistSubfolder],
+    ["thumbnailAccent", S.settings.thumbnailAccent],
+    ["autoCheckUpdate", S.settings.autoCheckUpdate],
+    ["minimizeToTray", S.settings.minimizeToTray],
+    ["notifyFinished", S.settings.notifyFinished],
+    ["followSystemTheme", S.settings.followSystemTheme],
+    ["launchAtLogin", S.settings.launchAtLogin],
+    ["autoSort", S.settings.autoSort],
+    ["experimental", S.settings.experimental],
+  ] as const;
+
+  const renderToggles = (id: string, keys: readonly string[]): React.JSX.Element => (
+    <div className="check-col" hidden={hide(id)}>
+      {toggleRows
+        .filter(([key]) => keys.includes(key))
+        .map(([key, label]) => {
+          // Dependent fields (D7): sub-options sleep while subtitles are off.
+          const off = (key === "embedSubs" || key === "includeAutoSubs") && !saved.subtitles;
+          return (
+            <label key={key} className="check-row">
+              <input
+                type="checkbox"
+                checked={saved[key]}
+                disabled={off}
+                onChange={(e) => {
+                  save({ [key]: e.target.checked });
+                }}
+              />
+              {label}
+            </label>
+          );
+        })}
+    </div>
+  );
 
   if (!ready) {
     return (
@@ -276,7 +339,8 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
         </p>
       )}
 
-      <div className="grabber-card settings-grid">
+      <div className="settings-grid">
+      <div className="grabber-card">
         <div className="url-row">
           <input
             id="settings-search"
@@ -309,6 +373,14 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
               : formatStr(S.settings.matchCount, { n: visible.size, t: fields.length })}
           </p>
         )}
+      </div>
+
+      <section
+        className="grabber-card"
+        aria-label={S.settings.sectionDownloads}
+        hidden={hideSection(["set-dir", "set-template", "set-concurrency", "set-timeout", "set-history"])}
+      >
+        <h2 className="dl-title">{S.settings.sectionDownloads}</h2>
         <label className="field-label" htmlFor="set-dir" id="settings-section-folder" hidden={hide("set-dir")}>
           {S.settings.downloadDir}
         </label>
@@ -444,7 +516,14 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
             save({ historyLimit: Number(e.target.value) });
           }}
         />
+      </section>
 
+      <section
+        className="grabber-card"
+        aria-label={S.settings.sectionNetwork}
+        hidden={hideSection(["set-speed", "set-proxy", "set-cookies", "set-cookies-file"])}
+      >
+        <h2 className="dl-title">{S.settings.sectionNetwork}</h2>
         <label className="field-label" htmlFor="set-speed" id="settings-section-speed" hidden={hide("set-speed")}>
           {S.settings.speedLimit}
         </label>
@@ -518,46 +597,15 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
             commitText(e, (v) => ({ cookiesFile: v }));
           }}
         />
+      </section>
 
-        <div className="check-col" hidden={hide("toggles")}>
-          {(
-            [
-              ["embedThumbnail", S.settings.embedThumbnail],
-              ["embedMetadata", S.settings.embedMetadata],
-              ["subtitles", S.settings.subtitles],
-              ["embedSubs", S.settings.embedSubs],
-              ["includeAutoSubs", S.settings.includeAutoSubs],
-              ["sponsorBlock", S.settings.sponsorBlock],
-              ["skipArchived", S.settings.skipArchived],
-              ["playlistSubfolder", S.settings.playlistSubfolder],
-              ["thumbnailAccent", S.settings.thumbnailAccent],
-              ["autoCheckUpdate", S.settings.autoCheckUpdate],
-              ["minimizeToTray", S.settings.minimizeToTray],
-              ["notifyFinished", S.settings.notifyFinished],
-              ["followSystemTheme", S.settings.followSystemTheme],
-              ["launchAtLogin", S.settings.launchAtLogin],
-              ["autoSort", S.settings.autoSort],
-              ["experimental", S.settings.experimental],
-            ] as const
-          ).map(([key, label]) => {
-            // Dependent fields (D7): sub-options sleep while subtitles are off.
-            const off = (key === "embedSubs" || key === "includeAutoSubs") && !saved.subtitles;
-            return (
-              <label key={key} className="check-row">
-                <input
-                  type="checkbox"
-                  checked={saved[key]}
-                  disabled={off}
-                  onChange={(e) => {
-                    save({ [key]: e.target.checked });
-                  }}
-                />
-                {label}
-              </label>
-            );
-          })}
-        </div>
-
+      <section
+        className="grabber-card"
+        aria-label={S.settings.sectionSubtitles}
+        hidden={hideSection(["togglesSubs", "set-sublangs"])}
+      >
+        <h2 className="dl-title">{S.settings.sectionSubtitles}</h2>
+        {renderToggles("togglesSubs", ["subtitles", "embedSubs", "includeAutoSubs"])}
         <label className="field-label" htmlFor="set-sublangs" hidden={hide("set-sublangs")}>
           {S.settings.subtitleLangs}
         </label>
@@ -573,7 +621,14 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
             commitText(e, (v) => ({ subtitleLangs: v }));
           }}
         />
+      </section>
 
+      <section
+        className="grabber-card"
+        aria-label={S.settings.sectionQuality}
+        hidden={hideSection(["set-merge", "set-codec", "togglesQuality"])}
+      >
+        <h2 className="dl-title">{S.settings.sectionQuality}</h2>
         <label className="field-label" htmlFor="set-merge" hidden={hide("set-merge")}>
           {S.settings.mergeContainer}
         </label>
@@ -616,7 +671,21 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
           <option value="vp9">{S.settings.codecVp9}</option>
           <option value="av1">{S.settings.codecAv1}</option>
         </select>
+        {renderToggles("togglesQuality", [
+          "embedThumbnail",
+          "embedMetadata",
+          "sponsorBlock",
+          "skipArchived",
+          "playlistSubfolder",
+        ])}
+      </section>
 
+      <section
+        className="grabber-card"
+        aria-label={S.settings.sectionAppearance}
+        hidden={hideSection(["set-theme", "set-density", "set-accent", "set-language", "togglesAppearance"])}
+      >
+        <h2 className="dl-title">{S.settings.sectionAppearance}</h2>
         <span className="field-label" id="set-theme-label" hidden={hide("set-theme")}>
           {S.settings.theme}
         </span>        <div className="chip-row" role="group" aria-labelledby="set-theme-label" hidden={hide("set-theme")}>
@@ -731,7 +800,15 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
           <option value="en">{S.settings.languageEnglish}</option>
           <option value="ms">{S.settings.languageMalay}</option>
         </select>
+        {renderToggles("togglesAppearance", ["thumbnailAccent"])}
+      </section>
 
+      <section
+        className="grabber-card"
+        aria-label={S.settings.sectionBehavior}
+        hidden={hideSection(["set-post", "set-close", "togglesWindow"])}
+      >
+        <h2 className="dl-title">{S.settings.sectionBehavior}</h2>
         <label className="field-label" htmlFor="set-post" hidden={hide("set-post")}>
           {S.settings.postAction}
         </label>        <select
@@ -769,7 +846,23 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
           <option value="tray">{S.settings.closeTray}</option>
           <option value="quit">{S.settings.closeQuit}</option>
         </select>
+        {renderToggles("togglesWindow", [
+          "autoCheckUpdate",
+          "minimizeToTray",
+          "notifyFinished",
+          "followSystemTheme",
+          "launchAtLogin",
+          "autoSort",
+          "experimental",
+        ])}
+      </section>
 
+      <section
+        className="grabber-card"
+        aria-label={S.settings.sectionPresets}
+        hidden={hideSection(["set-profiles"])}
+      >
+        <h2 className="dl-title">{S.settings.sectionPresets}</h2>
         <span className="field-label" id="set-profiles" hidden={hide("set-profiles")}>
           {S.settings.profiles}
         </span>
@@ -817,7 +910,14 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
             {S.settings.profileArchive}
           </button>
         </div>
+      </section>
 
+      <section
+        className="grabber-card"
+        aria-label={S.settings.sectionData}
+        hidden={hideSection(["archive", "backup", "replay"])}
+      >
+        <h2 className="dl-title">{S.settings.sectionData}</h2>
         <div hidden={hide("archive")}>
           <button
             type="button"
@@ -888,6 +988,7 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
             {S.onboarding.replay}
           </button>
         </div>
+      </section>
       </div>
     </section>
   );

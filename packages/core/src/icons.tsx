@@ -16,7 +16,8 @@ export type IconName =
   | "stats"
   | "settings"
   | "logs"
-  | "changelog";
+  | "changelog"
+  | "chevron";
 
 const PATHS: Record<IconName, ReactNode> = {
   // App mark: rounded frame, arrow landing into a tray.
@@ -43,13 +44,19 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
     </>
   ),
-  // Two shelves with books of uneven heights.
+  // Two shelves with books standing upright on each one.
   library: (
     <>
-      <path d="M3 6h18" />
-      <path d="M7 6v5M10.5 6v3.5M14 6v5M17.5 6v3.5" />
-      <path d="M3 15.5h18" />
-      <path d="M7 15.5V21M12 15.5v3.5M16.5 15.5V21" />
+      <path d="M7 10V4M10.5 10V6M14 10V4M17.5 10V6" />
+      <path d="M3 10h18" />
+      <path d="M7 20v-5M12 20v-3.5M16.5 20v-5" />
+      <path d="M3 20h18" />
+    </>
+  ),
+  // Chevron for expanding/collapsing (changelog read-more, details).
+  chevron: (
+    <>
+      <path d="M6 9l6 6 6-6" />
     </>
   ),
   // Three bars rising off a baseline.

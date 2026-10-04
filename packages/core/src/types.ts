@@ -278,6 +278,8 @@ export interface AppSettings {
   readonly autoSort: boolean;
   /** Experimental features (may change or break; off by default). */
   readonly experimental: boolean;
+  /** Update tag the user asked not to be reminded about (null = none). */
+  readonly skippedUpdate: string | null;
   /** What the X button does (tray = hide, quit = terminate). */
   readonly closeBehavior: CloseBehavior;
   /** Minimizing also hides the window to the tray. */

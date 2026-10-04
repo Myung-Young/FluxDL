@@ -1137,31 +1137,33 @@ export function Home({
               {upgradeNote}
             </p>
           )}
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={queueing}
-            onPointerDown={(e) => {
-              pressScale(e.currentTarget);
-            }}
-            onClick={() => {
-              void enqueueAll();
-            }}
-          >
-            {info.isPlaylist && info.entries.length > 0
-              ? S.home.queueSelected
-              : S.home.queueSingle}
-          </button>
-          <button
-            type="button"
-            className="btn btn-small"
-            disabled={analyzing}
-            onClick={() => {
-              void analyzeValue(url, { force: true });
-            }}
-          >
-            {S.home.reanalyze}
-          </button>
+          <div className="chip-row">
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={queueing}
+              onPointerDown={(e) => {
+                pressScale(e.currentTarget);
+              }}
+              onClick={() => {
+                void enqueueAll();
+              }}
+            >
+              {info.isPlaylist && info.entries.length > 0
+                ? S.home.queueSelected
+                : S.home.queueSingle}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={analyzing}
+              onClick={() => {
+                void analyzeValue(url, { force: true });
+              }}
+            >
+              {S.home.reanalyze}
+            </button>
+          </div>
           {queuedNote !== null && (
             <p className="note" role="status">
               {queuedNote}

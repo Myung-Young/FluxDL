@@ -4,7 +4,9 @@ import {
   isAllowedExternalUrl,
   isNewerVersion,
   latestTagFromRelease,
-  nextPatchVersion,
+  parseReleasePayload,
+  pickPortableAsset,
+  pickSetupAsset,
 } from "./updates.js";
 
 describe("isNewerVersion", () => {
@@ -39,16 +41,40 @@ describe("isAllowedExternalUrl", () => {
   });
 });
 
-describe("nextPatchVersion", () => {
-  it("bumps the patch number for the demo reminder", () => {
-    expect(nextPatchVersion("1.4.1")).toBe("1.4.2");
-    expect(nextPatchVersion("v1.4.1")).toBe("1.4.2");
-    expect(nextPatchVersion("2.0")).toBe("2.1");
+describe("parseReleasePayload", () => {
+  const payload = {
+    tag_name: "v1.6.0",
+    published_at: "2026-10-04T12:00:00Z",
+    body: "Big release notes",
+    assets: [
+      { name: "FluxDL-Setup-1.6.0.exe", size: 198000000, browser_download_url: "https://github.com/x/setup.exe" },
+      { name: "FluxDL-Portable-1.6.0.exe", size: 197000000, browser_download_url: "https://github.com/x/portable.exe" },
+      { name: "notes.txt", size: 10, browser_download_url: "https://github.com/x/notes.txt" },
+      { name: "broken", size: -5, browser_download_url: "https://github.com/x/broken" },
+    ],
+  };
+
+  it("reads tag, date, notes and valid assets", () => {
+    const parsed = parseReleasePayload(payload);
+    expect(parsed?.tag).toBe("v1.6.0");
+    expect(parsed?.publishedAt).toBe("2026-10-04T12:00:00Z");
+    expect(parsed?.body).toBe("Big release notes");
+    expect(parsed?.assets).toHaveLength(3);
   });
 
-  it("falls back to a fake version for dev builds", () => {
-    expect(nextPatchVersion("0.0.0-e2e")).toBe("9.9.9-demo");
-    expect(nextPatchVersion("unknown")).toBe("9.9.9-demo");
+  it("picks installer vs portable assets", () => {
+    const parsed = parseReleasePayload(payload);
+    expect(parsed === null).toBe(false);
+    if (parsed === null) return;
+    expect(pickSetupAsset(parsed.assets)?.name).toBe("FluxDL-Setup-1.6.0.exe");
+    expect(pickPortableAsset(parsed.assets)?.name).toBe("FluxDL-Portable-1.6.0.exe");
+    expect(pickSetupAsset([])).toBeNull();
+  });
+
+  it("returns null on garbage", () => {
+    expect(parseReleasePayload(null)).toBeNull();
+    expect(parseReleasePayload({})).toBeNull();
+    expect(parseReleasePayload({ tag_name: "  " })).toBeNull();
   });
 });
 

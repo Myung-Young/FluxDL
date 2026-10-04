@@ -59,3 +59,12 @@ This script automatically:
 
 After publishing, launch the previous portable once and confirm the update reminder appears.
 
+Notes for the in-app updater (v1.6.1+):
+- The app force-reads the `releases/latest` endpoint: publish releases
+  oldest-first, keep them full releases (drafts/prereleases are skipped by
+  that endpoint), and use parseable tags (`v1.6.1`).
+- Name the installer `FluxDL-Setup-<v>.exe`: the auto-installer discovers
+  exactly that pattern. A portable-only release shows "no installer" in
+  the popup instead of failing oddly. Needs `GH_TOKEN`/`GITHUB_TOKEN` with
+  `contents:write` in the environment.
+

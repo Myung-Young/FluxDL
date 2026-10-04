@@ -3,6 +3,41 @@
 All notable changes to FluxDL are documented here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.6.1] — 2026-10-04
+
+Update overhaul: the checker reads full release metadata, the button
+force-refreshes (hammering it re-reads GitHub instead of the hourly
+cache), and a new version opens a launch popup with version, sizes,
+notes and publish date.
+
+### Fixed
+
+- "Check for updates" could keep showing the old version for up to an
+  hour because of the cache; it now force-refreshes.
+- Removed the temporary "Preview the reminder" demo button.
+- The Library icon pointed upside-down; books now stand on their shelves.
+- Side-by-side buttons had mismatched heights (Download vs Re-analyze,
+  Check vs Repair); both tiers share fixed heights and bare buttons moved
+  into proper rows.
+- The X button left the process running (nothing called app.quit, so the
+  graceful teardown never ran and only tray Quit worked). Closing now
+  drives a real quit with teardown on both .exe and portable.
+
+### Added
+
+- Launch update popup: latest version, Setup/Portable sizes, release
+  notes, publish date, Later / Skip-this-version / Download & install.
+- In-app download with progress, then automatic silent install on
+  completion. A `FluxDL-updated-to-<v>.txt` note is left in the download
+  folder on the first boot of the new version.
+- Release date shown on the Logs updates card.
+- The auto-installer picks the `*-Setup-*.exe` asset; portable-only
+  releases report "no installer" instead of failing oddly.
+- Full in-app changelog: every version v0.1.0 to current with a read-more
+  chevron per card (outside click or Escape folds it back).
+- Themed scrollbars on every list, log and input.
+- Settings regrouped into labelled section cards with even row rhythm.
+
 ## [1.6.0] — 2026-10-04
 
 "Frictionless & Trustworthy": every control redesigned, the Home page

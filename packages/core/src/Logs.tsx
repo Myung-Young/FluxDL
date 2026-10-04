@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine, EngineVersions, UpdateStatus } from "./engine.js";
+import { formatSize } from "./media.js";
 import type { DownloadJob } from "./types.js";
 import { DEFAULT_SETTINGS } from "./settings.js";
 import { formatStr, useStrings } from "./locale.js";
@@ -10,17 +11,14 @@ import { buildDiagnostics } from "./diagnostics.js";
 import { countLogMatches, filterLogLines } from "./logFilter.js";
 import { writeClipboardText } from "./clipboard.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
-import type { ToastStoreState } from "./toast.js";
-import { nextPatchVersion } from "./updates.js";
 
 export interface LogsProps {
   readonly engine: DownloadEngine;
   readonly queue: StoreApi<QueueStoreState>;
   readonly settings: StoreApi<SettingsStoreState>;
-  readonly toast: StoreApi<ToastStoreState>;
 }
 
-export function Logs({ engine, queue, settings, toast }: LogsProps): React.JSX.Element {
+export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element {
   const S = useStrings(settings);
   const jobs = useStore(queue, (s) => s.jobs);
   const [versions, setVersions] = useState<EngineVersions | null>(null);
@@ -73,46 +71,18 @@ export function Logs({ engine, queue, settings, toast }: LogsProps): React.JSX.E
     }
   };
 
+  // Force bypasses the hourly cache, so hammering this button always
+  // re-reads GitHub (this was the "still shows the old version" bug).
   const checkUpdates = async (): Promise<void> => {
     setChecking(true);
     setCheckFailed(false);
     try {
-      setUpdateStatus(await engine.checkForUpdates());
+      setUpdateStatus(await engine.checkForUpdates(true));
     } catch {
       setCheckFailed(true);
     } finally {
       setChecking(false);
     }
-  };
-
-  // Demo: preview the exact launch reminder without a real newer release.
-  // Builds a fake "one patch ahead" status, fills the card above, and fires
-  // the same toast the auto-check would (same message + Get update action).
-  const demoReminder = async (): Promise<void> => {
-    const v = await engine.getEngineVersion().catch(() => null);
-    const cur = v?.app ?? "1.6.0";
-    const fake: UpdateStatus = {
-      appCurrent: cur,
-      appLatest: nextPatchVersion(cur),
-      appUpdate: true,
-      appUrl: "https://github.com/Myung-Young/FluxDL/releases",
-      ytdlpCurrent: v?.ytdlp ?? "unknown",
-      ytdlpLatest: null,
-      ytdlpUpdate: false,
-      checkedAt: Date.now(),
-    };
-    setCheckFailed(false);
-    setUpdateStatus(fake);
-    toast.getState().push(
-      formatStr(S.logs.appUpdateReady, { v: fake.appLatest ?? "?", cur: fake.appCurrent }),
-      "info",
-      {
-        label: S.logs.getUpdate,
-        run: () => {
-          engine.openExternal(fake.appUrl).catch(() => undefined);
-        },
-      },
-    );
   };
 
   const repair = async (): Promise<void> => {
@@ -221,33 +191,35 @@ export function Logs({ engine, queue, settings, toast }: LogsProps): React.JSX.E
           {S.logs.appVersion}: {versions?.app ?? "…"} · {S.logs.ytdlpVersion}:{" "}
           {versions?.ytdlp ?? "…"} · {S.logs.ffmpegVersion}: {versions?.ffmpeg ?? "…"}
         </p>
-        <button
-          type="button"
-          className="btn"
-          disabled={updating}
-          onPointerDown={(e) => {
-            pressScale(e.currentTarget);
-          }}
-          onClick={() => {
-            void checkUpdate();
-          }}
-        >
-          {updating ? S.logs.updating : S.logs.checkUpdate}
-        </button>
-        <button
-          type="button"
-          className="btn"
-          disabled={repairing}
-          data-testid="logs-repair"
-          onPointerDown={(e) => {
-            pressScale(e.currentTarget);
-          }}
-          onClick={() => {
-            void repair();
-          }}
-        >
-          {repairing ? S.logs.repairing : S.logs.repairEngine}
-        </button>
+        <div className="chip-row">
+          <button
+            type="button"
+            className="btn"
+            disabled={updating}
+            onPointerDown={(e) => {
+              pressScale(e.currentTarget);
+            }}
+            onClick={() => {
+              void checkUpdate();
+            }}
+          >
+            {updating ? S.logs.updating : S.logs.checkUpdate}
+          </button>
+          <button
+            type="button"
+            className="btn"
+            disabled={repairing}
+            data-testid="logs-repair"
+            onPointerDown={(e) => {
+              pressScale(e.currentTarget);
+            }}
+            onClick={() => {
+              void repair();
+            }}
+          >
+            {repairing ? S.logs.repairing : S.logs.repairEngine}
+          </button>
+        </div>
         {updateNote !== null && (
           <p className="note" role="status">
             {updateNote}
@@ -276,18 +248,6 @@ export function Logs({ engine, queue, settings, toast }: LogsProps): React.JSX.E
           >
             {checking ? S.logs.checkingUpdates : S.logs.checkUpdates}
           </button>
-          <button
-            type="button"
-            className="btn btn-small"
-            onPointerDown={(e) => {
-              pressScale(e.currentTarget);
-            }}
-            onClick={() => {
-              void demoReminder();
-            }}
-          >
-            {S.logs.demoUpdate}
-          </button>
           {updateStatus !== null && updateStatus.appUpdate && (
             <button
               type="button"
@@ -314,7 +274,24 @@ export function Logs({ engine, queue, settings, toast }: LogsProps): React.JSX.E
                     cur: updateStatus.appCurrent,
                   })
                 : formatStr(S.logs.appUpToDate, { v: updateStatus.appCurrent })}
+              {updateStatus.appRelease?.publishedAt !== null &&
+                updateStatus.appRelease?.publishedAt !== undefined && (
+                  <>
+                    {" "}
+                    {formatStr(S.logs.appReleased, {
+                      date: new Date(updateStatus.appRelease.publishedAt).toLocaleDateString(),
+                    })}
+                  </>
+                )}
             </p>
+            {updateStatus.appRelease?.setupSize !== null &&
+              updateStatus.appRelease?.setupSize !== undefined && (
+                <p className="muted" role="status">
+                  {formatStr(S.updateModal.setupSize, {
+                    size: formatSize(updateStatus.appRelease.setupSize, "en"),
+                  })}
+                </p>
+              )}
             <p className="muted" role="status">
               {updateStatus.ytdlpUpdate
                 ? formatStr(S.logs.ytdlpUpdateReady, { v: updateStatus.ytdlpLatest ?? "?" })

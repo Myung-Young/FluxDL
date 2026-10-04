@@ -257,8 +257,17 @@ export function registerEngineIpc(engine: DesktopEngine): void {
     if (id === null) throw new Error("Missing id.");
     return engine.getRawLog(id);
   });
-  ipcMain.handle(IPC_CHANNELS.checkForUpdates, async () => {
-    return engine.checkForUpdates();
+  ipcMain.handle(IPC_CHANNELS.checkForUpdates, async (_event, rawForce: unknown) => {
+    return engine.checkForUpdates(rawForce === true);
+  });
+  ipcMain.handle(IPC_CHANNELS.startUpdateDownload, async () => {
+    await engine.startUpdateDownload();
+  });
+  ipcMain.handle(IPC_CHANNELS.getUpdateDownloadProgress, async () => {
+    return engine.getUpdateDownloadProgress();
+  });
+  ipcMain.handle(IPC_CHANNELS.cancelUpdateDownload, async () => {
+    await engine.cancelUpdateDownload();
   });
   ipcMain.handle(IPC_CHANNELS.getMediaUrl, async (_event, rawPath: unknown) => {
     const p = asNonEmptyString(rawPath);

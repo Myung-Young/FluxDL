@@ -45,22 +45,73 @@ export function isNewerVersion(current: string, latest: string | null): boolean 
   return false;
 }
 
-/**
- * Demo helper: bump the patch number ("1.4.1" -> "1.4.2") so the update
- * reminder can be previewed without a real newer release. Falls back to a
- * clearly-fake version when the current one is unparseable (dev builds).
- */
-export function nextPatchVersion(current: string): string {
-  const parts = numericParts(current);
-  if (parts === null || parts.length === 0) return "9.9.9-demo";
-  const bumped = [...parts];
-  bumped[bumped.length - 1] = (bumped[bumped.length - 1] ?? 0) + 1;
-  return bumped.join(".");
-}
-
 /** Extract `tag_name` from a GitHub latest-release payload (null when absent). */
 export function latestTagFromRelease(payload: unknown): string | null {
   if (typeof payload !== "object" || payload === null) return null;
   const tag = (payload as Record<string, unknown>)["tag_name"];
   return typeof tag === "string" && tag.trim().length > 0 ? tag.trim() : null;
+}
+
+export interface ReleaseAssetInfo {
+  readonly name: string;
+  readonly sizeBytes: number;
+  readonly url: string;
+}
+
+export interface ParsedRelease {
+  readonly tag: string;
+  readonly publishedAt: string | null;
+  /** Release notes, capped so a novel never reaches the UI. */
+  readonly body: string | null;
+  readonly assets: readonly ReleaseAssetInfo[];
+}
+
+/**
+ * Parse a GitHub `releases/latest` payload defensively (null on anything
+ * unexpected — update checks must never throw for network reasons).
+ */
+export function parseReleasePayload(payload: unknown): ParsedRelease | null {
+  if (typeof payload !== "object" || payload === null) return null;
+  const rec = payload as Record<string, unknown>;
+  const tag = latestTagFromRelease(rec);
+  if (tag === null) return null;
+  const publishedAt =
+    typeof rec["published_at"] === "string" && rec["published_at"].length > 0
+      ? rec["published_at"]
+      : null;
+  const body =
+    typeof rec["body"] === "string" && rec["body"].trim().length > 0
+      ? rec["body"].slice(0, 8000)
+      : null;
+  const assets: ReleaseAssetInfo[] = [];
+  if (Array.isArray(rec["assets"])) {
+    for (const a of rec["assets"].slice(0, 50)) {
+      if (typeof a !== "object" || a === null) continue;
+      const r = a as Record<string, unknown>;
+      if (typeof r["name"] !== "string" || typeof r["browser_download_url"] !== "string") {
+        continue;
+      }
+      if (typeof r["size"] !== "number" || !Number.isFinite(r["size"]) || r["size"] <= 0) {
+        continue;
+      }
+      assets.push({ name: r["name"], sizeBytes: Math.floor(r["size"]), url: r["browser_download_url"] });
+    }
+  }
+  return { tag, publishedAt, body, assets };
+}
+
+/**
+ * Pick the Setup installer from release assets (the only artifact the
+ * auto-installer can run silently). Portable exes need a manual swap, so
+ * they are shown for size but never auto-installed.
+ */
+export function pickSetupAsset(assets: readonly ReleaseAssetInfo[]): ReleaseAssetInfo | null {
+  const setup = assets.find((a) => /setup.*\.exe$/i.test(a.name));
+  if (setup !== undefined) return setup;
+  return null;
+}
+
+/** Portable asset, for the size table only. */
+export function pickPortableAsset(assets: readonly ReleaseAssetInfo[]): ReleaseAssetInfo | null {
+  return assets.find((a) => /portable.*\.exe$/i.test(a.name)) ?? null;
 }

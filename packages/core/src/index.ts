@@ -26,6 +26,7 @@ export { describeIntent, parseIntent, runIntent } from "./intent.js";
 export type { Intent, IntentLabel } from "./intent.js";
 export type { WatchDiff } from "./watchlist.js";
 export type {
+  AppReleaseInfo,
   DeepLinkCallback,
   DownloadEngine,
   EngineProgress,
@@ -37,6 +38,7 @@ export type {
   StorageInsights,
   ThumbnailColor,
   Unsubscribe,
+  UpdateDownloadProgress,
   UpdateStatus,
 } from "./engine.js";
 export { extractDeepLinkTarget, parseFluxDlUrl } from "./deeplink.js";
@@ -47,7 +49,9 @@ export {
   isAllowedExternalUrl,
   isNewerVersion,
   latestTagFromRelease,
-  nextPatchVersion,
+  parseReleasePayload,
+  pickPortableAsset,
+  pickSetupAsset,
 } from "./updates.js";
 export {
   aggregateStatus,
@@ -125,6 +129,8 @@ export { CHANGELOG_ENTRIES } from "./changelog.js";
 export type { ChangelogEntry } from "./changelog.js";
 export { PreviewModal } from "./PreviewModal.js";
 export type { PreviewModalProps } from "./PreviewModal.js";
+export { UpdateModal } from "./UpdateModal.js";
+export type { UpdateModalProps } from "./UpdateModal.js";
 export { AppIcon } from "./icons.js";
 export type { IconName } from "./icons.js";
 export { ErrorBoundary } from "./ErrorBoundary.js";

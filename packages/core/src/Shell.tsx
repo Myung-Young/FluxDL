@@ -15,6 +15,8 @@ import { CommandPalette } from "./CommandPalette.js";
 import type { CommandContext } from "./commands.js";
 import { AppIcon } from "./icons.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
+import { UpdateModal } from "./UpdateModal.js";
+import type { UpdateStatus } from "./engine.js";
 import { diffWatch } from "./watchlist.js";
 // Views load on demand (F4): the boot bundle stays lean, each screen is its
 // own chunk. Static imports would defeat the split, hence the wrappers.
@@ -414,9 +416,11 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
     document.title = formatWindowTitle(aggregateStatus(jobs).active, APP_NAME);
   }, [jobs]);
 
-  // Launch update reminder: one best-effort check (hourly-cached main-side),
-  // then a toast when the app or yt-dlp has something newer. Honors the
-  // autoCheckUpdate setting; failures stay silent (offline is normal).
+  // Launch update reminder: one best-effort check (hourly-cached main-side).
+  // An app update opens the full popup (version, size, notes, download);
+  // a skipped version stays quiet; yt-dlp-only news keeps the small toast.
+  // Honors autoCheckUpdate; failures stay silent (offline is normal).
+  const [updateModal, setUpdateModal] = useState<UpdateStatus | null>(null);
   useEffect(() => {
     if (!settingsReady || updateNoted) return;
     setUpdateNoted(true);
@@ -424,20 +428,8 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
     void engine
       .checkForUpdates()
       .then((st) => {
-        if (st.appUpdate) {
-          toast.getState().push(
-            formatStr(S.logs.appUpdateReady, {
-              v: st.appLatest ?? "?",
-              cur: st.appCurrent,
-            }),
-            "info",
-            {
-              label: S.logs.getUpdate,
-              run: () => {
-                engine.openExternal(st.appUrl).catch(() => undefined);
-              },
-            },
-          );
+        if (st.appUpdate && st.appLatest !== settings.getState().settings.skippedUpdate) {
+          setUpdateModal(st);
         } else if (st.ytdlpUpdate) {
           toast.getState().push(
             formatStr(S.logs.ytdlpUpdateReady, { v: st.ytdlpLatest ?? "?" }),
@@ -453,6 +445,10 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
       })
       .catch(() => undefined);
   }, [engine, settings, settingsReady, updateNoted, toast, switchView, S]);
+
+  const closeUpdateModal = useCallback((): void => {
+    setUpdateModal(null);
+  }, []);
 
   // Keep the queue moving (M4.1): hydrated boot jobs and backoff retries
   // only start when something pumps. The 1 s tick is cheap and the
@@ -781,7 +777,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
             />
           )}
           {!mini && view === "logs" && (
-            <Logs engine={engine} queue={queue} settings={settings} toast={toast} />
+            <Logs engine={engine} queue={queue} settings={settings} />
           )}
           {!mini && view === "changelog" && <ChangelogScreen settings={settings} />}
           </Suspense>
@@ -789,6 +785,14 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
         </main>
       </div>
       <Toasts toast={toast} strings={S} />
+      {updateModal !== null && (
+        <UpdateModal
+          engine={engine}
+          settings={settings}
+          status={updateModal}
+          onClose={closeUpdateModal}
+        />
+      )}
       <CommandPalette
         open={paletteOpen}
         context={paletteContext}
