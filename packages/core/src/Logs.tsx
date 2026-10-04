@@ -342,7 +342,7 @@ export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element 
             </button>
           )}
         </div>
-        <div className="chip-row">
+        <div className="chip-row log-tools">
           <label className="check-row">
             <input
               type="checkbox"

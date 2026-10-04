@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Tray, nativeImage, protocol, session, shell } from "electron";
+import { app, BrowserWindow, Menu, Tray, dialog, nativeImage, protocol, session, shell } from "electron";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { APP_NAME } from "@grabber/core/branding.js";
@@ -324,6 +324,44 @@ async function createWindow(): Promise<void> {
     } catch {
       behavior = "quit";
     }
+    // Active downloads: confirm so X never silently kills work or
+    // strands yt-dlp/ffmpeg children (v1.6.1 Task Manager leftover).
+    // .part files are kept for resume either way.
+    let active = 0;
+    try {
+      active = engine?.activeCount() ?? 0;
+    } catch {
+      active = 0;
+    }
+    if (active > 0) {
+      event.preventDefault();
+      const ms = (() => {
+        try {
+          return app.getLocale().toLowerCase().startsWith("ms");
+        } catch {
+          return false;
+        }
+      })();
+      const S = ms ? STRINGS_MS.closeConfirm : STRINGS.closeConfirm;
+      const picked = dialog.showMessageBoxSync(win, {
+        type: "question",
+        title: APP_NAME,
+        message: S.title,
+        detail: S.message.replace("{count}", String(active)),
+        buttons: [S.quit, S.hide, S.cancel],
+        defaultId: 2,
+        cancelId: 2,
+        noLink: true,
+      });
+      if (picked === 2) return;
+      if (picked === 1) {
+        win.hide();
+        return;
+      }
+      quitting = true;
+      app.quit();
+      return;
+    }
     if (behavior === "quit") {
       // Closing the last window does NOT quit a tray app by itself, so
       // before-quit (graceful teardown) would never run. Drive it here.
@@ -590,7 +628,21 @@ app.on("before-quit", (event) => {
   if (shuttingDown) return;
   // Graceful teardown: give yt-dlp/ffmpeg children a moment to die while
   // .part files stay resumable. Never block quit for more than 3 s.
+  // A force-exit timer covers a hung teardown so X always ends the
+  // task in Task Manager (v1.6.1 leftover).
   event.preventDefault();
+  const forceTimer = setTimeout(() => {
+    try {
+      process.exit(0);
+    } catch {
+      // Already exiting.
+    }
+  }, 3500);
+  try {
+    forceTimer.unref();
+  } catch {
+    // Non-fatal; the timer still bounds the quit.
+  }
   void (async () => {
     shuttingDown = true;
     try {

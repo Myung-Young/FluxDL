@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, statfsSync, statSync } from "node:fs";
 import { open, readFile, readdir, rm, stat, unlink } from "node:fs/promises";
@@ -143,6 +143,40 @@ function isInsideDir(root: string, candidate: string): boolean {
   // Case-insensitive string math (Windows); absolute `rel` = other drive.
   const rel = relative(root.toLowerCase(), candidate.toLowerCase());
   return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
+
+/**
+ * Kill a child + its whole subtree. `proc.kill()` alone only kills the
+ * direct child on Windows, leaving yt-dlp-spawned ffmpeg.exe orphaned
+ * (locked .part files + ghost tasks in Task Manager after X/quit).
+ * NEVER shell:true — taskkill runs as an args array.
+ */
+export function killProcessTree(proc: ChildProcess | null): void {
+  if (proc === null || proc.killed) return;
+  const pid = proc.pid;
+  if (pid === undefined) {
+    try {
+      proc.kill();
+    } catch {
+      // Best effort.
+    }
+    return;
+  }
+  if (process.platform === "win32") {
+    try {
+      spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], {
+        windowsHide: true,
+        shell: false,
+      });
+    } catch {
+      // Fall through to proc.kill() below.
+    }
+  }
+  try {
+    proc.kill();
+  } catch {
+    // Best effort; the OS reaps anything left on exit.
+  }
 }
 
 /**
@@ -471,23 +505,20 @@ export class DesktopEngine implements DownloadEngine {
    */
   shutdown(): Promise<void> {
     for (const [, entry] of this.analyses) {
-      try {
-        entry.proc?.kill();
-      } catch {
-        // Best effort.
-      }
+      killProcessTree(entry.proc);
       if (entry.timer !== null) clearTimeout(entry.timer);
     }
     this.analyses.clear();
     for (const job of this.jobs.values()) {
-      try {
-        job.proc?.kill();
-      } catch {
-        // Best effort; the OS reaps anything left on exit.
-      }
+      killProcessTree(job.proc);
       job.proc = null;
     }
     return Promise.resolve();
+  }
+
+  /** Active download/analyze count for the X-quit confirm dialog. */
+  activeCount(): number {
+    return this.jobs.size + this.analyses.size;
   }
 
   private readonly deepListeners = new Set<DeepLinkCallback>();
@@ -831,7 +862,7 @@ export class DesktopEngine implements DownloadEngine {
       entry.proc = proc;
       entry.timer = setTimeout(() => {
         entry.timedOut = true;
-        proc.kill();
+        killProcessTree(proc);
       }, timeoutSec * 1000);
       let stdout = "";
       let stderr = "";
@@ -905,7 +936,7 @@ export class DesktopEngine implements DownloadEngine {
     const entry = this.analyses.get(requestId);
     if (entry === undefined || entry.settled) return Promise.resolve();
     entry.cancelled = true;
-    entry.proc?.kill();
+    killProcessTree(entry.proc);
     return Promise.resolve();
   }
 
@@ -1147,7 +1178,7 @@ export class DesktopEngine implements DownloadEngine {
     if (job === undefined) throw new Error(`Unknown download: ${id}`);
     if (job.state === "paused") return Promise.resolve();
     job.state = "pausing";
-    job.proc?.kill();
+    killProcessTree(job.proc);
     return Promise.resolve();
   }
 
@@ -1179,7 +1210,7 @@ export class DesktopEngine implements DownloadEngine {
       return;
     }
     job.state = "cancelling";
-    job.proc.kill();
+    killProcessTree(job.proc);
   }
 
   onProgress(cb: ProgressCallback): Unsubscribe {

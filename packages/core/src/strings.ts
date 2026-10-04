@@ -373,6 +373,13 @@ const EN = {
     exeOpen: "Open",
     exeCancel: "Cancel",
   },
+  closeConfirm: {
+    title: "Downloads still running?",
+    message: "{count} download(s) still active. Quitting keeps partial files for resume.",
+    quit: "Quit anyway",
+    hide: "Hide to tray",
+    cancel: "Cancel",
+  },
   tasks: {
     newDownload: "New download",
     newDownloadDesc: "Open FluxDL to add a download",
@@ -895,6 +902,13 @@ const MS: Parity<Strings> = {
     exeMessage: "Fail ini boleh menjalankan program pada PC anda. Buka “{name}”?",
     exeOpen: "Buka",
     exeCancel: "Batal",
+  },
+  closeConfirm: {
+    title: "Muat turun masih berjalan?",
+    message: "{count} muat turun masih aktif. Keluar mengekalkan fail separa untuk sambungan semula.",
+    quit: "Keluar juga",
+    hide: "Sembunyi ke tray",
+    cancel: "Batal",
   },
   tasks: {
     newDownload: "Muat turun baharu",
