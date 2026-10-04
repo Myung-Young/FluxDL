@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DesktopEngine } from "./desktopEngine.js";
+import { DesktopEngine, extractJsonPayload, killProcessTree } from "./desktopEngine.js";
 
 function makeEngine() {
   const base = mkdtempSync(join(tmpdir(), "fluxdl-addons-"));
@@ -114,6 +114,26 @@ describe("engine addons (lifecycle/deeplink/media/updates)", () => {
     expect(insights.otherFiles).toBe(1);
     expect(insights.orphans).toHaveLength(1);
     expect(insights.orphanBytes).toBe(3);
+  });
+
+  it("activeCount starts at zero", () => {
+    const { engine } = makeEngine();
+    expect(engine.activeCount()).toBe(0);
+  });
+
+  it("extractJsonPayload tolerates warning preamble and trailing text", () => {
+    expect(extractJsonPayload('{"id":"x"}')).toBe('{"id":"x"}');
+    expect(
+      extractJsonPayload('WARNING: [youtube] hello\n{"id":"x","title":"t"}\nDone.\n'),
+    ).toBe('{"id":"x","title":"t"}');
+    expect(extractJsonPayload("no json here")).toBeNull();
+    expect(extractJsonPayload("} {")).toBeNull();
+  });
+
+  it("killProcessTree tolerates null", () => {
+    expect(() => {
+      killProcessTree(null);
+    }).not.toThrow();
   });
 
   it("checkForUpdates resolves the status shape (best-effort network)", async () => {

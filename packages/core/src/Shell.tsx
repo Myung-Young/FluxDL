@@ -677,6 +677,23 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
             />
           ))}
         </span>
+        {!mini && (
+          <button
+            type="button"
+            className="grabber-title-btn no-drag"
+            title={S.mini.title}
+            aria-label={S.mini.title}
+            data-testid="enter-mini"
+            onPointerDown={(e) => {
+              pressScale(e.currentTarget);
+            }}
+            onClick={() => {
+              setMini(true);
+            }}
+          >
+            <AppIcon name="mini" />
+          </button>
+        )}
       </header>
       <div className="grabber-body">
         <nav ref={navRef} className="grabber-nav" aria-label="Primary" hidden={mini}>

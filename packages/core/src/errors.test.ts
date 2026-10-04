@@ -48,6 +48,12 @@ describe("actionable errors (M1.4)", () => {
       'yt-dlp.exe: error: unsupported browser specified for cookies: "wateringcan". Supported browsers are: brave, chrome, chromium, edge, firefox, opera, safari, vivaldi, whale',
       "cookie-unavailable",
     ],
+    // YouTube bot verification -> cookie + update guidance (not age-gated).
+    [
+      "ERROR: [youtube] abc123: Sign in to confirm you're not a bot. Use --cookies-from-browser or --cookies for the authentication.",
+      "bot-check",
+    ],
+    ["ERROR: [youtube] abc123: Did not get PO Token for player response", "bot-check"],
     // Extractor breakage + stale-client 403s -> update-and-retry.
     ["ERROR: [youtube] x: Signature extraction failed: some pattern", "extractor-failed"],
     ["ERROR: [youtube] x: HTTP Error 403: Forbidden", "extractor-failed"],

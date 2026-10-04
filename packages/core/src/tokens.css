@@ -277,6 +277,40 @@ body {
   outline-offset: 2px;
 }
 
+/* Titlebar icon button (mini-mode entry, v1.7.0). Same 28px rhythm as the
+   dots row so the header never grows; icon inherits currentColor. */
+.grabber-title-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  flex: 0 0 auto;
+  background: transparent;
+  color: var(--fg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    transform 80ms ease;
+}
+
+.grabber-title-btn:hover {
+  background: var(--accent-soft);
+  color: var(--fg-0);
+}
+
+.grabber-title-btn:active {
+  transform: scale(0.96);
+}
+
+.grabber-title-btn .app-icon {
+  width: 16px;
+  height: 16px;
+}
+
 .grabber-body {
   display: flex;
   flex: 1;
@@ -528,6 +562,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  /* The 520px window must scroll, not grow, past a handful of rows. */
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 .mini-row {
@@ -539,6 +576,18 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   min-width: 0;
+}
+
+/* Per-row controls (v1.7.0): pause/resume + cancel live under the bar. */
+.mini-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+/* Overall aggregate bar under the mini header. */
+.mini-overall {
+  margin: var(--space-2) 0 0;
 }
 
 .mini-title {

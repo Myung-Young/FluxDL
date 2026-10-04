@@ -14,6 +14,7 @@ export type ErrorCategory =
   | "geo-blocked"
   | "private"
   | "age-gated"
+  | "bot-check"
   | "cookie-unavailable"
   | "network"
   | "disk-full"
@@ -88,6 +89,16 @@ const RULES: ReadonlyArray<{
     actions: [COOKIES_ONCE, LOGS],
   },
   {
+    // YouTube bot verification (PO Token / "not a bot"): yt-dlp prints
+    // "Sign in to confirm you're not a bot" which would otherwise match
+    // the age-gated rule below ("sign in to confirm") with the wrong
+    // guidance. Must stay BEFORE age-gated.
+    category: "bot-check",
+    pattern: /confirm you'?re not a bot|PO Token|n.?sig extraction failed/i,
+    suggestCookies: true,
+    actions: [COOKIES_ONCE, COOKIES_ALWAYS, { id: "settings", section: "cookies" }, UPDATE_RETRY, LOGS],
+  },
+  {
     category: "age-gated",
     pattern: /confirm your age|age.?gated|sign in to confirm/i,
     suggestCookies: true,
@@ -157,6 +168,10 @@ const MESSAGES: Record<ErrorCategory, Record<ErrorLocale, string>> = {
   "age-gated": {
     en: "Age-restricted video. Export browser cookies and retry.",
     ms: "Video terhad umur. Eksport kuki pelayar dan cuba semula.",
+  },
+  "bot-check": {
+    en: "YouTube thinks you're a bot. Export browser cookies (or update yt-dlp) and retry.",
+    ms: "YouTube menganggap anda bot. Eksport kuki pelayar (atau kemas kini yt-dlp) dan cuba semula.",
   },
   "cookie-unavailable": {
     en: "Could not read cookies from that browser (it may be running, locked, or missing). Try Firefox or Edge, or point a cookies.txt file at it in Settings.",

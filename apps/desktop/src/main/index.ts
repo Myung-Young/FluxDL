@@ -282,16 +282,23 @@ function applyCsp(): void {
 async function createWindow(): Promise<void> {
   // Read the persisted chrome first so a light theme never flashes dark
   // window chrome before the renderer sends its first update (M4.6).
-  const state = await chrome.ready();
+  const loaded = await chrome.ready();
+  // v1.7.0: always boot into the normal window. A quit-in-mini must not
+  // restore a 360px frame around the full UI (the renderer boots with
+  // mini=false and only learns otherwise via push). Resetting here keeps
+  // the persisted flag, tray checkbox and renderer in sync.
+  if (loaded.mini) {
+    await chrome.apply({ mini: false, theme: loaded.theme }).catch(() => undefined);
+  }
+  const state = chrome.current();
   const colors = colorsFor(state.theme);
-  const size = boundsFor(state.mini);
+  const size = boundsFor(false);
   const win = new BrowserWindow({
     width: size.width,
     height: size.height,
     // The layout is designed for the default 1120x760 window; fullscreen
     // maximize is disabled so the UI never stretches past its usable size.
     maximizable: false,
-    ...(state.mini ? { alwaysOnTop: true } : {}),
     title: APP_NAME,
     backgroundColor: colors.bg,
     autoHideMenuBar: true,

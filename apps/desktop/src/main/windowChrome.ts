@@ -120,6 +120,10 @@ export async function applyChrome(
   let miniY = state.miniY;
   if (win !== null && !win.isDestroyed()) {
     win.setAlwaysOnTop(next, "floating");
+    // Minimum first: shrinking below the *current* minimum (720x480 in
+    // normal mode) is clamped by Windows, which strands a wide window
+    // around the compact layout (v1.7.0 mini black-region report).
+    win.setMinimumSize(next ? MINI_WIDTH : 720, next ? MINI_HEIGHT : 480);
     if (next) {
       // Center on the current window so the compact view appears in place.
       const size = win.getSize();
@@ -133,7 +137,6 @@ export async function applyChrome(
       // Omitted x/y keep the current position.
       win.setBounds({ width: target.width, height: target.height });
     }
-    win.setMinimumSize(next ? MINI_WIDTH : 720, next ? MINI_HEIGHT : 480);
     const colors = colorsFor(state.theme);
     try {
       win.setBackgroundColor(colors.bg);
@@ -148,9 +151,16 @@ export async function applyChrome(
   return saved;
 }
 
-/** Remember the normal-mode size so leaving mini mode restores it. */
-export function rememberNormalSize(state: WindowState, win: BrowserWindow | null): WindowState {
-  if (!state.mini || win === null || win.isDestroyed()) return state;
+/** Remember the normal-mode size so leaving mini mode restores it.
+ * Only captures on the normal -> mini transition (`entering === true`):
+ * capturing on exit would store the compact size as "normal" and the
+ * window would stay small forever (v1.7.0 mini-restore bug). */
+export function rememberNormalSize(
+  state: WindowState,
+  win: BrowserWindow | null,
+  entering: boolean,
+): WindowState {
+  if (!entering || state.mini || win === null || win.isDestroyed()) return state;
   const size = win.getSize();
   const width = size[0];
   const height = size[1];
@@ -196,7 +206,7 @@ export function createWindowChrome(deps: {
     apply: async (next) => {
       const win = deps.getWindow();
       const theme = next.theme;
-      state = rememberNormalSize(state, win);
+      state = rememberNormalSize(state, win, next.mini && !state.mini);
       state = await applyChrome(win, deps.userDataDir, { ...state, theme }, next.mini);
       notify();
     },

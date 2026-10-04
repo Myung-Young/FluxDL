@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { BrowserWindow } from "electron";
 import {
   DEFAULT_WINDOW_STATE,
   colorsFor,
   loadWindowState,
+  rememberNormalSize,
   resolveBounds,
   sanitizeWindowState,
   saveWindowState,
@@ -91,6 +93,40 @@ describe("resolveBounds", () => {
   it("reuses a stored mini position on re-entry", () => {
     const r = resolveBounds({ ...DEFAULT_WINDOW_STATE, miniX: 100, miniY: 120 }, true);
     expect(r.stored).toBe(true);
+  });
+});
+
+describe("rememberNormalSize", () => {
+  function fakeWin(width: number, height: number): { getSize: () => number[]; isDestroyed: () => boolean } {
+    return { getSize: () => [width, height], isDestroyed: () => false };
+  }
+
+  it("captures the normal size when entering mini mode", () => {
+    const win = fakeWin(1120, 760);
+    const next = rememberNormalSize(DEFAULT_WINDOW_STATE, win as unknown as BrowserWindow, true);
+    expect(next.normalWidth).toBe(1120);
+    expect(next.normalHeight).toBe(760);
+  });
+
+  it("never overwrites the remembered size when leaving mini mode", () => {
+    const mini = { ...DEFAULT_WINDOW_STATE, mini: true, normalWidth: 1120, normalHeight: 760 };
+    const win = fakeWin(360, 520);
+    const next = rememberNormalSize(mini, win as unknown as BrowserWindow, false);
+    // The v1.7.0 bug stored 360x520 here, shrinking the window forever.
+    expect(next.normalWidth).toBe(1120);
+    expect(next.normalHeight).toBe(760);
+    expect(next.mini).toBe(true);
+  });
+
+  it("ignores theme-only applies and missing windows", () => {
+    const win = fakeWin(360, 520);
+    const asWin = win as unknown as BrowserWindow;
+    // Already mini + entering flag false (e.g. a theme change in mini).
+    expect(rememberNormalSize({ ...DEFAULT_WINDOW_STATE, mini: true }, asWin, true)).toEqual({
+      ...DEFAULT_WINDOW_STATE,
+      mini: true,
+    });
+    expect(rememberNormalSize(DEFAULT_WINDOW_STATE, null, true)).toEqual(DEFAULT_WINDOW_STATE);
   });
 });
 

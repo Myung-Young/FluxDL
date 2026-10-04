@@ -3,6 +3,44 @@
 All notable changes to FluxDL are documented here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.7.0] — 2026-10-04
+
+"Clean quit & stability": the X button reliably terminates the app and
+its yt-dlp/ffmpeg children, active downloads get a quit confirmation,
+and bot-verification failures explain themselves.
+
+### Fixed
+
+- The X button could leave FluxDL (or orphaned yt-dlp/ffmpeg children)
+  running in Task Manager. Quitting now tree-kills the whole child
+  process tree (`taskkill /T /F`, never `shell:true`) and a force-exit
+  timer bounds teardown at ~3.5 s so the task always ends.
+- Closing with active downloads silently killed them. X now asks:
+  Quit anyway (`.part` files kept for resume) / Hide to tray / Cancel.
+- Log toolbar buttons (Refresh, Copy log, Show command) sat glued to
+  the search box; the filter/action row now has its own rhythm.
+- YouTube "Sign in to confirm you're not a bot" / PO Token failures
+  were mislabelled as age-restriction. They now map to a dedicated
+  bot-check error with cookie + engine-update actions (EN + MS).
+- Metadata probes could fail on yt-dlp warning preamble mixed into
+  stdout; the JSON payload is now sliced from the first `{` to the
+  last `}` before parsing.
+- Public-repo hygiene: packaged leftovers, runtime userData JSON,
+  pending-updates, update notes and local batch drops are git-ignored.
+- Leaving mini mode kept the window at the compact 360x520 size: the
+  normal size is now captured on entry (never on exit) and restored on
+  exit, the app always boots into the normal window, and the minimum
+  size is lowered before shrinking so Windows stops clamping the frame.
+
+### Added
+
+- `DesktopEngine.activeCount()` backing the quit-confirm dialog.
+- `extractJsonPayload` + `killProcessTree` helpers with unit tests.
+- Mini mode button in the titlebar (beside the theme dots) — no more
+  tray-hunting. Shortcut `Ctrl+Shift+M` and the palette still work.
+- Mini view revamp: overall progress bar, per-row pause/resume/cancel,
+  failed-jobs retry-all row, speed/ETA/percent per row, scrolling list.
+
 ## [1.6.1] — 2026-10-04
 
 Update overhaul: the checker reads full release metadata, the button

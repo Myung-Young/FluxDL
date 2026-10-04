@@ -17,7 +17,8 @@ export type IconName =
   | "settings"
   | "logs"
   | "changelog"
-  | "chevron";
+  | "chevron"
+  | "mini";
 
 const PATHS: Record<IconName, ReactNode> = {
   // App mark: rounded frame, arrow landing into a tray.
@@ -89,6 +90,13 @@ const PATHS: Record<IconName, ReactNode> = {
       <path d="M20 12a8 8 0 1 1-2.4-5.7" />
       <path d="M20 3v4.5h-4.5" />
       <path d="M12 8v4.5h3" />
+    </>
+  ),
+  // Compact window: small front panel over a back frame.
+  mini: (
+    <>
+      <rect x="8" y="8" width="13" height="13" rx="3" />
+      <path d="M15 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2" />
     </>
   ),
 };

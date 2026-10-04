@@ -180,6 +180,19 @@ export function killProcessTree(proc: ChildProcess | null): void {
 }
 
 /**
+ * yt-dlp --dump-single-json can print warnings before/after the payload
+ * (or mix them into stdout on unusual extractors). Slice from the first
+ * `{` to the last `}` so JSON.parse doesn't die on preamble text.
+ * Returns null when no object envelope exists.
+ */
+export function extractJsonPayload(stdout: string): string | null {
+  const start = stdout.indexOf("{");
+  const end = stdout.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+  return stdout.slice(start, end + 1);
+}
+
+/**
  * Trust boundary (rule 4): the renderer is untrusted, so any path it sends
  * (open/reveal/exists) must resolve inside the download roots or equal a
  * known job/history destination. Everything else is rejected.
@@ -900,7 +913,9 @@ export class DesktopEngine implements DownloadEngine {
         }
         let data: unknown;
         try {
-          data = JSON.parse(stdout) as unknown;
+          const payload = extractJsonPayload(stdout);
+          if (payload === null) throw new Error("no JSON payload");
+          data = JSON.parse(payload) as unknown;
         } catch {
           settle(() => {
             reject(

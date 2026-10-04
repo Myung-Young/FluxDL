@@ -103,3 +103,6 @@ FluxDL-updated-to-*.txt
 *.fluxdl.txt
 *.bak
 *.tmp
+
+# NOTE: fixtures/v1.0/*.json are intentional backcompat samples (see D46)
+# and must stay tracked — do not add them here.
