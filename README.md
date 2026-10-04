@@ -1,29 +1,68 @@
-# FluxDL
+![FluxDL](docs/banner.svg)
 
-Premium dark-UI GUI for the yt-dlp CLI. Windows `.exe` (per-user NSIS
-installer + single portable exe) with queueing, themes, codec-aware presets,
-batch paste, duplicate guard + download archive, actionable errors, taskbar
-progress, context menus, bulk queue control, diagnostics, command palette,
-onboarding, thumbnail accents, density + accent options, smart playlists,
-English + Bahasa Melayu, library health, destination recovery, retry
-countdown, settings search, shortcut help, log triage, template validation,
-live-stream support, split-by-chapters, audio tag editing, a compact
-always-on-top mini window, download statistics, four themes with Windows High
-Contrast support, self-updating engine binaries, and persisted
-settings/history.
+[![GitHub release](https://img.shields.io/github/v/release/Myung-Young/FluxDL?label=latest)](https://github.com/Myung-Young/FluxDL/releases)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?logo=windows&logoColor=white)](https://github.com/Myung-Young/FluxDL/releases)
+[![yt-dlp](https://img.shields.io/badge/engine-yt--dlp-ff7f50)](https://github.com/yt-dlp/yt-dlp)
+[![pnpm](https://img.shields.io/badge/pnpm-workspaces-F69220?logo=pnpm&logoColor=white)](https://pnpm.io)
+
+**FluxDL** is a premium dark-UI desktop app for downloading video and audio —
+a friendly face over the [yt-dlp](https://github.com/yt-dlp/yt-dlp) CLI, with
+queueing, playlists, batch paste, live streams, and everything stored locally.
+No accounts, no telemetry, no remote content: your links never leave your PC
+except to fetch the media itself.
 
 > You are responsible for respecting copyright and each site's terms.
 > Only download content you own or are allowed to keep.
 
-## Requirements
+## Download
 
-- Node 20+, pnpm 10+
-- Windows 10/11 x64 for running/packaging (dev tooling is cross-platform,
-  but binaries and installers target win64)
-- No yt-dlp/ffmpeg install needed: `fetch-binaries` downloads SHA256-verified
-  `yt-dlp.exe` + `ffmpeg`/`ffprobe` win64 at build time (never committed)
+Grab the latest release for Windows 10/11 x64 (no admin needed):
 
-## Dev
+- **`FluxDL-Setup-*.exe`** — per-user installer wizard, changeable install dir
+- **`FluxDL-Portable-*.exe`** — single file, runs from any folder
+
+No yt-dlp/ffmpeg install needed — both ship inside, verified by SHA-256.
+
+> **Windows SmartScreen warning.** These builds are not code-signed, so
+> SmartScreen shows *"Windows protected your PC"*. That is not a malware
+> verdict — click **More info → Run anyway**.
+> See [`docs/SIGNING.md`](docs/SIGNING.md) for signing options and SHA-256
+> verification.
+
+## Features
+
+| Area | What you get |
+| ---- | ------------ |
+| 📥 Downloading | Single links, playlists with entry picker, batch paste (500 links), duplicate guard + download archive, pause/resume/cancel, concurrency 1–5, speed limiter with quick-throttle presets |
+| 🎞️ Formats | Compatible MP4 (H.264+AAC), 480p–4K caps, best-quality audio (MP3/M4A/Opus/FLAC at top VBR), manual + auto-generated subtitles, SponsorBlock removal, chapters split, audio tag editor |
+| 📡 Live | Detect live / upcoming / recorded streams, record-from-start, wait-for-scheduled-start |
+| 🖥️ Desktop | System tray with live tooltip + taskbar progress, single-instance, `fluxdl://` links + CLI URLs, deep-link from a second launch, graceful shutdown (`.part` files resume), close-to-tray or quit, minimize-to-tray |
+| 🔍 Library | Search, missing-file health check with relocate, in-app audio/video preview, re-download, Recycle-Bin delete |
+| 📊 Insight | Live bandwidth sparkline, whole-queue ETA, per-day stats, raw engine logs with triage, one-click diagnostics report |
+| ⌨️ Speed | Command palette (`Ctrl+K`), `Ctrl+1…6` view jumps, drag-and-drop links anywhere, clipboard watcher, multi-link paste auto-routes to Batch |
+| 🎨 Feel | Four themes (incl. light + High-Contrast support), accent picker, comfortable/compact density, mini always-on-top window, English + Bahasa Melayu |
+
+### Keyboard shortcuts
+
+| Keys | Action |
+| ---- | ------ |
+| `Ctrl+V` | Paste link & analyze (multi-link → Batch) |
+| `Ctrl+K` | Command palette |
+| `Ctrl+,` | Settings |
+| `Ctrl+1…6` | Home / Downloads / Library / Stats / Settings / Logs |
+| `Ctrl+Shift+M` | Mini mode |
+| `?` | Shortcut list |
+
+### Send links from your browser
+
+Register once (automatic on install), then use links like
+`fluxdl://https%3A%2F%2Fyoutu.be%2F…` — or run `FluxDL.exe <url>` — and the
+running app picks the video up, even from a second launch.
+
+## Develop
+
+Requirements: Node 20+, pnpm 10+. Windows 10/11 x64 for packaging (dev
+tooling is cross-platform, but binaries and installers target win64).
 
 ```sh
 pnpm install        # all workspaces
@@ -50,68 +89,38 @@ pnpm build
 pnpm dist            # NSIS + portable into /release (also gitignored)
 ```
 
-Artifacts (`/release`):
-
-- `FluxDL-Setup-1.4.1.exe` — per-user NSIS wizard, no admin, install dir changeable
-- `FluxDL-Portable-1.4.1.exe` — single exe, runs from any folder (even with spaces)
-
 First run copies `yt-dlp.exe` into userData so self-update (`-U`) works under
 Program Files; `ffmpeg`/`ffprobe` resolve from the bundled copy with a PATH
 fallback. Packaged `appId` (`app.fluxdl.desktop`) doubles as the Windows
 toast `appUserModelId`.
 
-### Windows SmartScreen warning
+## Architecture
 
-**These builds are not code-signed.** SmartScreen shows *"Windows protected
-your PC"* for any executable without a publisher signature or reputation — it
-is not a malware verdict. Click **More info → Run anyway**.
-
-See [`docs/SIGNING.md`](docs/SIGNING.md) for the signing options (SignPath for
-OSS, Azure Trusted Signing, OV/EV), how electron-builder consumes
-`CSC_LINK` / `CSC_KEY_PASSWORD`, and how to verify a download with SHA-256.
-
-## Layout
-
-```text
-packages/core/        shared UI + state, talks ONLY to DownloadEngine
-  src/branding.ts     APP_NAME — the one display-name constant
-  src/types.ts        MediaInfo, FormatOption, DownloadJob, JobStatus, AppSettings
-  src/engine.ts       DownloadEngine interface + IPC_CHANNELS (single map)
-  src/url|args|progress|errors|media.ts   pure engine logic, unit-tested
-  src/batch|identity|aggregate|menu|diagnostics.ts  batch, dup guard, status, menu, diag
-  src/cache|color|playlist|health|locale.ts  analyze LRU, colour, playlists, health, i18n
-  src/destination|settingsFilter|logFilter|validate.ts  dest recovery, settings/log filters, validation
-  src/queue.ts        state machine (FIFO, concurrency 1–5, backoff, reorder)
-  src/queueController.ts  engine-agnostic orchestrator (injected clock/engine)
-  src/settings.ts     defaults + sanitizing merge
-  src/stores.ts       zustand queue/settings stores over DownloadEngine
-  src/Home|Downloads|Library|StatsScreen|SettingsScreen|Logs.tsx  the six screens
-  src/BatchPanel|DuplicatePrompt|ErrorActions|ContextMenu|JobMenu  feature UI
-  src/CommandPalette|Onboarding|VirtualList  palette, wizard, virtual list
-  src/Shell.tsx       frameless titlebar, sidebar, themes, shortcuts, toasts, mini mode
-  src/motion.ts       GSAP helpers (reduced-motion safe)
-  src/strings.ts      every user-facing string, EN
-  src/tokens.css      design tokens + 4 [data-theme]s + forced-colors pass
-  src/assets/fonts/   self-hosted Inter Variable (OFL)
-apps/desktop/         Electron shell + DesktopEngine (child_process, args arrays only)
-  src/main/           window/CSP/tray/taskbar, binaries resolve+repair, engine, persist, IPC, window chrome
-  scripts/soak.mjs    idle CPU/RAM soak (hide the window, sample app metrics)
-  src/preload/        typed window.grabber bridge (CJS for the sandbox)
-  src/renderer/       thin mount of core App
-  e2e/smoke.e2e.ts    Playwright: launch → analyze → queue → batch → guard → repair → menu → bulk
-  fixtures/v1.0/      v1.0 settings/queue/history samples (back-compat contract)
-scripts/              fetch-binaries.mjs, make-tray-icon.mjs, make-app-icon.mjs,
-                      make-overlay-dot.mjs
+```mermaid
+flowchart LR
+    UI["packages/core\nReact UI + state"] -->|"DownloadEngine\n(typed IPC)"| MAIN["apps/desktop\nElectron main"]
+    MAIN -->|"spawns (args array, never shell)"| YT["yt-dlp.exe\nffmpeg / ffprobe"]
+    MAIN -->|"atomic JSON / JSONL"| DISK[("userData\nsettings · queue · history")]
 ```
 
-Further reading: `AGENTS.md` (working rules), `CLAUDE.md` (conventions/commands/map),
-`DECISIONS.md` (why things are the way they are), `CHANGELOG.md` (release notes),
-[`docs/SIGNING.md`](docs/SIGNING.md) (code signing + SmartScreen).
+- `packages/core/src/branding.ts` — `APP_NAME`, the one display-name constant
+- `packages/core/src/types.ts` — `MediaInfo`, `FormatOption`, `DownloadJob`, `AppSettings`, presets
+- `packages/core/src/engine.ts` — `DownloadEngine` interface + `IPC_CHANNELS` single channel map
+- `apps/desktop/src/main/` — window, CSP, tray/taskbar, single-instance, protocol, `media://` previews, IPC handlers
+- `apps/desktop/src/preload/` — typed `window.grabber` bridge only
+- `scripts/fetch-binaries.mjs` — SHA-256-verified yt-dlp + ffmpeg at build time (never committed)
 
-## Conventions (short)
+Rules that keep this codebase healthy: TypeScript strict with no `any`,
+zero Electron/Node imports in core (eslint-enforced), every URL validated
+before it reaches the engine, `yt-dlp` flags verified against the real
+binary, and `typecheck + lint + test + build` green after every milestone.
 
-- TypeScript strict, no `any`; conventional commits; surgical edits only.
-- Zero Electron/Node imports in `packages/core` (eslint-enforced).
-- Never spawn with `shell: true`; every URL validated before the engine.
-- After every milestone: gates green → ≤5-line summary → commit. Mobile is
-  out of scope (cancelled permanently).
+Further reading: `AGENTS.md` (working rules), `CLAUDE.md` (conventions),
+`DECISIONS.md` (why things are the way they are), `CHANGELOG.md` (release
+notes), [`docs/SIGNING.md`](docs/SIGNING.md) (code signing + SmartScreen).
+
+## Contributing
+
+Issues and pull requests are welcome. Conventional commits (`feat:`,
+`fix:`, `chore:`, `docs:`, `test:` …), surgical diffs, and please keep the
+four gates green before pushing.

@@ -35,6 +35,7 @@ export function buildStartArgs(input: DownloadJobInput, deps: StartArgsDeps): st
     writeSubs: s.subtitles,
     subLangs: s.subtitleLangs,
     embedSubs: s.embedSubs,
+    writeAutoSubs: s.includeAutoSubs,
     sponsorBlock: s.sponsorBlock,
     speedLimit: s.speedLimit,
     proxy: s.proxy,

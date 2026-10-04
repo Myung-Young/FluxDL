@@ -9,6 +9,7 @@ import { APP_NAME } from "@grabber/core/branding.js";
 import type { AppSettings, DownloadJob, DownloadJobInput, MediaInfo } from "@grabber/core/types.js";
 import type {
   AggregateProgressState,
+  DeepLinkCallback,
   DownloadEngine,
   EngineProgress,
   EngineVersions,
@@ -17,9 +18,18 @@ import type {
   RepairReport,
   ThumbnailColor,
   Unsubscribe,
+  UpdateStatus,
   WindowChromeListener,
   WindowChromeState,
 } from "@grabber/core/engine.js";
+import {
+  APP_API_URL,
+  APP_RELEASES_URL,
+  YTDLP_API_URL,
+  isAllowedExternalUrl,
+  isNewerVersion,
+  latestTagFromRelease,
+} from "@grabber/core/updates.js";
 import type { ErrorCategory, ErrorLocale, MappedError } from "@grabber/core/errors.js";
 import { STRINGS, STRINGS_MS } from "@grabber/core/strings.js";
 import {
@@ -75,6 +85,8 @@ export interface DesktopEngineDeps {
   readonly appVersion: string;
   readonly defaultOutputDir: string;
   readonly broadcast: (event: EngineProgress) => void;
+  /** Main→renderer push for deep-link URLs (second instance/protocol/CLI). */
+  readonly broadcastDeepLink: (url: string) => void;
   readonly onAggregate: (state: AggregateProgressState) => void;
   /**
    * Window chrome (M4.4/M4.6). Optional so headless tests can omit it;
@@ -154,6 +166,54 @@ export async function isAllowedPath(
 function appendLog(log: string, chunk: string): string {
   const next = log + chunk;
   return next.length > MAX_LOG_CHARS ? next.slice(next.length - MAX_LOG_CHARS) : next;
+}
+
+/** Playable preview extensions (audio first, common video second). */
+const MEDIA_EXTENSIONS = [
+  ".mp3",
+  ".m4a",
+  ".opus",
+  ".ogg",
+  ".oga",
+  ".wav",
+  ".flac",
+  ".mp4",
+  ".m4v",
+  ".webm",
+  ".mkv",
+] as const;
+
+function mimeFor(lowerPath: string): string | null {
+  if (lowerPath.endsWith(".mp3")) return "audio/mpeg";
+  if (lowerPath.endsWith(".m4a")) return "audio/mp4";
+  if (lowerPath.endsWith(".opus") || lowerPath.endsWith(".ogg") || lowerPath.endsWith(".oga"))
+    return "audio/ogg";
+  if (lowerPath.endsWith(".wav")) return "audio/wav";
+  if (lowerPath.endsWith(".flac")) return "audio/flac";
+  if (lowerPath.endsWith(".mp4") || lowerPath.endsWith(".m4v")) return "video/mp4";
+  if (lowerPath.endsWith(".webm")) return "video/webm";
+  if (lowerPath.endsWith(".mkv")) return "video/x-matroska";
+  return null;
+}
+
+/** Best-effort GitHub latest-release tag (null on any failure). */
+async function fetchLatestTag(apiUrl: string): Promise<string | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => {
+    ctrl.abort();
+  }, 8000);
+  try {
+    const res = await fetch(apiUrl, {
+      signal: ctrl.signal,
+      headers: { Accept: "application/vnd.github+json", "User-Agent": APP_NAME },
+    });
+    if (!res.ok) return null;
+    return latestTagFromRelease((await res.json()) as unknown);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function runBinary(
@@ -252,6 +312,135 @@ export class DesktopEngine implements DownloadEngine {
   /** Raw console access for the Logs screen (M4 wires it to IPC). */
   getRawLog(id: string): Promise<string | null> {
     return Promise.resolve(this.jobs.get(id)?.rawLog ?? this.finishedLogs.get(id) ?? null);
+  }
+
+  /**
+   * Graceful teardown for before-quit: terminate children but keep .part
+   * files (pause semantics, not cancel) so the next boot re-queues and
+   * resumes them. Never throws.
+   */
+  shutdown(): Promise<void> {
+    for (const [, entry] of this.analyses) {
+      try {
+        entry.proc?.kill();
+      } catch {
+        // Best effort.
+      }
+      if (entry.timer !== null) clearTimeout(entry.timer);
+    }
+    this.analyses.clear();
+    for (const job of this.jobs.values()) {
+      try {
+        job.proc?.kill();
+      } catch {
+        // Best effort; the OS reaps anything left on exit.
+      }
+      job.proc = null;
+    }
+    return Promise.resolve();
+  }
+
+  private readonly deepListeners = new Set<DeepLinkCallback>();
+  private lastUpdate: { at: number; status: UpdateStatus } | null = null;
+
+  onDeepLink(cb: DeepLinkCallback): Unsubscribe {
+    this.deepListeners.add(cb);
+    return () => {
+      this.deepListeners.delete(cb);
+    };
+  }
+
+  /** Main calls this when a URL arrives (boot arg, second instance, open-url). */
+  emitDeepLink(url: string): void {
+    for (const cb of this.deepListeners) {
+      try {
+        cb(url);
+      } catch {
+        // Listener errors must not break the engine loop.
+      }
+    }
+    try {
+      this.deps.broadcastDeepLink(url);
+    } catch {
+      // Broadcast failures (no window) are non-fatal.
+    }
+  }
+
+  /**
+   * One best-effort round trip for app + yt-dlp freshness (GitHub Releases
+   * API, 8 s timeout each, hourly cache). Offline/malformed responses
+   * resolve update=false — they must never break launch.
+   */
+  async checkForUpdates(): Promise<UpdateStatus> {
+    const now = Date.now();
+    if (this.lastUpdate !== null && now - this.lastUpdate.at < 3_600_000) {
+      return this.lastUpdate.status;
+    }
+    const versions = await this.getEngineVersion().catch(() => null);
+    const ytdlpCurrent = versions?.ytdlp ?? "unknown";
+    const [appLatest, ytdlpLatest] = await Promise.all([
+      fetchLatestTag(APP_API_URL),
+      fetchLatestTag(YTDLP_API_URL),
+    ]);
+    const status: UpdateStatus = {
+      appCurrent: this.deps.appVersion,
+      appLatest,
+      appUpdate: isNewerVersion(this.deps.appVersion, appLatest),
+      appUrl: APP_RELEASES_URL,
+      ytdlpCurrent,
+      ytdlpLatest,
+      ytdlpUpdate: isNewerVersion(ytdlpCurrent, ytdlpLatest),
+      checkedAt: now,
+    };
+    this.lastUpdate = { at: now, status };
+    return status;
+  }
+
+  /**
+   * Validated `media://` URL for in-app preview, or null. The custom
+   * protocol handler (main) serves only these allowlisted paths.
+   */
+  async getMediaUrl(path: string): Promise<string | null> {
+    if (!(await this.isAllowed(path))) return null;
+    const lower = path.toLowerCase();
+    if (!MEDIA_EXTENSIONS.some((ext) => lower.endsWith(ext))) return null;
+    try {
+      await stat(resolve(path));
+    } catch {
+      return null;
+    }
+    return `media://play/${encodeURIComponent(resolve(path))}`;
+  }
+
+  /** Open the Releases page in the OS browser (allowlisted, nothing else). */
+  async openExternal(url: string): Promise<void> {
+    if (!isAllowedExternalUrl(url)) throw new Error("URL is not allowed.");
+    await shell.openExternal(url);
+  }
+
+  /**
+   * Serve one `media://play/<encoded-abs-path>` request. Returns null when
+   * the path fails the trust boundary (the protocol handler turns that
+   * into a 403). Main-only helper, not part of the renderer interface.
+   */
+  async serveMediaRequest(requestUrl: string): Promise<{ body: Buffer; mime: string } | null> {
+    const prefix = "media://play/";
+    if (!requestUrl.startsWith(prefix)) return null;
+    let decoded = "";
+    try {
+      decoded = decodeURIComponent(requestUrl.slice(prefix.length));
+    } catch {
+      return null;
+    }
+    if (!(await this.isAllowed(decoded))) return null;
+    const lower = decoded.toLowerCase();
+    const mime = mimeFor(lower);
+    if (mime === null) return null;
+    try {
+      return { body: await readFile(decoded), mime };
+    } catch {
+      return null;
+    }
   }
 
   async getInfo(url: string, init?: GetInfoInit): Promise<MediaInfo> {
@@ -738,13 +927,16 @@ export class DesktopEngine implements DownloadEngine {
   }
 
   async pickFolder(): Promise<string | null> {
-    const res = await dialog.showOpenDialog({ properties: ["openDirectory"] });
+    const res = await dialog.showOpenDialog({
+      title: APP_NAME,
+      properties: ["openDirectory"],
+    });
     if (res.canceled) return null;
     return res.filePaths[0] ?? null;
   }
 
   async pickFile(): Promise<string | null> {
-    const res = await dialog.showOpenDialog({ properties: ["openFile"] });
+    const res = await dialog.showOpenDialog({ title: APP_NAME, properties: ["openFile"] });
     if (res.canceled) return null;
     return res.filePaths[0] ?? null;
   }

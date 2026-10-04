@@ -63,6 +63,30 @@ describe("arg builder", () => {
     expect(args).toContain("mp3");
   });
 
+  it("pins best audio quality for audio presets", () => {
+    const args = buildDownloadArgs(
+      base({ preset: { kind: "audio", videoPreset: "Best", audioPreset: "MP3", rawFormat: null } }),
+    );
+    const i = args.indexOf("--audio-quality");
+    expect(i).toBeGreaterThan(-1);
+    expect(args[i + 1]).toBe("0");
+    // Video presets never carry it.
+    expect(buildDownloadArgs(base())).not.toContain("--audio-quality");
+  });
+
+  it("fetches auto-generated subs alongside manual subs by default", () => {
+    const args = buildDownloadArgs(base({ writeSubs: true, subLangs: "en" }));
+    expect(args).toContain("--write-subs");
+    expect(args).toContain("--write-auto-subs");
+    const off = buildDownloadArgs(base({ writeSubs: true, subLangs: "en", writeAutoSubs: false }));
+    expect(off).toContain("--write-subs");
+    expect(off).not.toContain("--write-auto-subs");
+    // Subs off entirely: neither flag.
+    const none = buildDownloadArgs(base());
+    expect(none).not.toContain("--write-subs");
+    expect(none).not.toContain("--write-auto-subs");
+  });
+
   it("rawFormat takes precedence over presets", () => {
     const args = buildDownloadArgs(
       base({

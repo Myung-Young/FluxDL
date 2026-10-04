@@ -972,6 +972,51 @@ select.input {
   gap: var(--space-3);
 }
 
+/* Downloads command bar: search + status filters + quick throttle + ETA. */
+.dl-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.dl-toolbar .chip-row {
+  margin-bottom: 0;
+  align-items: center;
+}
+
+.dl-toolbar .muted[role="status"] {
+  margin: 0;
+}
+
+.sparkline {
+  display: block;
+  margin-top: var(--space-2);
+  color: var(--fg-2);
+  max-width: 100%;
+}
+
+/* In-app preview modal: media fills the card width, audio keeps its height. */
+.preview-modal {
+  width: min(560px, 92vw);
+  max-width: 92vw;
+}
+
+.preview-modal .chip-row {
+  margin-top: var(--space-4);
+  margin-bottom: 0;
+}
+
+.preview-media {
+  width: 100%;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-0);
+}
+
+video.preview-media {
+  max-height: 320px;
+}
+
 .dl-card {
   margin: 0;
 }
@@ -1088,6 +1133,26 @@ select.input {
 .grabber-modal .grabber-card {
   max-width: min(480px, 92vw);
   margin: 0;
+}
+
+/* Onboarding/modal rhythm: the folder-step input row sat flush against the
+   Next/Skip row. Give modal rows breathing room (report: buttons glued to
+   the container above). */
+.grabber-modal .url-row {
+  margin-bottom: var(--space-5);
+}
+
+.grabber-modal .chip-row {
+  margin-top: var(--space-4);
+  margin-bottom: 0;
+}
+
+.grabber-modal .grabber-card h2 {
+  margin: 0 0 var(--space-1);
+}
+
+.grabber-modal .grabber-card .hint {
+  margin-bottom: var(--space-4);
 }
 
 /* M3.5: shortcut help dialog rows. */

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
@@ -37,6 +37,9 @@ export interface BatchPanelProps {
   >;
   readonly queue: StoreApi<QueueStoreState>;
   readonly settings: StoreApi<SettingsStoreState>;
+  /** Externally-routed text (multiline paste / drop). Ingested once, then consumed. */
+  readonly seedText?: string | null;
+  readonly onSeedConsumed?: () => void;
 }
 
 const VIDEO_PRESETS: readonly VideoPreset[] = [
@@ -89,7 +92,13 @@ function overrideFromValue(value: string): DownloadPreset | null {
   return null;
 }
 
-export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.JSX.Element {
+export function BatchPanel({
+  engine,
+  queue,
+  settings,
+  seedText = null,
+  onSeedConsumed,
+}: BatchPanelProps): React.JSX.Element {
   const [entries, setEntriesState] = useState<readonly BatchEntry[]>([]);
   const [text, setText] = useState<string>("");
   const [note, setNote] = useState<string | null>(null);
@@ -119,6 +128,8 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
     setEntriesState(next);
   };
 
+  const ingestRef = useRef<(raw: string) => void>(() => undefined);
+
   const globalPreset: DownloadPreset = { kind, videoPreset, audioPreset, rawFormat: null };
 
   const ingest = (raw: string): void => {
@@ -134,6 +145,17 @@ export function BatchPanel({ engine, queue, settings }: BatchPanelProps): React.
     if (parsed.truncated) parts.push(S.batch.truncatedNote);
     setNote(parts.length > 0 ? parts.join(" ") : null);
   };
+
+  ingestRef.current = ingest;
+  // External routing (multiline paste / window drop): ingest once.
+  useEffect(() => {
+    if (seedText === null) return;
+    ingestRef.current(seedText);
+    onSeedConsumed?.();
+    // Consumed by the parent flipping seedText back to null; the ref call
+    // keeps this effect stable across renders (no ingest dep).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedText]);
 
   const ingestFile = (file: File | null): void => {
     if (file === null) return;

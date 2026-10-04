@@ -48,6 +48,11 @@ export const LIVE_STATUSES: readonly LiveStatus[] = [
   "post_live",
 ];
 
+/** What the window X button does: hide to tray, or quit the app. */
+export type CloseBehavior = "tray" | "quit";
+
+export const CLOSE_BEHAVIORS: readonly CloseBehavior[] = ["tray", "quit"];
+
 export const VIDEO_PRESETS: readonly VideoPreset[] = [
   "Best",
   "2160",
@@ -204,6 +209,8 @@ export interface AppSettings {
   readonly subtitles: boolean;
   readonly subtitleLangs: string;
   readonly embedSubs: boolean;
+  /** Also fetch YouTube auto-generated captions (most videos have no manual subs). */
+  readonly includeAutoSubs: boolean;
   readonly mergeContainer: string;
   readonly sponsorBlock: boolean;
   readonly codecPreference: CodecPreference;
@@ -230,4 +237,8 @@ export interface AppSettings {
   readonly language: Language;
   /** Keep the last N history entries (M2.9). */
   readonly historyLimit: number;
+  /** What the X button does (tray = hide, quit = terminate). */
+  readonly closeBehavior: CloseBehavior;
+  /** Minimizing also hides the window to the tray. */
+  readonly minimizeToTray: boolean;
 }

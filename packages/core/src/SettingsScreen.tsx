@@ -103,14 +103,17 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
           S.settings.embedMetadata,
           S.settings.subtitles,
           S.settings.embedSubs,
+          S.settings.includeAutoSubs,
           S.settings.sponsorBlock,
           S.settings.skipArchived,
           S.settings.playlistSubfolder,
           S.settings.thumbnailAccent,
           S.settings.autoCheckUpdate,
+          S.settings.minimizeToTray,
         ].join(" "),
         keywords: ["toggle", "embed", "subtitle", "sponsorblock", "archive", "update"],
       },
+      { id: "set-close", label: S.settings.closeBehavior, keywords: ["close", "quit", "tray", "window", "minimize"] },
       { id: "set-sublangs", label: S.settings.subtitleLangs, keywords: ["subtitle", "language"] },
       { id: "set-merge", label: S.settings.mergeContainer, keywords: ["merge", "container"] },
       { id: "set-codec", label: S.settings.codecPreference, keywords: ["codec", "h264", "vp9", "av1"] },
@@ -338,7 +341,7 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
           }}
         />
 
-        <label className="field-label" htmlFor="set-speed" hidden={hide("set-speed")}>
+        <label className="field-label" htmlFor="set-speed" id="settings-section-speed" hidden={hide("set-speed")}>
           {S.settings.speedLimit}
         </label>
         <input
@@ -419,11 +422,13 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
               ["embedMetadata", S.settings.embedMetadata],
               ["subtitles", S.settings.subtitles],
               ["embedSubs", S.settings.embedSubs],
+              ["includeAutoSubs", S.settings.includeAutoSubs],
               ["sponsorBlock", S.settings.sponsorBlock],
               ["skipArchived", S.settings.skipArchived],
               ["playlistSubfolder", S.settings.playlistSubfolder],
               ["thumbnailAccent", S.settings.thumbnailAccent],
               ["autoCheckUpdate", S.settings.autoCheckUpdate],
+              ["minimizeToTray", S.settings.minimizeToTray],
             ] as const
           ).map(([key, label]) => (
             <label key={key} className="check-row">
@@ -629,6 +634,25 @@ export function SettingsScreen({ engine, settings, onReplay }: SettingsScreenPro
           <option value="none">{S.settings.postNone}</option>
           <option value="open-file">{S.settings.postOpen}</option>
           <option value="reveal">{S.settings.postReveal}</option>
+        </select>
+
+        <label className="field-label" htmlFor="set-close" hidden={hide("set-close")}>
+          {S.settings.closeBehavior}
+        </label>
+        <select
+          id="set-close"
+          className="input"
+          value={saved.closeBehavior}
+          hidden={hide("set-close")}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "tray" || v === "quit") {
+              save({ closeBehavior: v });
+            }
+          }}
+        >
+          <option value="tray">{S.settings.closeTray}</option>
+          <option value="quit">{S.settings.closeQuit}</option>
         </select>
 
         <div hidden={hide("archive")}>

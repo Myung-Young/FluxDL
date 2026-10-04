@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
-import type { DownloadEngine, EngineVersions } from "./engine.js";
+import type { DownloadEngine, EngineVersions, UpdateStatus } from "./engine.js";
 import type { DownloadJob } from "./types.js";
 import { DEFAULT_SETTINGS } from "./settings.js";
 import { formatStr, useStrings } from "./locale.js";
@@ -26,6 +26,9 @@ export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element 
   const [logText, setLogText] = useState<string | null>(null);
   const [updating, setUpdating] = useState<boolean>(false);
   const [updateNote, setUpdateNote] = useState<string | null>(null);
+  const [checking, setChecking] = useState<boolean>(false);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
+  const [checkFailed, setCheckFailed] = useState<boolean>(false);
   const [repairing, setRepairing] = useState<boolean>(false);
   const [repairNote, setRepairNote] = useState<string | null>(null);
   const [includeUrls, setIncludeUrls] = useState<boolean>(false);
@@ -63,6 +66,18 @@ export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element 
       setUpdateNote(S.logs.updateFailed);
     } finally {
       setUpdating(false);
+    }
+  };
+
+  const checkUpdates = async (): Promise<void> => {
+    setChecking(true);
+    setCheckFailed(false);
+    try {
+      setUpdateStatus(await engine.checkForUpdates());
+    } catch {
+      setCheckFailed(true);
+    } finally {
+      setChecking(false);
     }
   };
 
@@ -200,6 +215,58 @@ export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element 
           <p className="note" role="status">
             {repairNote}
           </p>
+        )}
+      </div>
+
+      <div className="grabber-card">
+        <h2 className="dl-title">{S.logs.checkUpdates}</h2>
+        <div className="chip-row">
+          <button
+            type="button"
+            className="btn"
+            disabled={checking}
+            onPointerDown={(e) => {
+              pressScale(e.currentTarget);
+            }}
+            onClick={() => {
+              void checkUpdates();
+            }}
+          >
+            {checking ? S.logs.checkingUpdates : S.logs.checkUpdates}
+          </button>
+          {updateStatus !== null && updateStatus.appUpdate && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                engine.openExternal(updateStatus.appUrl).catch(() => undefined);
+              }}
+            >
+              {S.logs.getUpdate}
+            </button>
+          )}
+        </div>
+        {checkFailed && (
+          <p className="error-text" role="alert">
+            {S.logs.updateCheckFailed}
+          </p>
+        )}
+        {updateStatus !== null && (
+          <>
+            <p className="muted" role="status">
+              {updateStatus.appUpdate
+                ? formatStr(S.logs.appUpdateReady, {
+                    v: updateStatus.appLatest ?? "?",
+                    cur: updateStatus.appCurrent,
+                  })
+                : formatStr(S.logs.appUpToDate, { v: updateStatus.appCurrent })}
+            </p>
+            <p className="muted" role="status">
+              {updateStatus.ytdlpUpdate
+                ? formatStr(S.logs.ytdlpUpdateReady, { v: updateStatus.ytdlpLatest ?? "?" })
+                : formatStr(S.logs.ytdlpUpToDate, { v: updateStatus.ytdlpCurrent })}
+            </p>
+          </>
         )}
       </div>
 

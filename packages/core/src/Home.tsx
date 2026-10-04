@@ -22,6 +22,7 @@ import { readClipboardText } from "./clipboard.js";
 import { formatStr, localeTag, resolveLanguage, useStrings } from "./locale.js";
 import { pressScale, tweenAccentVar } from "./motion.js";
 import { BatchPanel } from "./BatchPanel.js";
+import { parseBatchText } from "./batch.js";
 import { useDuplicateGuard } from "./DuplicatePrompt.js";
 import type { GuardInput } from "./identity.js";
 import { identityKey } from "./identity.js";
@@ -41,6 +42,9 @@ export interface HomeProps {
   readonly settings: StoreApi<SettingsStoreState>;
   readonly pendingPaste: string | null;
   readonly onPasteConsumed: () => void;
+  /** Multiline text routed from global paste/drop (goes to Batch). */
+  readonly pendingBatch?: string | null;
+  readonly onBatchConsumed?: () => void;
 }
 
 const VIDEO_PRESETS: readonly VideoPreset[] = [
@@ -93,6 +97,8 @@ export function Home({
   settings,
   pendingPaste,
   onPasteConsumed,
+  pendingBatch = null,
+  onBatchConsumed,
 }: HomeProps): React.JSX.Element {
   const [url, setUrl] = useState<string>("");
   const [analyzing, setAnalyzing] = useState<boolean>(false);
@@ -164,14 +170,33 @@ export function Home({
     [engine, settingsState.thumbnailAccent],
   );
 
+  // Multiline input routing: 0-1 valid URLs stay here, 2+ go to Batch.
+  // Returns true when the text was routed to Batch (caller: show nothing else).
+  const [batchSeed, setBatchSeed] = useState<string | null>(null);
+  const routeText = useCallback(
+    (text: string): boolean => {
+      const valid = parseBatchText(text).valid;
+      if (valid.length >= 2) {
+        setError(null);
+        setBatchSeed(text);
+        setQueuedNote(formatStr(S.home.multiToBatch, { count: valid.length }));
+        return true;
+      }
+      return false;
+    },
+    [S],
+  );
+
   useEffect(() => {
     if (!watchClipboard) return;
     const timer = setInterval(() => {
       void readClipboardText().then((text) => {
         if (text === null) return;
-        const t = text.trim().split(/\r?\n/)[0]?.trim() ?? "";
-        if (t.length > 0 && t !== urlRef.current && isValidUrl(t)) {
-          setUrl(t);
+        // Auto-watch fills single links only; multi-link clipboards are
+        // left alone (the user routes those deliberately via Paste/Ctrl+V).
+        const first = parseBatchText(text).valid[0]?.url ?? "";
+        if (first.length > 0 && first !== urlRef.current) {
+          setUrl(first);
         }
       });
     }, 2000);
@@ -182,11 +207,14 @@ export function Home({
 
   const paste = (): void => {
     void readClipboardText().then((text) => {
-      if (text !== null && text.trim().length > 0) {
-        setUrl(text.trim());
-      } else if (text !== null) {
+      if (text === null || text.trim().length === 0) {
         setError(S.home.invalidUrl);
+        return;
       }
+      if (routeText(text)) return;
+      const first = parseBatchText(text).valid[0]?.url ?? text.trim();
+      if (isValidUrl(first)) setUrl(first);
+      else setError(S.home.invalidUrl);
     });
   };
 
@@ -320,10 +348,25 @@ export function Home({
 
   useEffect(() => {
     if (pendingPaste === null) return;
+    // Defensive: a multiline paste reaching here is routed to Batch.
+    if (routeText(pendingPaste)) {
+      onPasteConsumed();
+      return;
+    }
     setUrl(pendingPaste);
     onPasteConsumed();
     void analyzeValue(pendingPaste);
-  }, [pendingPaste, analyzeValue, onPasteConsumed]);
+  }, [pendingPaste, analyzeValue, onPasteConsumed, routeText]);
+
+  useEffect(() => {
+    if (pendingBatch === null) return;
+    routeText(pendingBatch);
+    onBatchConsumed?.();
+  }, [pendingBatch, onBatchConsumed, routeText]);
+
+  const consumeSeed = useCallback((): void => {
+    setBatchSeed(null);
+  }, []);
 
   const visibleEntries = useMemo(() => {
     if (info === null || !info.isPlaylist) return [];
@@ -521,10 +564,9 @@ export function Home({
       e.dataTransfer.getData("text/uri-list") ||
       e.dataTransfer.getData("text/plain") ||
       e.dataTransfer.getData("text");
-    const first = text
-      .split(/\r?\n/)
-      .map((s) => s.trim())
-      .find((s) => s.length > 0);
+    if (text.trim().length === 0) return;
+    if (routeText(text)) return;
+    const first = parseBatchText(text).valid[0]?.url;
     if (first !== undefined && isValidUrl(first)) setUrl(first);
   };
 
@@ -613,7 +655,13 @@ export function Home({
         )}
       </div>
 
-      <BatchPanel engine={engine} queue={queue} settings={settings} />
+      <BatchPanel
+        engine={engine}
+        queue={queue}
+        settings={settings}
+        seedText={batchSeed}
+        onSeedConsumed={consumeSeed}
+      />
 
       {analyzing && info === null && (
         <div className="grabber-card" aria-busy="true">

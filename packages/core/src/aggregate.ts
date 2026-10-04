@@ -70,6 +70,45 @@ export function shouldSendAggregate(lastSentAt: number | null, now: number): boo
   return lastSentAt === null || now - lastSentAt >= AGGREGATE_SEND_MS;
 }
 
+/**
+ * Whole-queue ETA (pure). Sums remaining bytes over jobs with a known total
+ * (total - downloaded, clamped at 0) and divides by the aggregate speed.
+ * Returns null when nothing has a known size — an invented ETA is worse
+ * than none. etaSeconds is null while the speed is unknown/zero.
+ */
+export interface QueueEta {
+  readonly remainingBytes: number;
+  readonly etaSeconds: number | null;
+}
+
+export function queueEta(jobs: readonly DownloadJob[], speedBps: number): QueueEta | null {
+  let remaining = 0;
+  let known = false;
+  for (const j of jobs) {
+    if (j.totalBytes === null || j.totalBytes <= 0) continue;
+    if (j.status === "done" || j.status === "cancelled") continue;
+    const done = Math.min(j.downloadedBytes ?? 0, j.totalBytes);
+    remaining += Math.max(0, j.totalBytes - done);
+    known = true;
+  }
+  if (!known || remaining <= 0) return null;
+  return {
+    remainingBytes: remaining,
+    etaSeconds: speedBps > 0 ? Math.round(remaining / speedBps) : null,
+  };
+}
+
+/** Human ETA: 75 -> "1:15", 3720 -> "1:02:00". Null/NaN -> "—". */
+export function formatEta(totalSeconds: number | null): string {
+  if (totalSeconds === null || !Number.isFinite(totalSeconds) || totalSeconds < 0) return "—";
+  const s = Math.floor(totalSeconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = s % 60;
+  const mm = h > 0 ? String(m).padStart(2, "0") : String(m);
+  return `${h > 0 ? `${String(h)}:` : ""}${mm}:${String(r).padStart(2, "0")}`;
+}
+
 /** Window title with the active-download count (M3.8): `(N) App` or `App`. */
 export function formatWindowTitle(active: number, appName: string): string {
   const n = Number.isFinite(active) ? Math.max(0, Math.floor(active)) : 0;

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="320" viewBox="0 0 1200 320" role="img" aria-label="FluxDL banner">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#121214"/>
+      <stop offset="1" stop-color="#0a0a0b"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#a5b4fc"/>
+      <stop offset="1" stop-color="#818cf8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="320" rx="24" fill="url(#bg)"/>
+  <rect x="1" y="1" width="1198" height="318" rx="23" fill="none" stroke="#2a2a2f" stroke-width="2"/>
+  <g transform="translate(96,96)">
+    <rect width="128" height="128" rx="32" fill="url(#accent)"/>
+    <path d="M64 28 L64 76 M64 76 L44 56 M64 76 L84 56" stroke="#0b0b18" stroke-width="10" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <rect x="36" y="88" width="56" height="10" rx="5" fill="#0b0b18"/>
+  </g>
+  <text x="264" y="178" font-family="Inter, 'Segoe UI', system-ui, sans-serif" font-size="88" font-weight="700" fill="#f4f4f5" letter-spacing="-1">FluxDL</text>
+  <text x="266" y="226" font-family="Inter, 'Segoe UI', system-ui, sans-serif" font-size="30" fill="#a1a1aa">Own your downloads. Queue, throttle, preview — all local.</text>
+  <g font-family="Inter, 'Segoe UI', system-ui, sans-serif" font-size="22" fill="#8b8b99">
+    <text x="266" y="268">Windows .exe</text>
+    <text x="446" y="268">·</text>
+    <text x="466" y="268">yt-dlp engine</text>
+    <text x="646" y="268">·</text>
+    <text x="666" y="268">EN + Bahasa Melayu</text>
+  </g>
+</svg>

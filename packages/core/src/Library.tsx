@@ -12,6 +12,8 @@ import { VirtualList } from "./VirtualList.js";
 import { ContextMenu, type MenuItemDef } from "./ContextMenu.js";
 import { buildJobMenu } from "./JobMenu.js";
 import { writeClipboardText } from "./clipboard.js";
+import { PreviewModal } from "./PreviewModal.js";
+import { isMediaFile } from "./destination.js";
 
 export interface LibraryProps {
   readonly engine: DownloadEngine;
@@ -30,6 +32,7 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
   const [menu, setMenu] = useState<{ job: DownloadJob; x: number; y: number } | null>(null);
   const [missing, setMissing] = useState<ReadonlySet<string>>(new Set());
   const [checking, setChecking] = useState<boolean>(false);
+  const [preview, setPreview] = useState<DownloadJob | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -231,6 +234,18 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
       <div className="chip-row">
         {h.destination !== null && !missing.has(h.id) && h.fileDeleted !== true && (
           <>
+            {h.splitChapters !== true && isMediaFile(h.destination) && (
+              <button
+                type="button"
+                className="btn btn-small"
+                disabled={busy}
+                onClick={() => {
+                  setPreview(h);
+                }}
+              >
+                {S.library.preview}
+              </button>
+            )}
             <button
               type="button"
               className="btn btn-small"
@@ -355,6 +370,17 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
           y={menu.y}
           onClose={() => {
             setMenu(null);
+          }}
+        />
+      )}
+      {preview !== null && preview.destination !== null && (
+        <PreviewModal
+          engine={engine}
+          settings={settings}
+          path={preview.destination}
+          title={preview.title}
+          onClose={() => {
+            setPreview(null);
           }}
         />
       )}

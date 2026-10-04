@@ -6,7 +6,7 @@ import type {
   Language,
   VideoPreset,
 } from "./types.js";
-import { AUDIO_PRESETS, VIDEO_PRESETS } from "./types.js";
+import { AUDIO_PRESETS, CLOSE_BEHAVIORS, VIDEO_PRESETS } from "./types.js";
 import { THEME_NAMES } from "./themes.js";
 import { clampConcurrency } from "./queue.js";
 
@@ -24,6 +24,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   subtitles: false,
   subtitleLangs: "en",
   embedSubs: false,
+  includeAutoSubs: true,
   mergeContainer: "mp4",
   sponsorBlock: false,
   codecPreference: "auto",
@@ -40,6 +41,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   playlistSubfolder: true,
   language: "auto",
   historyLimit: 500,
+  closeBehavior: "tray",
+  minimizeToTray: false,
 };
 
 const DENSITIES: readonly Density[] = ["comfortable", "compact"];
@@ -119,6 +122,7 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
   const densityRaw = patch.density ?? base.density;
   const languageRaw = patch.language ?? base.language;
   const postRaw = patch.postDownloadAction ?? base.postDownloadAction;
+  const closeRaw = patch.closeBehavior ?? base.closeBehavior;
   return {
     downloadDir: typeof patch.downloadDir === "string" ? patch.downloadDir : base.downloadDir,
     filenameTemplate: cleanString(patch.filenameTemplate, base.filenameTemplate),
@@ -137,6 +141,7 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
     subtitles: cleanBool(patch.subtitles, base.subtitles),
     subtitleLangs: cleanString(patch.subtitleLangs, base.subtitleLangs),
     embedSubs: cleanBool(patch.embedSubs, base.embedSubs),
+    includeAutoSubs: cleanBool(patch.includeAutoSubs, base.includeAutoSubs),
     mergeContainer: cleanString(patch.mergeContainer, base.mergeContainer),
     sponsorBlock: cleanBool(patch.sponsorBlock, base.sponsorBlock),
     codecPreference: CODECS.includes(codecRaw) ? codecRaw : base.codecPreference,
@@ -165,5 +170,7 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
       patch.historyLimit === undefined
         ? base.historyLimit
         : clampHistoryLimit(patch.historyLimit),
+    closeBehavior: CLOSE_BEHAVIORS.includes(closeRaw) ? closeRaw : base.closeBehavior,
+    minimizeToTray: cleanBool(patch.minimizeToTray, base.minimizeToTray),
   };
 }

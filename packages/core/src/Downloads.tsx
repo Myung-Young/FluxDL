@@ -7,6 +7,7 @@ import type { Strings } from "./strings.js";
 import { useStrings } from "./locale.js";
 import { formatStr, localeTag, resolveLanguage } from "./locale.js";
 import { formatSize } from "./media.js";
+import { aggregateStatus, formatEta, queueEta } from "./aggregate.js";
 import { retryInSeconds } from "./queue.js";
 import { sendNotification } from "./notify.js";
 import { flipShift, pressScale, tweenProgress } from "./motion.js";
@@ -290,6 +291,9 @@ export function Downloads({
   const settingsState = useStore(settings, (s) => s.settings);
   const locale = localeTag(resolveLanguage(settingsState.language));
   const jobs = useStore(queue, (s) => s.jobs);
+  const speedLimit = useStore(settings, (s) => s.settings.speedLimit);
+  const [query, setQuery] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "error" | "done">("all");
   const prevIds = useRef<ReadonlySet<string>>(new Set());
   const [menu, setMenu] = useState<{ job: DownloadJob; x: number; y: number } | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -302,6 +306,22 @@ export function Downloads({
   } | null>(null);
 
   const queuedIds = jobs.filter((j) => j.status === "queued").map((j) => j.id);
+
+  // Search + status filter (mirrors the Library pattern, local only).
+  const visible = jobs.filter((j) => {
+    if (statusFilter === "active" && !(j.status === "queued" || j.status === "analyzing" || j.status === "downloading" || j.status === "processing")) return false;
+    if (statusFilter === "error" && j.status !== "error") return false;
+    if (statusFilter === "done" && !(j.status === "done" || j.status === "cancelled")) return false;
+    const q = query.trim().toLowerCase();
+    if (q.length > 0 && !`${j.title} ${j.url}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+
+  const eta = queueEta(jobs, aggregateStatus(jobs).speedBps);
+
+  const setThrottle = (value: string | null): void => {
+    settings.getState().save({ speedLimit: value }).catch(() => undefined);
+  };
 
   const hasCountdown = jobs.some(
     (j) => j.status === "error" && j.nextRetryAt !== null && j.nextRetryAt > Date.now(),
@@ -563,6 +583,87 @@ export function Downloads({
     <section className="grabber-view" aria-label={S.downloads.title}>
       <h1>{S.downloads.title}</h1>
       {jobs.length > 0 && (
+        <div className="grabber-card dl-toolbar">
+          <input
+            className="input"
+            placeholder={S.downloads.searchPlaceholder}
+            value={query}
+            aria-label={S.downloads.searchPlaceholder}
+            spellCheck={false}
+            onChange={(e) => {
+              setQuery(e.target.value);
+            }}
+          />
+          <div className="chip-row" role="group" aria-label={S.downloads.bulkActions}>
+            {(
+              [
+                ["all", S.downloads.filterAll],
+                ["active", S.downloads.filterActive],
+                ["error", S.downloads.filterError],
+                ["done", S.downloads.filterDone],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                className="chip"
+                aria-pressed={statusFilter === id}
+                onClick={() => {
+                  setStatusFilter(id);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="chip-row" role="group" aria-label={S.downloads.throttleLabel}>
+            <span className="muted">{S.downloads.throttleLabel}:</span>
+            <button
+              type="button"
+              className="chip"
+              aria-pressed={speedLimit === null}
+              onClick={() => {
+                setThrottle(null);
+              }}
+            >
+              {S.downloads.throttleUnlimited}
+            </button>
+            {(["2M", "8M"] as const).map((rate) => (
+              <button
+                key={rate}
+                type="button"
+                className="chip"
+                aria-pressed={speedLimit === rate}
+                onClick={() => {
+                  setThrottle(rate);
+                }}
+              >
+                {rate}/s
+              </button>
+            ))}
+            <button
+              type="button"
+              className="chip"
+              aria-pressed={speedLimit !== null && speedLimit !== "2M" && speedLimit !== "8M"}
+              onClick={() => {
+                navigate("settings", "speed");
+              }}
+            >
+              …
+            </button>
+            <span className="muted">({S.downloads.throttleNote})</span>
+          </div>
+          {eta !== null && (
+            <p className="muted" role="status">
+              {formatStr(S.downloads.queueEta, {
+                eta: formatEta(eta.etaSeconds),
+                size: formatSize(eta.remainingBytes, locale),
+              })}
+            </p>
+          )}
+        </div>
+      )}
+      {jobs.length > 0 && (
         <div className="chip-row" role="group" aria-label={S.downloads.bulkActions}>
           <button
             type="button"
@@ -623,6 +724,12 @@ export function Downloads({
             {S.downloads.empty}
           </p>
         </div>
+      ) : visible.length === 0 ? (
+        <div className="grabber-card">
+          <p className="muted" role="status">
+            {S.downloads.noMatch}
+          </p>
+        </div>
       ) : (
         <div
           className="dl-list"
@@ -636,7 +743,7 @@ export function Downloads({
             endDrag(false);
           }}
         >
-          {jobs.map((j) => {
+          {visible.map((j) => {
             const qIndex = queuedIds.indexOf(j.id);
             return (
               <Card

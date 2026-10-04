@@ -9,7 +9,8 @@ import { buildParseMetadataArgs, type AudioMetadata } from "./metadata.js";
  * Flags verified against yt-dlp 2026.08.19 (`yt-dlp --help`):
  * -J/--dump-single-json, --flat-playlist, --newline, --progress-template,
  * -c/--continue, -o/--output, -f/--format, -S/--format-sort, -x/--extract-audio,
- * --merge-output-format, --ffmpeg-location, --embed-*, --write-subs,
+ * --audio-format, --audio-quality,
+ * --merge-output-format, --ffmpeg-location, --embed-*, --write-subs, --write-auto-subs,
  * --sponsorblock-*, --limit-rate, --proxy, --cookies-from-browser, --cookies,
  * --download-archive, -U/--update, --live-from-start, --wait-for-video, --hls-use-mpegts.
  */
@@ -26,6 +27,8 @@ export interface DownloadArgsInput {
   readonly writeSubs: boolean;
   readonly subLangs: string;
   readonly embedSubs: boolean;
+  /** Also fetch auto-generated captions alongside manual subs. */
+  readonly writeAutoSubs?: boolean;
   readonly sponsorBlock: boolean;
   readonly speedLimit: string | null;
   readonly proxy: string | null;
@@ -184,6 +187,9 @@ export function buildDownloadArgs(input: DownloadArgsInput): string[] {
     args.push("--format", "bestaudio/best");
     args.push("--extract-audio");
     args.push("--audio-format", audioFormatOf(input.preset));
+    // Default yt-dlp audio quality is VBR ~5 (~160kbps). Music downloads
+    // expect studio quality, so pin the best VBR level.
+    args.push("--audio-quality", "0");
   } else {
     args.push("--format", videoFormatOf(input.preset));
     const sort = codecSortOf(input.preset, input.codecPreference);
@@ -210,6 +216,10 @@ export function buildDownloadArgs(input: DownloadArgsInput): string[] {
   }
   if (input.writeSubs) {
     args.push("--write-subs");
+    // Most YouTube videos only carry auto-generated captions (no manual
+    // upload from the creator), so manual-only fetching silently yields
+    // nothing. Off by default only when the user opts out in Settings.
+    if (input.writeAutoSubs !== false) args.push("--write-auto-subs");
     if (input.subLangs.trim().length > 0) {
       args.push("--sub-langs", input.subLangs.trim());
     }

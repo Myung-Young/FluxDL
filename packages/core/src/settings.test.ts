@@ -89,6 +89,7 @@ describe("mergeSettings", () => {
       "accentOverride",
       "analyzeTimeoutSec",
       "autoCheckUpdate",
+      "closeBehavior",
       "codecPreference",
       "concurrency",
       "cookiesFile",
@@ -101,8 +102,10 @@ describe("mergeSettings", () => {
       "embedThumbnail",
       "filenameTemplate",
       "historyLimit",
+      "includeAutoSubs",
       "language",
       "mergeContainer",
+      "minimizeToTray",
       "onboardingDone",
       "playlistSubfolder",
       "postDownloadAction",
@@ -115,5 +118,28 @@ describe("mergeSettings", () => {
       "theme",
       "thumbnailAccent",
     ]);
+  });
+
+  it("defaults window behavior and auto-subs, sanitizes them", () => {
+    expect(DEFAULT_SETTINGS.closeBehavior).toBe("tray");
+    expect(DEFAULT_SETTINGS.minimizeToTray).toBe(false);
+    expect(DEFAULT_SETTINGS.includeAutoSubs).toBe(true);
+    const m = mergeSettings(DEFAULT_SETTINGS, {
+      closeBehavior: "explode" as never,
+      minimizeToTray: "yes" as never,
+      includeAutoSubs: "yes" as never,
+    });
+    expect(m.closeBehavior).toBe("tray");
+    expect(m.minimizeToTray).toBe(false);
+    expect(m.includeAutoSubs).toBe(true);
+    expect(mergeSettings(DEFAULT_SETTINGS, { closeBehavior: "quit" }).closeBehavior).toBe(
+      "quit",
+    );
+    expect(
+      mergeSettings(DEFAULT_SETTINGS, { minimizeToTray: true }).minimizeToTray,
+    ).toBe(true);
+    expect(
+      mergeSettings(DEFAULT_SETTINGS, { includeAutoSubs: false }).includeAutoSubs,
+    ).toBe(false);
   });
 });

@@ -3,6 +3,32 @@
 All notable changes to FluxDL are documented here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- Native dialogs (confirmations, folder/file pickers) are now titled
+  **FluxDL** instead of `@grabber/desktop`.
+- Onboarding buttons no longer sit flush against the folder input.
+- Subtitles now include auto-generated captions by default (most videos have
+  no manual subtitles), and audio downloads pin the best quality level.
+- Pasting or dropping several links at once no longer silently keeps only
+  the first — they go to Batch instead.
+
+### Added
+
+- Single-instance lock: a second launch focuses the running window and
+  forwards its link instead of racing it.
+- `fluxdl://` links and `FluxDL.exe <url>` deep-link support.
+- Graceful shutdown: quitting keeps `.part` files so downloads resume.
+- Close-button choice (hide to tray or quit) and optional minimize-to-tray.
+- Downloads search + status filters, quick speed throttle, whole-queue ETA,
+  live bandwidth sparkline, and `Ctrl+1…6` view jumps.
+- Update reminders for the app and yt-dlp (toast on launch + Logs screen),
+  replacing the silent engine update.
+- In-app audio/video preview in the Library.
+- Reworked README with banner, feature tour, and architecture diagram.
+
 ## [1.4.1] — 2026-10-04
 
 Bug fixes from the first manual pass on the portable build.

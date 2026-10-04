@@ -57,6 +57,23 @@ export interface ThumbnailColor {
   readonly b: number;
 }
 
+/** Result of checkForUpdates(): app + yt-dlp freshness in one round trip. */
+export interface UpdateStatus {
+  readonly appCurrent: string;
+  readonly appLatest: string | null;
+  readonly appUpdate: boolean;
+  /** Where to download the new release (GitHub Releases, allowlisted). */
+  readonly appUrl: string;
+  readonly ytdlpCurrent: string;
+  readonly ytdlpLatest: string | null;
+  readonly ytdlpUpdate: boolean;
+  /** ms epoch of this check (0 when never checked). */
+  readonly checkedAt: number;
+}
+
+/** Deep-link listener (fluxdl:// URL or CLI URL forwarded to the UI). */
+export type DeepLinkCallback = (url: string) => void;
+
 /** Desired window chrome (M4.4 mini mode, M4.6 theme colors). */
 export type { WindowChromeState } from "./window.js";
 import type { WindowChromeState } from "./window.js";
@@ -123,6 +140,31 @@ export interface DownloadEngine {
   clearArchive(): Promise<void>;
   /** Raw console of a job for the Logs screen (kept by the engine). */
   getRawLog(id: string): Promise<string | null>;
+  /**
+   * Graceful teardown: kill active yt-dlp/ffmpeg children but keep .part
+   * files so the next boot re-queues and resumes them. Called from
+   * before-quit; after it resolves the app may exit immediately.
+   */
+  shutdown(): Promise<void>;
+  /** Subscribe to deep-link URLs (second-instance / protocol / CLI arg). */
+  onDeepLink(cb: DeepLinkCallback): Unsubscribe;
+  /**
+   * One round trip for both updatables: the app itself (GitHub Releases)
+   * and yt-dlp. Best-effort: offline checkers resolve update=false, never
+   * throw for network reasons (invalid state still throws).
+   */
+  checkForUpdates(): Promise<UpdateStatus>;
+  /**
+   * Safe local-media URL for in-app preview, or null when the path is
+   * outside the download roots or not a playable audio/video file.
+   * Served main-side over an allowlisted custom protocol (never file://).
+   */
+  getMediaUrl(path: string): Promise<string | null>;
+  /**
+   * Open a URL in the OS browser. Allowlisted to the project's GitHub
+   * Releases page only — anything else throws.
+   */
+  openExternal(url: string): Promise<void>;
   /** Settings persist main-side (atomic JSON). Renderer talks via these only. */
   loadSettings(): Promise<AppSettings>;
   saveSettings(patch: Partial<AppSettings>): Promise<AppSettings>;
@@ -174,6 +216,10 @@ export const IPC_CHANNELS = {
   removeHistory: "store:removeHistory",
   clearHistory: "store:clearHistory",
   getRawLog: "engine:getLog",
+  onDeepLink: "app:deepLink",
+  checkForUpdates: "engine:checkUpdates",
+  getMediaUrl: "engine:mediaUrl",
+  openExternal: "app:openExternal",
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

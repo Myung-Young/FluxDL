@@ -219,4 +219,17 @@ export function registerEngineIpc(engine: DesktopEngine): void {
     if (id === null) throw new Error("Missing id.");
     return engine.getRawLog(id);
   });
+  ipcMain.handle(IPC_CHANNELS.checkForUpdates, async () => {
+    return engine.checkForUpdates();
+  });
+  ipcMain.handle(IPC_CHANNELS.getMediaUrl, async (_event, rawPath: unknown) => {
+    const p = asNonEmptyString(rawPath);
+    if (p === null) throw new Error("Missing path.");
+    return engine.getMediaUrl(p);
+  });
+  ipcMain.handle(IPC_CHANNELS.openExternal, async (_event, rawUrl: unknown) => {
+    const u = asNonEmptyString(rawUrl);
+    if (u === null) throw new Error("Missing URL.");
+    await engine.openExternal(u);
+  });
 }

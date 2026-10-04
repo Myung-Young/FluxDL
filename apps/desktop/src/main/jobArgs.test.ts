@@ -125,4 +125,22 @@ describe("buildStartArgs", () => {
     expect(flagIndex(args(input), "--embed-metadata")).toBe(-1);
     expect(flagIndex(args(input, { embedMetadata: true }), "--embed-metadata")).toBeGreaterThan(-1);
   });
+
+  it("pairs --write-auto-subs with --write-subs unless opted out", () => {
+    const on = args(input, { subtitles: true });
+    expect(flagIndex(on, "--write-subs")).toBeGreaterThan(-1);
+    expect(flagIndex(on, "--write-auto-subs")).toBeGreaterThan(-1);
+    const off = args(input, { subtitles: true, includeAutoSubs: false });
+    expect(flagIndex(off, "--write-subs")).toBeGreaterThan(-1);
+    expect(flagIndex(off, "--write-auto-subs")).toBe(-1);
+  });
+
+  it("pins --audio-quality 0 for audio presets", () => {
+    const argv = args({
+      ...input,
+      preset: { kind: "audio", videoPreset: "Best", audioPreset: "MP3", rawFormat: null },
+    });
+    expect(valueOf(argv, "--audio-quality")).toBe("0");
+    expect(flagIndex(args(input), "--audio-quality")).toBe(-1);
+  });
 });

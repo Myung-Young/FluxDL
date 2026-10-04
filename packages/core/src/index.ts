@@ -2,6 +2,7 @@ export { APP_NAME } from "./branding.js";
 export type {
   AppSettings,
   AudioPreset,
+  CloseBehavior,
   CodecPreference,
   Density,
   DownloadJob,
@@ -15,7 +16,9 @@ export type {
   ThemeName,
   VideoPreset,
 } from "./types.js";
+export { CLOSE_BEHAVIORS } from "./types.js";
 export type {
+  DeepLinkCallback,
   DownloadEngine,
   EngineProgress,
   EngineVersions,
@@ -25,15 +28,27 @@ export type {
   RepairReport,
   ThumbnailColor,
   Unsubscribe,
+  UpdateStatus,
 } from "./engine.js";
+export { extractDeepLinkTarget, parseFluxDlUrl } from "./deeplink.js";
+export {
+  APP_API_URL,
+  APP_RELEASES_URL,
+  YTDLP_API_URL,
+  isAllowedExternalUrl,
+  isNewerVersion,
+  latestTagFromRelease,
+} from "./updates.js";
 export {
   aggregateStatus,
+  formatEta,
   formatSpeedBps,
   formatWindowTitle,
+  queueEta,
   shouldSendAggregate,
   AGGREGATE_SEND_MS,
 } from "./aggregate.js";
-export type { AggregateStatus } from "./aggregate.js";
+export type { AggregateStatus, QueueEta } from "./aggregate.js";
 export { IPC_CHANNELS } from "./engine.js";
 export type { IpcChannel } from "./engine.js";
 export { App } from "./App.js";
@@ -94,6 +109,8 @@ export {
 export type { DownloadStats, PresetMixEntry, TopUploader, WeekBucket } from "./stats.js";
 export { Library } from "./Library.js";
 export type { LibraryProps } from "./Library.js";
+export { PreviewModal } from "./PreviewModal.js";
+export type { PreviewModalProps } from "./PreviewModal.js";
 export { SettingsScreen } from "./SettingsScreen.js";
 export type { SettingsScreenProps } from "./SettingsScreen.js";
 export { Logs } from "./Logs.js";

@@ -7,9 +7,9 @@ import type { ThemeName } from "./types.js";
 import { THEMES } from "./themes.js";
 import { fadeSwap, pressScale, staggerIn } from "./motion.js";
 import { formatStr, localeTag, resolveLanguage, useStrings } from "./locale.js";
-import { isValidUrl } from "./url.js";
+import { parseBatchText } from "./batch.js";
 import { readClipboardText } from "./clipboard.js";
-import { comboFromEvent, isCommandPalette, isEditableTarget, isMiniMode, isOpenSettings, isPasteAnalyze, isShortcutHelp } from "./shortcuts.js";
+import { NAV_VIEWS, comboFromEvent, isCommandPalette, isEditableTarget, isMiniMode, isOpenSettings, isPasteAnalyze, isShortcutHelp, navIndexFor } from "./shortcuts.js";
 import { ShortcutsDialog } from "./ShortcutsDialog.js";
 import { CommandPalette } from "./CommandPalette.js";
 import type { CommandContext } from "./commands.js";
@@ -25,8 +25,10 @@ import { MiniView } from "./MiniView.js";
 import {
   AGGREGATE_SEND_MS,
   aggregateStatus,
+  formatEta,
   formatSpeedBps,
   formatWindowTitle,
+  queueEta,
   shouldSendAggregate,
 } from "./aggregate.js";
 import { deriveAccentScale } from "./color.js";
@@ -36,6 +38,37 @@ import "./tokens.css";
 import "./fonts.css";
 
 export type ShellView = "home" | "downloads" | "library" | "stats" | "settings" | "logs";
+
+/**
+ * Live bandwidth sparkline: hand-rolled SVG polyline over the last 30
+ * aggregate samples (no chart library). Static geometry per render, so
+ * there is nothing to animate and `prefers-reduced-motion` needs no carve-out.
+ */
+function Sparkline({ samples }: { samples: readonly number[] }): React.JSX.Element | null {
+  if (samples.length < 2 || samples.every((v) => v <= 0)) return null;
+  const w = 180;
+  const h = 28;
+  const max = Math.max(1, ...samples);
+  const pts = samples
+    .map((v, i) => {
+      const x = (i / Math.max(1, samples.length - 1)) * w;
+      const y = h - (v / max) * (h - 4) - 2;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  return (
+    <svg
+      className="sparkline"
+      width={w}
+      height={h}
+      viewBox={`0 0 ${String(w)} ${String(h)}`}
+      aria-hidden="true"
+      focusable="false"
+    >
+      <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
 
 export interface ShellProps {
   readonly engine: DownloadEngine;
@@ -47,6 +80,10 @@ export interface ShellProps {
 export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX.Element {
   const [view, setView] = useState<ShellView>("home");
   const [pendingPaste, setPendingPaste] = useState<string | null>(null);
+  const [pendingBatch, setPendingBatch] = useState<string | null>(null);
+  const [etaText, setEtaText] = useState<string>("");
+  const [speedSamples, setSpeedSamples] = useState<readonly number[]>([]);
+  const [updateNoted, setUpdateNoted] = useState<boolean>(false);
   const [pendingSection, setPendingSection] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState<boolean>(false);
   const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
@@ -162,15 +199,22 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   }, [view]);
 
   // Aggregate status: sidebar footer + throttled taskbar/tray updates.
+  // The footer also carries a live bandwidth sparkline (30 samples) and the
+  // whole-queue ETA; both ride the tray tooltip too.
   useEffect(() => {
     const agg = aggregateStatus(jobs);    const speed = agg.speedBps > 0 ? ` · ${formatSpeedBps(agg.speedBps, locale)}` : "";
     const text =
       agg.active > 0 ? `${formatStr(S.status.activeCount, { count: agg.active })}${speed}` : S.status.ready;
     setAggregateText(text);
+    const eta = queueEta(jobs, agg.speedBps);
+    const etaSuffix = eta !== null ? ` · ETA ${formatEta(eta.etaSeconds)}` : "";
+    setEtaText(eta !== null ? `ETA ${formatEta(eta.etaSeconds)}` : "");
+    setSpeedSamples((prev) => [...prev.slice(-29), agg.speedBps]);
+    const tooltip = `${text}${etaSuffix}`;
     const send = (): void => {
       lastAggSent.current = Date.now();
       engine
-        .setAggregateProgress({ active: agg.active, percent: agg.percent, tooltip: text })
+        .setAggregateProgress({ active: agg.active, percent: agg.percent, tooltip })
         .catch(() => undefined);
     };
     if (shouldSendAggregate(lastAggSent.current, Date.now())) {
@@ -188,6 +232,46 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   useEffect(() => {
     document.title = formatWindowTitle(aggregateStatus(jobs).active, APP_NAME);
   }, [jobs]);
+
+  // Launch update reminder: one best-effort check (hourly-cached main-side),
+  // then a toast when the app or yt-dlp has something newer. Honors the
+  // autoCheckUpdate setting; failures stay silent (offline is normal).
+  useEffect(() => {
+    if (!settingsReady || updateNoted) return;
+    setUpdateNoted(true);
+    if (!settings.getState().settings.autoCheckUpdate) return;
+    void engine
+      .checkForUpdates()
+      .then((st) => {
+        if (st.appUpdate) {
+          toast.getState().push(
+            formatStr(S.logs.appUpdateReady, {
+              v: st.appLatest ?? "?",
+              cur: st.appCurrent,
+            }),
+            "info",
+            {
+              label: S.logs.getUpdate,
+              run: () => {
+                engine.openExternal(st.appUrl).catch(() => undefined);
+              },
+            },
+          );
+        } else if (st.ytdlpUpdate) {
+          toast.getState().push(
+            formatStr(S.logs.ytdlpUpdateReady, { v: st.ytdlpLatest ?? "?" }),
+            "info",
+            {
+              label: S.logs.title,
+              run: () => {
+                switchView("logs");
+              },
+            },
+          );
+        }
+      })
+      .catch(() => undefined);
+  }, [engine, settings, settingsReady, updateNoted, toast, switchView, S]);
 
   // Keep the queue moving (M4.1): hydrated boot jobs and backoff retries
   // only start when something pumps. The 1 s tick is cheap and the
@@ -225,6 +309,18 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
     },
     [switchView],
   );
+
+  // Deep links (fluxdl:// URL, CLI arg, second-instance forward): land on
+  // Home and analyze like a paste. Registered once; the engine owns delivery.
+  useEffect(() => {
+    const unsub = engine.onDeepLink((url) => {
+      setPendingPaste(url);
+      setView("home");
+    });
+    return () => {
+      unsub();
+    };
+  }, [engine]);
 
   const paletteContext: CommandContext = useMemo(
     () => ({
@@ -274,16 +370,25 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
         setMini((v) => !v);
         return;
       }
+      const navIndex = navIndexFor(combo);
+      if (navIndex !== null) {
+        // Digits are typed in fields — only navigate outside them.
+        if (isEditableTarget(e.target)) return;
+        e.preventDefault();
+        const target = NAV_VIEWS[navIndex];
+        if (target !== undefined) switchView(target);
+        return;
+      }
       if (isPasteAnalyze(combo)) {
         if (isEditableTarget(e.target)) return;
         e.preventDefault();
         void readClipboardText().then((text) => {
-          const first = (text ?? "")
-            .split(/\r?\n/)
-            .map((s) => s.trim())
-            .find((s) => s.length > 0);
-          if (first !== undefined && isValidUrl(first)) {
-            setPendingPaste(first);
+          const valid = parseBatchText(text ?? "").valid;
+          if (valid.length >= 2) {
+            setPendingBatch(text);
+            switchView("home");
+          } else if (valid.length === 1 && valid[0] !== undefined) {
+            setPendingPaste(valid[0].url);
             switchView("home");
           }
         });
@@ -299,6 +404,27 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
     setPendingPaste(null);
   }, []);
 
+  const consumeBatch = useCallback((): void => {
+    setPendingBatch(null);
+  }, []);
+
+  // Window-level drop: multi-URL drops from the browser land in Batch.
+  // File drops (.txt) belong to BatchPanel; single-URL drops keep the
+  // card-level behavior in Home.
+  const onWindowDrop = (e: React.DragEvent): void => {
+    if (e.dataTransfer.files.length > 0) return;
+    const text =
+      e.dataTransfer.getData("text/uri-list") ||
+      e.dataTransfer.getData("text/plain") ||
+      e.dataTransfer.getData("text");
+    if (text.trim().length === 0) return;
+    if (parseBatchText(text).valid.length >= 2) {
+      e.preventDefault();
+      setPendingBatch(text);
+      setView("home");
+    }
+  };
+
   const focusMain = (): void => {
     mainRef.current?.focus({ preventScroll: false });
   };
@@ -311,7 +437,14 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   };
 
   return (
-    <div className="grabber-app" data-testid="grabber-shell">
+    <div
+      className="grabber-app"
+      data-testid="grabber-shell"
+      onDragOver={(e) => {
+        e.preventDefault();
+      }}
+      onDrop={onWindowDrop}
+    >
       <a
         className="skip-link"
         href="#grabber-main"
@@ -353,12 +486,14 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
       </header>
       <div className="grabber-body">
         <nav ref={navRef} className="grabber-nav" aria-label="Primary" hidden={mini}>
-          {nav.map((item) => (
+          {nav.map((item, i) => (
             <button
               key={item.id}
               type="button"
               data-nav
               className="grabber-nav-btn"
+              title={`Ctrl+${String(i + 1)}`}
+              aria-keyshortcuts={`Control+${String(i + 1)}`}
               aria-current={item.id === view ? "page" : undefined}
               onPointerDown={(e) => {
                 pressScale(e.currentTarget);
@@ -378,6 +513,8 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
           ))}
           <div className="grabber-nav-foot" data-testid="aggregate" role="status">
             {aggregateText}
+            {etaText.length > 0 && <div className="muted">{etaText}</div>}
+            <Sparkline samples={speedSamples} />
           </div>
         </nav>
         <main ref={mainRef} id="grabber-main" className="grabber-main" tabIndex={-1}>
@@ -399,6 +536,8 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
               settings={settings}
               pendingPaste={pendingPaste}
               onPasteConsumed={consumePaste}
+              pendingBatch={pendingBatch}
+              onBatchConsumed={consumeBatch}
             />
           )}
           {!mini && view === "downloads" && (

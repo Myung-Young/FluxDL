@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateStatus,
+  formatEta,
   formatSpeedBps,
   formatWindowTitle,
+  queueEta,
   shouldSendAggregate,
 } from "./aggregate.js";
 import { parseSpeedBps } from "./progress.js";
@@ -94,6 +96,41 @@ describe("shouldSendAggregate", () => {
     expect(shouldSendAggregate(1000, 1000)).toBe(false);
     expect(shouldSendAggregate(1000, 1249)).toBe(false);
     expect(shouldSendAggregate(1000, 1250)).toBe(true);
+  });
+});
+
+describe("queueEta", () => {
+  it("sums remaining bytes and divides by the aggregate speed", () => {
+    const eta = queueEta(
+      [
+        job({ id: "a", status: "downloading", downloadedBytes: 40, totalBytes: 100 }),
+        job({ id: "b", status: "queued", downloadedBytes: null, totalBytes: 200 }),
+        job({ id: "c", status: "done", downloadedBytes: 50, totalBytes: 50 }),
+      ],
+      130,
+    );
+    expect(eta?.remainingBytes).toBe(260);
+    expect(eta?.etaSeconds).toBe(2);
+  });
+
+  it("returns null ETA seconds while the speed is unknown", () => {
+    const eta = queueEta([job({ status: "downloading", totalBytes: 100 })], 0);
+    expect(eta?.remainingBytes).toBe(100);
+    expect(eta?.etaSeconds).toBeNull();
+  });
+
+  it("returns null when no job has a known size", () => {
+    expect(queueEta([job({ status: "downloading" })], 100)).toBeNull();
+    expect(queueEta([], 100)).toBeNull();
+  });
+});
+
+describe("formatEta", () => {
+  it("formats m:ss and h:mm:ss, dash when unknown", () => {
+    expect(formatEta(75)).toBe("1:15");
+    expect(formatEta(3720)).toBe("1:02:00");
+    expect(formatEta(null)).toBe("—");
+    expect(formatEta(-5)).toBe("—");
   });
 });
 

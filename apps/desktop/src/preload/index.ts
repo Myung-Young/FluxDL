@@ -4,6 +4,7 @@ import { IPC_CHANNELS } from "@grabber/core/engine.js";
 import type { AppSettings, DownloadJob, DownloadJobInput, MediaInfo } from "@grabber/core/types.js";
 import type {
   AggregateProgressState,
+  DeepLinkCallback,
   EngineProgress,
   EngineVersions,
   GetInfoInit,
@@ -11,6 +12,7 @@ import type {
   RepairReport,
   ThumbnailColor,
   Unsubscribe,
+  UpdateStatus,
   WindowChromeListener,
   WindowChromeState,
 } from "@grabber/core/engine.js";
@@ -53,6 +55,10 @@ export interface GrabberApi {
   removeHistory(id: string): Promise<void>;
   clearHistory(): Promise<void>;
   getRawLog(id: string): Promise<string | null>;
+  onDeepLink(cb: DeepLinkCallback): Unsubscribe;
+  checkForUpdates(): Promise<UpdateStatus>;
+  getMediaUrl(path: string): Promise<string | null>;
+  openExternal(url: string): Promise<void>;
 }
 
 const api: GrabberApi = {
@@ -118,6 +124,21 @@ const api: GrabberApi = {
   removeHistory: (id) => ipcRenderer.invoke(IPC_CHANNELS.removeHistory, id) as Promise<void>,
   clearHistory: () => ipcRenderer.invoke(IPC_CHANNELS.clearHistory) as Promise<void>,
   getRawLog: (id) => ipcRenderer.invoke(IPC_CHANNELS.getRawLog, id) as Promise<string | null>,
+  onDeepLink: (cb) => {
+    const listener = (_event: IpcRendererEvent, url: string): void => {
+      if (typeof url === "string") cb(url);
+    };
+    ipcRenderer.on(IPC_CHANNELS.onDeepLink, listener);
+    const unsubscribe: Unsubscribe = () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.onDeepLink, listener);
+    };
+    return unsubscribe;
+  },
+  checkForUpdates: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.checkForUpdates) as Promise<UpdateStatus>,
+  getMediaUrl: (path) =>
+    ipcRenderer.invoke(IPC_CHANNELS.getMediaUrl, path) as Promise<string | null>,
+  openExternal: (url) => ipcRenderer.invoke(IPC_CHANNELS.openExternal, url) as Promise<void>,
 };
 contextBridge.exposeInMainWorld("grabber", api);
 

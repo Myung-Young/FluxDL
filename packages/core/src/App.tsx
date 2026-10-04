@@ -35,13 +35,15 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     if (engine === null || settings === null) return;
-    // Auto-check engine updates on launch when enabled (runs yt-dlp -U).
+    // Warm the hourly update cache on launch when enabled. This only CHECKS
+    // (GitHub Releases, best-effort) — the Shell toast owns the reminder UI,
+    // and installing stays an explicit user action in Logs.
     settings
       .getState()
       .load()
       .then(() => {
         if (settings.getState().settings.autoCheckUpdate) {
-          engine.updateEngine().catch(() => undefined);
+          engine.checkForUpdates().catch(() => undefined);
         }
       })
       .catch(() => undefined);
