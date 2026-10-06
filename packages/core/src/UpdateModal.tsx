@@ -59,7 +59,11 @@ export function UpdateModal({ engine, settings, status, onClose }: UpdateModalPr
   useEffect(() => {
     boxRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape" && phase === "idle") onClose();
+      // v1.7.2: dismissible in EVERY phase except an in-flight download. It
+      // used to be gated on `idle`, so a failed update left the popup showing
+      // Retry and nothing else — no Close, no Later, no Escape, no outside
+      // click. A terminal state with no exit is a trap.
+      if (e.key === "Escape" && phase !== "busy") onClose();
     };
     document.addEventListener("keydown", onKey);
     return () => {
@@ -99,7 +103,7 @@ export function UpdateModal({ engine, settings, status, onClose }: UpdateModalPr
     <div
       className="grabber-modal"
       onClick={(e) => {
-        if (e.target === e.currentTarget && phase === "idle") onClose();
+        if (e.target === e.currentTarget && phase !== "busy") onClose();
       }}
     >
       <div
@@ -204,16 +208,22 @@ export function UpdateModal({ engine, settings, status, onClose }: UpdateModalPr
             </button>
           )}
           {phase === "failed" && (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => {
-                setPhase("busy");
-                begin();
-              }}
-            >
-              {S.updateModal.retry}
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  setPhase("busy");
+                  begin();
+                }}
+              >
+                {S.updateModal.retry}
+              </button>
+              {/* v1.7.2: an explicit way out of the failed state. */}
+              <button type="button" className="btn" onClick={onClose}>
+                {S.updateModal.later}
+              </button>
+            </>
           )}
         </div>
       </div>

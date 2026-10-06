@@ -1,13 +1,26 @@
 import { describe, expect, it } from "vitest";
 import {
+  audioFormatOf,
   buildChapterOutputTemplate,
   buildDownloadArgs,
   buildInfoArgs,
   buildUpdateArgs,
   buildVersionArgs,
+  mergeContainerOf,
+  pacingArgs,
   redactArgs,
+  remuxContainerOf,
   type DownloadArgsInput,
 } from "./args.js";
+import { AUDIO_PRESETS, CONTAINERS } from "./types.js";
+
+function presetOf(audio: DownloadArgsInput["preset"]["audioPreset"] = "MP3"): DownloadArgsInput["preset"] {
+  return { kind: "audio", videoPreset: "Best", audioPreset: audio, rawFormat: null };
+}
+
+function videoPresetOf(): DownloadArgsInput["preset"] {
+  return { kind: "video", videoPreset: "1080", audioPreset: "MP3", rawFormat: null };
+}
 
 function base(over: Partial<DownloadArgsInput> = {}): DownloadArgsInput {
   return {
@@ -57,7 +70,7 @@ describe("arg builder", () => {
 
   it("builds audio args with extract-audio", () => {
     const args = buildDownloadArgs(
-      base({ preset: { kind: "audio", videoPreset: "Best", audioPreset: "MP3", rawFormat: null } }),
+      base({ preset: presetOf("MP3") }),
     );
     expect(args).toContain("--extract-audio");
     expect(args).toContain("--audio-format");
@@ -385,5 +398,178 @@ describe("forceOverwrite (M4.8)", () => {
     // --force-overwrites implies --no-continue inside yt-dlp; that is intended
     // for an explicit re-download and must not leak into normal downloads.
     expect(withFlag({ forceOverwrite: true })).toContain("--continue");
+  });
+});
+
+/**
+ * v1.7.2: full format coverage + polite pacing.
+ *
+ * Every value below was read out of `yt-dlp --help` on the BUNDLED 2026.08.19
+ * binary, NOT from memory: `--audio-format` accepts best/aac/alac/flac/m4a/mp3/
+ * opus/vorbis/wav, `--merge-output-format` accepts avi/flv/mkv/mov/mp4/webm,
+ * and `--remux-video` accepts the video subset plus gif. yt-dlp ABORTS on an
+ * unknown value, so a stale setting must never reach the child process.
+ */
+describe("audio formats cover every yt-dlp --audio-format value", () => {
+  const expected: Record<string, string> = {
+    MP3: "mp3",
+    M4A: "m4a",
+    AAC: "aac",
+    Opus: "opus",
+    Vorbis: "vorbis",
+    FLAC: "flac",
+    ALAC: "alac",
+    WAV: "wav",
+  };
+
+  it("maps each preset to its documented value", () => {
+    for (const [preset, value] of Object.entries(expected)) {
+      expect(audioFormatOf(presetOf(preset as never))).toBe(value);
+    }
+  });
+
+  it("offers every one of them in the preset list", () => {
+    for (const key of Object.keys(expected)) {
+      expect(AUDIO_PRESETS).toContain(key);
+    }
+    expect(AUDIO_PRESETS).toContain("Best");
+  });
+
+  it("passes -x with the right --audio-format", () => {
+    for (const [preset, value] of Object.entries(expected)) {
+      const args = buildDownloadArgs(base({ preset: presetOf(preset as never) }));
+      expect(args).toContain("--extract-audio");
+      expect(args[args.indexOf("--audio-format") + 1]).toBe(value);
+    }
+  });
+
+  it("'Best' keeps the source stream: no -x, no re-encode", () => {
+    const args = buildDownloadArgs(base({ preset: presetOf("Best") }));
+    expect(args).not.toContain("--extract-audio");
+    expect(args).not.toContain("--audio-format");
+    expect(args).toContain("bestaudio/best");
+  });
+});
+
+describe("containers cover every yt-dlp remux target", () => {
+  it("exposes the verified merge + remux set", () => {
+    // merge: avi flv mkv mov mp4 webm. remux adds gif.
+    for (const c of ["mp4", "mkv", "webm", "avi", "flv", "mov", "gif"]) {
+      expect(CONTAINERS).toContain(c);
+    }
+    expect(CONTAINERS).toEqual(["mp4", "mkv", "webm", "avi", "flv", "mov", "gif"]);
+    // Values this binary rejects must not be offered.
+    for (const rejected of ["ogv", "mpg", "mpeg", "ts", "vob", "3gp", "m2ts", "wmv", "f4v"]) {
+      expect(CONTAINERS).not.toContain(rejected);
+    }
+  });
+
+  it("passes both --merge-output-format and --remux-video for a mergeable target", () => {
+    expect(mergeContainerOf({ mergeContainer: "mkv", preset: videoPresetOf() })).toBe("mkv");
+    expect(remuxContainerOf({ mergeContainer: "mkv", preset: videoPresetOf() })).toBe("mkv");
+    const args = buildDownloadArgs(base({ mergeContainer: "mkv" }));
+    expect(args[args.indexOf("--merge-output-format") + 1]).toBe("mkv");
+    expect(args[args.indexOf("--remux-video") + 1]).toBe("mkv");
+  });
+
+  it("gif is remux-only (no --merge-output-format: yt-dlp cannot merge into it)", () => {
+    expect(mergeContainerOf({ mergeContainer: "gif", preset: videoPresetOf() })).toBeNull();
+    expect(remuxContainerOf({ mergeContainer: "gif", preset: videoPresetOf() })).toBe("gif");
+    const args = buildDownloadArgs(base({ mergeContainer: "gif" }));
+    expect(args).not.toContain("--merge-output-format");
+    expect(args[args.indexOf("--remux-video") + 1]).toBe("gif");
+  });
+
+  it("a per-job override beats the global setting", () => {
+    const args = buildDownloadArgs(
+      base({ mergeContainer: "mp4", preset: { ...videoPresetOf(), container: "mkv" } }),
+    );
+    expect(args[args.indexOf("--remux-video") + 1]).toBe("mkv");
+  });
+
+  it("drops an unknown container instead of aborting the download", () => {
+    // yt-dlp exits with an error on an unrecognised value, so a hand-edited
+    // settings file must not be able to break every download.
+    const args = buildDownloadArgs(base({ mergeContainer: "exe" }));
+    expect(args).not.toContain("--merge-output-format");
+    expect(args).not.toContain("--remux-video");
+  });
+
+  it("never remuxes an audio job", () => {
+    const args = buildDownloadArgs(
+      base({ preset: { kind: "audio", videoPreset: "Best", audioPreset: "MP3", rawFormat: null } }),
+    );
+    expect(args).not.toContain("--remux-video");
+    expect(args).not.toContain("--merge-output-format");
+  });
+});
+
+describe("polite pacing", () => {
+  it("adds nothing by default (default argv is unchanged)", () => {
+    const args = buildDownloadArgs(base());
+    for (const flag of [
+      "--sleep-requests",
+      "--min-sleep-interval",
+      "--max-sleep-interval",
+      "--sleep-subtitles",
+    ]) {
+      expect(args).not.toContain(flag);
+    }
+  });
+
+  it("maps each delay to its documented flag", () => {
+    expect(pacingArgs({ sleepRequestsSec: 1 })).toEqual(["--sleep-requests", "1"]);
+    expect(pacingArgs({ minSleepIntervalSec: 5 })).toEqual(["--min-sleep-interval", "5"]);
+    expect(pacingArgs({ sleepSubtitlesSec: 2 })).toEqual(["--sleep-subtitles", "2"]);
+  });
+
+  it("emits max only alongside min (yt-dlp rejects it alone)", () => {
+    expect(pacingArgs({ maxSleepIntervalSec: 10 })).toEqual([]);
+    expect(pacingArgs({ minSleepIntervalSec: 5, maxSleepIntervalSec: 10 })).toEqual([
+      "--min-sleep-interval",
+      "5",
+      "--max-sleep-interval",
+      "10",
+    ]);
+  });
+
+  it("drops a max below the min (yt-dlp would reject the pair)", () => {
+    expect(pacingArgs({ minSleepIntervalSec: 10, maxSleepIntervalSec: 5 })).toEqual([
+      "--min-sleep-interval",
+      "10",
+    ]);
+  });
+
+  it("treats off / junk / negative as off instead of passing it on", () => {
+    expect(pacingArgs({})).toEqual([]);
+    expect(pacingArgs({ sleepRequestsSec: null, minSleepIntervalSec: null })).toEqual([]);
+    expect(pacingArgs({ sleepRequestsSec: 0, minSleepIntervalSec: 0 })).toEqual([]);
+    expect(pacingArgs({ sleepRequestsSec: -5, minSleepIntervalSec: -1 })).toEqual([]);
+    expect(pacingArgs({ sleepRequestsSec: Number.NaN })).toEqual([]);
+    expect(pacingArgs({ sleepRequestsSec: Number.POSITIVE_INFINITY })).toEqual([]);
+  });
+
+  it("rounds a fractional delay and floors a sub-second minimum", () => {
+    expect(pacingArgs({ sleepRequestsSec: 1.9 })).toEqual(["--sleep-requests", "1"]);
+    expect(pacingArgs({ minSleepIntervalSec: 0.4 })).toEqual(["--min-sleep-interval", "1"]);
+  });
+
+  it("reaches the real argv, last, just before the URL", () => {
+    const args = buildDownloadArgs(
+      base({ sleepRequestsSec: 2, minSleepIntervalSec: 5, maxSleepIntervalSec: 10 }),
+    );
+    expect(args).toContain("--sleep-requests");
+    expect(args).toContain("--min-sleep-interval");
+    expect(args).toContain("--max-sleep-interval");
+    // Pacing goes last so the URL stays the final argument.
+    expect(args.slice(-7)).toEqual([
+      "--sleep-requests",
+      "2",
+      "--min-sleep-interval",
+      "5",
+      "--max-sleep-interval",
+      "10",
+      base().url,
+    ]);
   });
 });

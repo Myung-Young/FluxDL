@@ -107,6 +107,103 @@ describe("queue state machine", () => {
     expect(j.destination).toBe("C:\\Vids\\a.mp4");
   });
 
+  it("never downgrades a known byte count to null (v1.7.2)", () => {
+    // yt-dlp's post-processing lines ([ExtractAudio], [Merger], [Fixup], …)
+    // carry no byte fields, and the final `done` event did too. Writing those
+    // nulls through is what left every audio job with no size at all, so the
+    // Stats "total size" tile read "Unknown" for most libraries.
+    let j = transition(jobAt("queued"), "start");
+    j = applyEngineProgress(j, {
+      percent: 42,
+      speed: "1M/s",
+      eta: "00:10",
+      downloadedBytes: 420,
+      totalBytes: 1000,
+      stage: "downloading",
+      destination: "C:\\Vids\\a.webm",
+    });
+    expect(j.totalBytes).toBe(1000);
+
+    // [ExtractAudio] Destination: …
+    j = applyEngineProgress(j, {
+      percent: 100,
+      speed: null,
+      eta: null,
+      downloadedBytes: null,
+      totalBytes: null,
+      stage: "processing",
+      destination: "C:\\Vids\\a.mp3",
+    });
+    expect(j.status).toBe("processing");
+    expect(j.totalBytes).toBe(1000);
+    expect(j.downloadedBytes).toBe(420);
+
+    // The done event, still without byte fields.
+    j = applyEngineProgress(j, {
+      percent: 100,
+      speed: null,
+      eta: null,
+      downloadedBytes: null,
+      totalBytes: null,
+      stage: "done",
+      destination: null,
+    });
+    expect(j.status).toBe("done");
+    expect(j.totalBytes).toBe(1000);
+    expect(j.downloadedBytes).toBe(420);
+    expect(j.destination).toBe("C:\\Vids\\a.mp3");
+  });
+
+  it("lets a later event overwrite the byte counts", () => {
+    let j = transition(jobAt("queued"), "start");
+    j = applyEngineProgress(j, {
+      percent: 42,
+      speed: null,
+      eta: null,
+      downloadedBytes: 420,
+      totalBytes: 1000,
+      stage: "downloading",
+      destination: null,
+    });
+    // The engine measures the finished output and reports the real size.
+    j = applyEngineProgress(j, {
+      percent: 100,
+      speed: null,
+      eta: null,
+      downloadedBytes: 733,
+      totalBytes: 733,
+      stage: "done",
+      destination: null,
+    });
+    expect(j.totalBytes).toBe(733);
+    expect(j.downloadedBytes).toBe(733);
+  });
+
+  it("keeps the byte counts through a failure", () => {
+    let j = transition(jobAt("queued"), "start");
+    j = applyEngineProgress(j, {
+      percent: 42,
+      speed: null,
+      eta: null,
+      downloadedBytes: 420,
+      totalBytes: 1000,
+      stage: "downloading",
+      destination: null,
+    });
+    j = applyEngineProgress(j, {
+      percent: 42,
+      speed: null,
+      eta: null,
+      downloadedBytes: null,
+      totalBytes: null,
+      stage: "error",
+      destination: null,
+      errorMessage: "boom",
+    });
+    expect(j.status).toBe("error");
+    expect(j.totalBytes).toBe(1000);
+  });
+
   it("resumes accept progress and done events after pause (D53)", () => {
     const paused = transition(jobAt("downloading"), "pause");
     expect(paused.status).toBe("paused");

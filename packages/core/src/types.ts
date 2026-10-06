@@ -75,7 +75,34 @@ export const VIDEO_PRESETS: readonly VideoPreset[] = [
   "Compatible",
 ];
 
-export const AUDIO_PRESETS: readonly AudioPreset[] = ["MP3", "M4A", "Opus", "FLAC"];
+export const AUDIO_PRESETS: readonly AudioPreset[] = [
+  "MP3",
+  "M4A",
+  "AAC",
+  "Opus",
+  "Vorbis",
+  "FLAC",
+  "ALAC",
+  "WAV",
+  "Best",
+];
+
+/**
+ * Output containers offered for VIDEO downloads.
+ *
+ * Verified against the bundled yt-dlp 2026.08.19 (`yt-dlp --help`):
+ * - `--merge-output-format`: avi, flv, mkv, mov, mp4, webm
+ * - `--remux-video` / `--recode-video`: the video subset below plus gif and
+ *   the audio-only targets (aac, aiff, alac, flac, m4a, mka, mp3, ogg, opus,
+ *   vorbis, wav) — those are reachable through the audio presets instead.
+ *
+ * The longer lists sometimes quoted for remux (ogv/mpg/mpeg/ts/vob/3gp/m2ts/
+ * wmv/f4v) are NOT accepted by this binary and are deliberately absent.
+ */
+export const CONTAINERS: readonly Container[] = ["mp4", "mkv", "webm", "avi", "flv", "mov", "gif"];
+
+/** yt-dlp `--merge-output-format` value used when a merge is required. */
+export const MERGE_CONTAINERS: readonly Container[] = ["mp4", "mkv", "webm", "avi", "flv", "mov"];
 
 export interface ChapterInfo {
   readonly title: string;
@@ -106,8 +133,25 @@ export interface MediaInfo {
 
 export type MediaKind = "video" | "audio";
 
-export type AudioPreset = "MP3" | "M4A" | "Opus" | "FLAC";
+/**
+ * Audio targets = exactly yt-dlp's `--audio-format` set:
+ * best (default), aac, alac, flac, m4a, mp3, opus, vorbis, wav.
+ * "Best" keeps the source stream untouched (no `-x`).
+ */
+export type AudioPreset =
+  | "MP3"
+  | "M4A"
+  | "AAC"
+  | "Opus"
+  | "Vorbis"
+  | "FLAC"
+  | "ALAC"
+  | "WAV"
+  | "Best";
 export type VideoPreset = "Best" | "2160" | "1440" | "1080" | "720" | "480" | "Compatible";
+
+/** Video output container (see CONTAINERS for the verified value set). */
+export type Container = "mp4" | "mkv" | "webm" | "avi" | "flv" | "mov" | "gif";
 
 /** Preferred video codec for downloads (applied via yt-dlp `-S` format sort). */
 export type CodecPreference = "auto" | "h264" | "vp9" | "av1";
@@ -118,6 +162,29 @@ export interface DownloadPreset {
   readonly audioPreset: AudioPreset;
   /** Raw yt-dlp `-f` value when user picks Advanced. Takes precedence if set. */
   readonly rawFormat: string | null;
+  /**
+   * Per-job output container override (Advanced). Null = the global setting.
+   * Applied as `--merge-output-format` plus `--remux-video` so the target is
+   * honoured whether or not a merge is required (v1.7.2).
+   */
+  readonly container?: Container | null;
+}
+
+/**
+ * Polite pacing (v1.7.2) — the "don't look like a scraper" knobs, all of them
+ * straight yt-dlp flags. Seconds; null/0 = off.
+ *
+ * yt-dlp 2026.08.19:
+ *   --sleep-requests SECONDS     pause between extraction requests
+ *   --min-sleep-interval SECONDS (alias of --sleep-interval) pause before each download
+ *   --max-sleep-interval SECONDS (only valid together with min)
+ *   --sleep-subtitles SECONDS    pause before each subtitle download
+ */
+export interface PacingSettings {
+  readonly sleepRequestsSec: number | null;
+  readonly minSleepIntervalSec: number | null;
+  readonly maxSleepIntervalSec: number | null;
+  readonly sleepSubtitlesSec: number | null;
 }
 
 export interface DownloadJob {
@@ -204,6 +271,8 @@ export interface DownloadJobInput extends Pick<
   readonly useArchive?: boolean;
   /** Sanitized playlist subfolder (UI-side, when the setting is on). */
   readonly playlistSubdir?: string | null;
+  /** Per-job output container (v1.7.2); overrides the global setting. */
+  readonly container?: Container | null;
 }
 
 export type ThemeName = "obsidian" | "midnight" | "ember" | "paper";
@@ -229,7 +298,10 @@ export interface AppSettings {
   readonly embedSubs: boolean;
   /** Also fetch YouTube auto-generated captions (most videos have no manual subs). */
   readonly includeAutoSubs: boolean;
+  /** Default container when a merge is required (yt-dlp value set). */
   readonly mergeContainer: string;
+  /** Polite pacing delays in seconds; null/0 = off (v1.7.2). */
+  readonly pacing: PacingSettings;
   readonly sponsorBlock: boolean;
   readonly codecPreference: CodecPreference;
   /** Playlist jobs pass --download-archive (default ON). */

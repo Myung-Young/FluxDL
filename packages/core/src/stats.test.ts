@@ -114,6 +114,22 @@ describe("computeStats", () => {
     expect(stats.unknownDurationCount).toBe(1);
   });
 
+  it("never reports 0 bytes for a real recording (v1.7.2)", () => {
+    // A live stream that reports an unknown total used to land in history with
+    // totalBytes 0 / null, which then read as "Unknown" on the tile. A measured
+    // output always wins over the placeholder.
+    const stats = computeStats(
+      [
+        rec("a", { totalBytes: 0, downloadedBytes: 0 }),
+        rec("b", { totalBytes: 4096, downloadedBytes: 4096 }),
+      ],
+      NOW,
+    );
+    expect(stats.totalBytes).toBe(4096);
+    // The zero-byte row is still honestly counted as unknown.
+    expect(stats.unknownSizeCount).toBe(1);
+  });
+
   it("mixes known and unknown: known sums, unknown counted", () => {
     const stats = computeStats(
       [

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
-import type { AppSettings, Density } from "./types.js";
+import type { AppSettings, Container, Density } from "./types.js";
+import { CONTAINERS } from "./types.js";
 import { THEME_NAMES } from "./themes.js";
 import { deriveAccentScale } from "./color.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
@@ -35,7 +36,17 @@ const FILENAME_PRESETS: readonly string[] = [
   "%(upload_date)s - %(title)s [%(id)s].%(ext)s",
 ];
 
-const MERGE_CONTAINERS: readonly string[] = ["mp4", "mkv", "webm"];
+/**
+ * Container choices offered for video downloads (v1.7.2).
+ *
+ * Verified against the bundled yt-dlp 2026.08.19: `--merge-output-format`
+ * accepts avi/flv/mkv/mov/mp4/webm, while `--remux-video` additionally accepts
+ * gif. The picker offers the union (so any container yt-dlp can produce is
+ * reachable) and the args builder only ever hands `--merge-output-format` a
+ * mergeable value. Commonly quoted values this binary rejects (ogv, mpg, ts,
+ * vob, 3gp, m2ts, wmv, f4v) are deliberately absent.
+ */
+const CONTAINER_CHOICES: readonly Container[] = [...CONTAINERS];
 
 export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsScreenProps): React.JSX.Element {
   const S = useStrings(settings);
@@ -119,6 +130,11 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
       { id: "set-proxy", label: S.settings.proxy, keywords: ["proxy", "network"] },
       { id: "set-cookies", label: S.settings.cookies, keywords: ["cookies", "browser"] },
       { id: "set-cookies-file", label: S.settings.cookiesFile, keywords: ["cookies", "file"] },
+      {
+        id: "set-pacing",
+        label: [S.settings.pacingTitle, S.settings.pacingRequests, S.settings.pacingHint].join(" "),
+        keywords: ["pacing", "sleep", "rate", "limit", "polite", "429"],
+      },
       {
         id: "togglesQuality",
         label: [
@@ -215,6 +231,9 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
             <label key={key} className="check-row">
               <input
                 type="checkbox"
+                // Stable automation hook: the toggle order changes with every
+                // release, the setting key never does.
+                data-setting={key}
                 checked={saved[key]}
                 disabled={off}
                 onChange={(e) => {
@@ -300,10 +319,11 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
           settings.getState().save(merged).catch(() => undefined);
           await engine.saveQueue(parsed.queue);
           await queue.getState().refresh().catch(() => undefined);
-          await engine.clearHistory();
-          for (const h of parsed.history) {
-            await engine.appendHistory(h).catch(() => undefined);
-          }
+          // v1.7.2: ONE atomic replace. This used to clear the history first
+          // and then append the records one by one with every failure
+          // swallowed — so a single error mid-loop destroyed the user's
+          // existing history and still reported "restored N records".
+          await engine.restoreHistory(parsed.history);
           setBackupNote(
             formatStr(S.settings.backupDone, {
               q: parsed.queue.length,
@@ -312,8 +332,12 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
             }),
           );
           flashSaved();
-        } catch {
-          setBackupNote(S.settings.backupFailed);
+        } catch (err) {
+          setBackupNote(
+            err instanceof Error && err.message.length > 0
+              ? `${S.settings.backupFailed} ${err.message}`
+              : S.settings.backupFailed,
+          );
         }
       })();
     };
@@ -346,10 +370,12 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
             id="settings-search"
             data-testid="settings-search"
             className="input"
+            type="search"
             value={query}
             placeholder={S.settings.search}
             aria-label={S.settings.search}
             spellCheck={false}
+            autoComplete="off"
             onChange={(e) => {
               setQuery(e.target.value);
             }}
@@ -521,7 +547,13 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
       <section
         className="grabber-card"
         aria-label={S.settings.sectionNetwork}
-        hidden={hideSection(["set-speed", "set-proxy", "set-cookies", "set-cookies-file"])}
+        hidden={hideSection([
+          "set-speed",
+          "set-proxy",
+          "set-cookies",
+          "set-cookies-file",
+          "set-pacing",
+        ])}
       >
         <h2 className="dl-title">{S.settings.sectionNetwork}</h2>
         <label className="field-label" htmlFor="set-speed" id="settings-section-speed" hidden={hide("set-speed")}>
@@ -597,6 +629,97 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
             commitText(e, (v) => ({ cookiesFile: v }));
           }}
         />
+
+        {/* Polite pacing (v1.7.2): the "be a good citizen" delays. All off by
+            default; each maps 1:1 onto a documented yt-dlp flag. */}
+        <h3 className="field-label" hidden={hide("set-pacing")}>
+          {S.settings.pacingTitle}
+        </h3>
+        <div className="meta-grid" hidden={hide("set-pacing")}>
+          {(
+            [
+              ["sleepRequestsSec", "set-pacing-requests", S.settings.pacingRequests],
+              ["minSleepIntervalSec", "set-pacing-min", S.settings.pacingMin],
+              ["maxSleepIntervalSec", "set-pacing-max", S.settings.pacingMax],
+              ["sleepSubtitlesSec", "set-pacing-subs", S.settings.pacingSubs],
+            ] as const
+          ).map(([key, id, label]) => (
+            <label key={key} className="meta-field" htmlFor={id}>
+              <span className="field-label">{label}</span>
+              <input
+                id={id}
+                data-setting={key}
+                className="input"
+                type="number"
+                min={0}
+                max={3600}
+                step={1}
+                key={`${key}:${String(saved.pacing[key] ?? "")}`}
+                defaultValue={saved.pacing[key] ?? ""}
+                inputMode="numeric"
+                placeholder={S.settings.pacingOff}
+                spellCheck={false}
+                onBlur={(e) => {
+                  const raw = e.target.value.trim();
+                  if (raw.length === 0) {
+                    void settings
+                      .getState()
+                      .save({ pacing: { ...saved.pacing, [key]: null } })
+                      .catch(() => undefined);
+                    return;
+                  }
+                  const seconds = Number(raw);
+                  if (!Number.isFinite(seconds) || seconds < 0) return;
+                  void settings
+                    .getState()
+                    .save({
+                      pacing: {
+                        ...saved.pacing,
+                        [key]: Math.floor(seconds),
+                      },
+                    })
+                    .catch(() => undefined);
+                }}
+              />
+            </label>
+          ))}
+        </div>
+        <p className="hint" hidden={hide("set-pacing")}>
+          {S.settings.pacingHint}
+        </p>
+        <div className="chip-row" hidden={hide("set-pacing")}>
+          {(
+            [
+              ["off", S.settings.pacingOff, null],
+              ["light", S.settings.pacingLight, { sleepRequestsSec: 1, minSleepIntervalSec: 2 }],
+              [
+                "standard",
+                S.settings.pacingStandard,
+                { sleepRequestsSec: 2, minSleepIntervalSec: 5, maxSleepIntervalSec: 10 },
+              ],
+            ] as const
+          ).map(([id, label, preset]) => (
+            <button
+              key={id}
+              type="button"
+              className="chip"
+              onClick={() => {
+                const base = {
+                  sleepRequestsSec: null,
+                  minSleepIntervalSec: null,
+                  maxSleepIntervalSec: null,
+                  sleepSubtitlesSec: null,
+                };
+                void settings
+                  .getState()
+                  .save({ pacing: { ...base, ...(preset ?? {}) } })
+                  .catch(() => undefined);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </section>
 
       <section
@@ -641,15 +764,16 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
             save({ mergeContainer: e.target.value });
           }}
         >
-          {MERGE_CONTAINERS.map((c) => (
+          {CONTAINER_CHOICES.map((c) => (
             <option key={c} value={c}>
               {c}
             </option>
           ))}
-          {!MERGE_CONTAINERS.includes(saved.mergeContainer) && (
+          {!CONTAINER_CHOICES.includes(saved.mergeContainer as Container) && (
             <option value={saved.mergeContainer}>{saved.mergeContainer}</option>
           )}
         </select>
+        <p className="hint">{S.settings.mergeContainerHint}</p>
 
         <label className="field-label" htmlFor="set-codec" hidden={hide("set-codec")}>
           {S.settings.codecPreference}

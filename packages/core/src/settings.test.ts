@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, mergeSettings } from "./settings.js";
 import type { DownloadPreset } from "./types.js";
+import { CONTAINERS } from "./types.js";
 
 describe("mergeSettings", () => {
   it("clamps concurrency to 1-5 and keeps the rest", () => {
@@ -173,6 +174,7 @@ describe("mergeSettings", () => {
       "minimizeToTray",
       "notifyFinished",
       "onboardingDone",
+      "pacing",
       "playlistSubfolder",
       "postDownloadAction",
       "presetBySite",
@@ -211,5 +213,117 @@ describe("mergeSettings", () => {
     expect(
       mergeSettings(DEFAULT_SETTINGS, { includeAutoSubs: false }).includeAutoSubs,
     ).toBe(false);
+  });
+});
+
+/**
+ * v1.7.2: pacing + container sanitization. Both are trust-boundary values
+ * (hand-editable JSON on disk), and an unvalidated value reaches yt-dlp, which
+ * ABORTS on an unknown container or a negative delay — so a corrupt settings
+ * file must never be able to break every download.
+ */
+describe("pacing settings", () => {
+  it("defaults to fully off", () => {
+    expect(DEFAULT_SETTINGS.pacing).toEqual({
+      sleepRequestsSec: null,
+      minSleepIntervalSec: null,
+      maxSleepIntervalSec: null,
+      sleepSubtitlesSec: null,
+    });
+  });
+
+  it("keeps whole seconds and rejects junk", () => {
+    const merged = mergeSettings(DEFAULT_SETTINGS, {
+      pacing: {
+        sleepRequestsSec: 2.7,
+        minSleepIntervalSec: 5,
+        maxSleepIntervalSec: null,
+        sleepSubtitlesSec: -3,
+      },
+    });
+    expect(merged.pacing.sleepRequestsSec).toBe(2);
+    expect(merged.pacing.minSleepIntervalSec).toBe(5);
+    expect(merged.pacing.maxSleepIntervalSec).toBeNull();
+    // Negative = off, never handed to yt-dlp.
+    expect(merged.pacing.sleepSubtitlesSec).toBeNull();
+  });
+
+  it("clamps absurd values into a sane band", () => {
+    const merged = mergeSettings(DEFAULT_SETTINGS, {
+      pacing: {
+        sleepRequestsSec: 99_999,
+        minSleepIntervalSec: 1e9,
+        maxSleepIntervalSec: 2e9,
+        sleepSubtitlesSec: 5,
+      },
+    });
+    expect(merged.pacing.sleepRequestsSec).toBe(60);
+    expect(merged.pacing.minSleepIntervalSec).toBe(3600);
+    expect(merged.pacing.maxSleepIntervalSec).toBe(3600);
+    expect(merged.pacing.sleepSubtitlesSec).toBe(5);
+  });
+
+  it("falls back to the base for a non-object", () => {
+    const base = { ...DEFAULT_SETTINGS.pacing, sleepRequestsSec: 3 };
+    const merged = mergeSettings({ ...DEFAULT_SETTINGS, pacing: base }, {
+      pacing: "nonsense",
+    } as never);
+    expect(merged.pacing.sleepRequestsSec).toBe(3);
+  });
+});
+
+describe("container settings", () => {
+  it("drops a container yt-dlp would reject", () => {
+    const merged = mergeSettings(DEFAULT_SETTINGS, { mergeContainer: "exe" });
+    // Falls back to the base value rather than forwarding junk to yt-dlp.
+    expect(merged.mergeContainer).toBe(DEFAULT_SETTINGS.mergeContainer);
+  });
+
+  it("accepts every offered container, normalised", () => {
+    for (const c of CONTAINERS) {
+      expect(mergeSettings(DEFAULT_SETTINGS, { mergeContainer: c }).mergeContainer).toBe(c);
+    }
+    expect(mergeSettings(DEFAULT_SETTINGS, { mergeContainer: " MKV " }).mergeContainer).toBe("mkv");
+  });
+
+  it("keeps a valid per-preset container and drops an invalid one", () => {
+    const withValid = mergeSettings(DEFAULT_SETTINGS, {
+      defaultPreset: {
+        kind: "video",
+        videoPreset: "1080",
+        audioPreset: "MP3",
+        rawFormat: null,
+        container: "mkv",
+      },
+    });
+    expect(withValid.defaultPreset.container).toBe("mkv");
+
+    // A hand-edited settings file can hold anything: the disk is a trust
+    // boundary, so the type is widened here deliberately.
+    const withJunk = mergeSettings(DEFAULT_SETTINGS, {
+      defaultPreset: {
+        kind: "video",
+        videoPreset: "1080",
+        audioPreset: "MP3",
+        rawFormat: null,
+        container: "rm -rf",
+      } as unknown as DownloadPreset,
+    });
+    expect(withJunk.defaultPreset.container).toBeUndefined();
+  });
+
+  it("keeps a per-site container", () => {
+    const merged = mergeSettings(DEFAULT_SETTINGS, {
+      presetBySite: {
+        youtube: {
+          kind: "video",
+          videoPreset: "1080",
+          audioPreset: "MP3",
+          rawFormat: null,
+          container: "mkv",
+        },
+      },
+    });
+    expect(merged.presetBySite["youtube"]?.container).toBe("mkv");
   });
 });

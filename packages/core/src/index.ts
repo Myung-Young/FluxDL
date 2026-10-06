@@ -244,6 +244,7 @@ export {
   computeBackoffMs,
   clampConcurrency,
   activeCount,
+  unfinishedCount,
   selectNextToStart,
   shouldRetry,
   retryInSeconds,
@@ -270,13 +271,16 @@ export {
   MINI_HEIGHT,
   MINI_WIDTH,
   NORMAL_BOUNDS,
+  RESTORE_VISIBLE_PX,
   WORK_AREA_MARGIN,
   boundsFor,
   centerIn,
   chromeState,
   fitToWorkArea,
+  isRestorable,
   miniRows,
   miniSummary,
+  restoreOrigin,
 } from "./window.js";
 export type { MiniSummary, Rect, WindowChromeState, WindowSize } from "./window.js";
 export { THEMES, THEME_NAMES, isThemeName, themeSwatch } from "./themes.js";

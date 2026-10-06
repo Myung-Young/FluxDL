@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createQueueStore, createSettingsStore } from "./stores.js";
+import type { SettingsStoreEngine } from "./stores.js";
 import { makeJob } from "./queue.js";
 import type { AppSettings, DownloadJob, DownloadJobInput, EngineProgress } from "./index.js";
 import { DEFAULT_SETTINGS } from "./settings.js";
@@ -91,7 +92,55 @@ describe("stores", () => {
     expect(e.stored.concurrency).toBe(99);
   });
 
-  it("queue store routes progress into state", async () => {    const e = makeEngine();
+  it("queue store routes progress into state", async () => {
+    const e = makeEngine();
+    const store = createQueueStore(e, { concurrency: 2, maxRetries: 3 });
+    await store.getState().enqueue(input);
+    expect(typeof e.started[0]?.title).toBe("string");
+  });
+
+  it("a slow load never rolls back a newer save (v1.7.2)", async () => {
+    // The Shell starts `load()` on mount; if the user flips a setting before
+    // that round-trip lands, the late `load()` used to overwrite the store and
+    // the control silently reverted (this is what made the language selector
+    // look dead right after a restart).
+    let releaseLoad: (() => void) | undefined;
+    const engine: SettingsStoreEngine = {
+      loadSettings: () =>
+        new Promise<AppSettings>((resolve) => {
+          releaseLoad = () => {
+            resolve(DEFAULT_SETTINGS);
+          };
+        }),
+      saveSettings: (patch) => Promise.resolve({ ...DEFAULT_SETTINGS, ...patch }),
+    };
+    const store = createSettingsStore(engine);
+    const loading = store.getState().load();
+    await store.getState().save({ language: "ms" });
+    expect(store.getState().settings.language).toBe("ms");
+    // The stale load finally answers with the on-disk (English) value.
+    const release = releaseLoad;
+    expect(typeof release).toBe("function");
+    if (typeof release === "function") release();
+    await loading;
+    expect(store.getState().settings.language).toBe("ms");
+    expect(store.getState().ready).toBe(true);
+  });
+
+  it("a save that beats the initial load still marks the store ready", async () => {
+    const engine: SettingsStoreEngine = {
+      loadSettings: () => new Promise<AppSettings>(() => undefined),
+      saveSettings: (patch) => Promise.resolve({ ...DEFAULT_SETTINGS, ...patch }),
+    };
+    const store = createSettingsStore(engine);
+    void store.getState().load();
+    await store.getState().save({ theme: "ember" });
+    expect(store.getState().ready).toBe(true);
+    expect(store.getState().settings.theme).toBe("ember");
+  });
+
+  it("queue store routes progress into state (real engine)", async () => {
+    const e = makeEngine();
     const store = createQueueStore(e, { concurrency: 2, maxRetries: 3 });
     await store.getState().enqueue(input);
     e.fire({

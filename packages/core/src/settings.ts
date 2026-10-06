@@ -2,12 +2,13 @@ import type {
   AppSettings,
   AudioPreset,
   CodecPreference,
+  Container,
   Density,
   DownloadPreset,
   Language,
   VideoPreset,
 } from "./types.js";
-import { AUDIO_PRESETS, CLOSE_BEHAVIORS, VIDEO_PRESETS } from "./types.js";
+import { AUDIO_PRESETS, CLOSE_BEHAVIORS, CONTAINERS, VIDEO_PRESETS } from "./types.js";
 import { THEME_NAMES } from "./themes.js";
 import { clampConcurrency } from "./queue.js";
 
@@ -27,6 +28,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   embedSubs: false,
   includeAutoSubs: true,
   mergeContainer: "mp4",
+  // Polite pacing is OFF by default: a user who wants human-like delays opts
+  // in, and the default argv stays byte-identical to earlier versions (v1.7.2).
+  pacing: {
+    sleepRequestsSec: null,
+    minSleepIntervalSec: null,
+    maxSleepIntervalSec: null,
+    sleepSubtitlesSec: null,
+  },
   sponsorBlock: false,
   codecPreference: "auto",
   skipArchived: true,
@@ -96,6 +105,37 @@ function clampHistoryLimit(n: unknown): number {
   return Math.min(5000, Math.max(10, Math.floor(n)));
 }
 
+/**
+ * Pacing delay: null (off) or whole seconds clamped to a sane band (v1.7.2).
+ * yt-dlp rejects a negative or NaN value, so a hand-edited settings file must
+ * never be able to break every download.
+ */
+function cleanDelay(value: unknown, maxSec: number): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const seconds = Math.floor(value);
+  if (seconds <= 0) return null;
+  return Math.min(maxSec, seconds);
+}
+
+function cleanPacing(value: unknown, base: AppSettings["pacing"]): AppSettings["pacing"] {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return base;
+  const rec = value as Record<string, unknown>;
+  return {
+    sleepRequestsSec: cleanDelay(rec["sleepRequestsSec"], 60),
+    minSleepIntervalSec: cleanDelay(rec["minSleepIntervalSec"], 3600),
+    maxSleepIntervalSec: cleanDelay(rec["maxSleepIntervalSec"], 3600),
+    sleepSubtitlesSec: cleanDelay(rec["sleepSubtitlesSec"], 600),
+  };
+}
+
+/** Container value, dropped (rather than passed to yt-dlp) when unknown. */
+function cleanContainer(value: unknown): Container | null {
+  if (typeof value !== "string") return null;
+  const v = value.trim().toLowerCase();
+  return CONTAINERS.includes(v as Container) ? (v as Container) : null;
+}
+
 /** Per-site preset map: garbage keys/presets are dropped, never defaulted. */
 function cleanPresetBySite(value: unknown): Record<string, DownloadPreset> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
@@ -120,11 +160,13 @@ function cleanPresetBySite(value: unknown): Record<string, DownloadPreset> {
     ) {
       continue;
     }
+    const siteContainer = cleanContainer(rec["container"]);
     out[key] = {
       kind,
       videoPreset: videoPreset as VideoPreset,
       audioPreset: audioPreset as AudioPreset,
       rawFormat: null,
+      ...(siteContainer !== null ? { container: siteContainer } : {}),
     };
   }
   return out;
@@ -190,11 +232,13 @@ function cleanPreset(
   ) {
     return fallback;
   }
+  const container = cleanContainer(rec["container"]);
   return {
     kind,
     videoPreset: videoPreset as VideoPreset,
     audioPreset: audioPreset as AudioPreset,
     rawFormat: null,
+    ...(container !== null ? { container } : {}),
   };
 }
 
@@ -230,7 +274,8 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
     subtitleLangs: cleanString(patch.subtitleLangs, base.subtitleLangs),
     embedSubs: cleanBool(patch.embedSubs, base.embedSubs),
     includeAutoSubs: cleanBool(patch.includeAutoSubs, base.includeAutoSubs),
-    mergeContainer: cleanString(patch.mergeContainer, base.mergeContainer),
+    mergeContainer: cleanContainer(patch.mergeContainer) ?? base.mergeContainer,
+    pacing: cleanPacing(patch.pacing ?? base.pacing, base.pacing),
     sponsorBlock: cleanBool(patch.sponsorBlock, base.sponsorBlock),
     codecPreference: CODECS.includes(codecRaw) ? codecRaw : base.codecPreference,
     skipArchived: cleanBool(patch.skipArchived, base.skipArchived),

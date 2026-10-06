@@ -133,16 +133,29 @@ export interface SettingsStoreState {
 }
 
 export function createSettingsStore(engine: SettingsStoreEngine): StoreApi<SettingsStoreState> {
+  // Lost-update guard (v1.7.2). The Shell kicks off `load()` on mount and the
+  // user can flip a setting before that IPC round-trip lands. Both used to
+  // `set` unconditionally, so a slow `load()` resolved *after* the `save()`
+  // and silently rolled the user's change back — the control looked like it
+  // had applied (the flash said "Saved.") but the value reverted. Counting
+  // writes makes the in-flight load yield to anything newer.
+  let writes = 0;
   return create<SettingsStoreState>()((set, get) => ({
     settings: DEFAULT_SETTINGS,
     ready: false,
     load: async () => {
+      const seen = writes;
       const loaded = await engine.loadSettings();
+      // A save landed while we were reading: that value is newer, keep it.
+      if (seen !== writes) return;
       set({ settings: mergeSettings(DEFAULT_SETTINGS, loaded), ready: true });
     },
     save: async (patch) => {
+      writes += 1;
       const saved = await engine.saveSettings(patch);
-      set({ settings: mergeSettings(get().settings, saved) });
+      // `ready` too: a save that beats the initial load must not leave the
+      // Settings screen stuck on "Loading…" with the new value already in.
+      set({ settings: mergeSettings(get().settings, saved), ready: true });
     },
   }));
 }

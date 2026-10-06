@@ -5,7 +5,7 @@ import type { DownloadJob } from "./types.js";
 import { actionsFor, type ErrorAction, type ErrorActionId } from "./errors.js";
 import type { Strings } from "./strings.js";
 import { useStrings } from "./locale.js";
-import { activeCount } from "./queue.js";
+import { unfinishedCount } from "./queue.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 import type { ToastStoreState } from "./toast.js";
 
@@ -94,7 +94,13 @@ export function ErrorActionButtons({
         }
         case "update-retry": {
           // Never run -U while downloads are active (engine blocks too).
-          if (activeCount(queue.getState().jobs) > 0) {
+          // v1.7.2: `activeCount` counts only in-flight jobs, but the engine
+          // refuses while ANY of its jobs exists — including PAUSED ones. The
+          // pre-check therefore passed, the engine threw, and the user got a
+          // generic "update failed" for what is really "busy". Both sides now
+          // agree: any unfinished queue job blocks it.
+          const blocking = unfinishedCount(queue.getState().jobs);
+          if (blocking > 0) {
             toast.getState().push(S.errors.updateBlockedBusy, "error");
             break;
           }
@@ -103,8 +109,20 @@ export function ErrorActionButtons({
             await engine.updateEngine();
             toast.getState().push(S.errors.engineUpdated, "success");
             await queue.getState().retry(job.id);
-          } catch {
-            toast.getState().push(S.logs.updateFailed, "error");
+          } catch (err) {
+            // Surface the engine's reason (it maps the refusal itself) instead
+            // of flattening everything into "update failed".
+            const detail = err instanceof Error ? err.message : "";
+            toast
+              .getState()
+              .push(
+                /busy|running|active/i.test(detail)
+                  ? S.errors.updateBlockedBusy
+                  : detail.length > 0
+                    ? `${S.logs.updateFailed} ${detail}`
+                    : S.logs.updateFailed,
+                "error",
+              );
           } finally {
             setBusy(null);
           }
@@ -154,7 +172,16 @@ export function ErrorActionButtons({
           break;
         }
       }
-    })().catch(() => undefined);
+      // v1.7.2: an unexpected throw must not leave the button looking like it
+      // worked. Show the reason instead of swallowing the whole action.
+    })().catch((err: unknown) => {
+      toast
+        .getState()
+        .push(
+          err instanceof Error && err.message.length > 0 ? err.message : S.errors.actionFailed,
+          "error",
+        );
+    });
   };
 
   return (

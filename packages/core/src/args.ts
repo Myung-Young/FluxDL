@@ -1,4 +1,5 @@
-import type { CodecPreference, DownloadPreset, LiveStatus } from "./types.js";
+import type { CodecPreference, Container, DownloadPreset, LiveStatus } from "./types.js";
+import { CONTAINERS, MERGE_CONTAINERS } from "./types.js";
 import { PROGRESS_TEMPLATE } from "./progress.js";
 import { normalizeUrl } from "./url.js";
 import { sanitizePlaylistTitle } from "./playlist.js";
@@ -12,7 +13,17 @@ import { buildParseMetadataArgs, type AudioMetadata } from "./metadata.js";
  * --audio-format, --audio-quality,
  * --merge-output-format, --ffmpeg-location, --embed-*, --write-subs, --write-auto-subs,
  * --sponsorblock-*, --limit-rate, --proxy, --cookies-from-browser, --cookies,
- * --download-archive, -U/--update, --live-from-start, --wait-for-video, --hls-use-mpegts.
+ * --download-archive, -U/--update, --live-from-start, --wait-for-video, --hls-use-mpegts,
+ * --merge-output-format, --remux-video,
+ * --sleep-requests, --min-sleep-interval, --max-sleep-interval, --sleep-subtitles.
+ *
+ * Value sets verified against the BUNDLED yt-dlp 2026.08.19:
+ *   --audio-format       best aac alac flac m4a mp3 opus vorbis wav
+ *   --remux-video        avi flv gif mkv mov mp4 webm aac aiff alac flac m4a mka
+ *                        mp3 ogg opus vorbis wav
+ *   --merge-output-format avi flv mkv mov mp4 webm
+ * Anything outside those lists is dropped rather than passed on: yt-dlp aborts
+ * on an unknown value, so a stale setting must never reach the child process.
  */
 
 export interface DownloadArgsInput {
@@ -56,6 +67,52 @@ export interface DownloadArgsInput {
    * made Library > "Download again" a no-op.
    */
   readonly forceOverwrite?: boolean;
+  /**
+   * Polite pacing delays in seconds (v1.7.2). All optional and all off by
+   * default; only finite values >= 0 are emitted, and `--max-sleep-interval`
+   * only alongside `--min-sleep-interval` because yt-dlp rejects it alone.
+   */
+  readonly sleepRequestsSec?: number | null;
+  readonly minSleepIntervalSec?: number | null;
+  readonly maxSleepIntervalSec?: number | null;
+  readonly sleepSubtitlesSec?: number | null;
+}
+
+/** A finite delay of at least `min` seconds, or null when it is off. */
+function delayArg(value: number | null | undefined, min: number): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  // Off is checked BEFORE the floor: 0 must mean "no flag", never "floor to
+  // the minimum", otherwise a cleared field would silently add a delay.
+  if (value <= 0) return null;
+  const seconds = Math.max(min, Math.floor(value));
+  return seconds <= 0 ? null : String(seconds);
+}
+
+/**
+ * yt-dlp pacing flags for a download, in the order yt-dlp documents them.
+ * Pure and exported so the mapping is pinned by tests without spawning.
+ */
+export function pacingArgs(pacing: {
+  readonly sleepRequestsSec?: number | null | undefined;
+  readonly minSleepIntervalSec?: number | null | undefined;
+  readonly maxSleepIntervalSec?: number | null | undefined;
+  readonly sleepSubtitlesSec?: number | null | undefined;
+}): string[] {
+  const out: string[] = [];
+  const requests = delayArg(pacing.sleepRequestsSec, 0);
+  if (requests !== null) out.push("--sleep-requests", requests);
+  const min = delayArg(pacing.minSleepIntervalSec, 1);
+  if (min !== null) {
+    out.push("--min-sleep-interval", min);
+    const max = delayArg(pacing.maxSleepIntervalSec, 1);
+    // --max-sleep-interval is only accepted together with the minimum.
+    if (max !== null && Number(max) >= Number(min)) {
+      out.push("--max-sleep-interval", max);
+    }
+  }
+  const subs = delayArg(pacing.sleepSubtitlesSec, 0);
+  if (subs !== null) out.push("--sleep-subtitles", subs);
+  return out;
 }
 
 export function buildChapterOutputTemplate(
@@ -94,16 +151,34 @@ function sanitizePlaylistSubdir(raw: string): string | null {
   return segs.length > 0 ? segs.join("/") : null;
 }
 
-function audioFormatOf(preset: DownloadPreset): string {
+/**
+ * yt-dlp `-x` target for an audio preset.
+ *
+ * Verified against yt-dlp 2026.08.19 (`--audio-format`): best (default), aac,
+ * alac, flac, m4a, mp3, opus, vorbis, wav. "Best" is NOT a conversion target —
+ * it means keep the source stream, so the caller must skip `-x` entirely
+ * (returning null here is how that is expressed).
+ */
+export function audioFormatOf(preset: DownloadPreset): string | null {
   switch (preset.audioPreset) {
     case "MP3":
       return "mp3";
     case "M4A":
       return "m4a";
+    case "AAC":
+      return "aac";
     case "Opus":
       return "opus";
+    case "Vorbis":
+      return "vorbis";
     case "FLAC":
       return "flac";
+    case "ALAC":
+      return "alac";
+    case "WAV":
+      return "wav";
+    case "Best":
+      return null;
   }
 }
 
@@ -125,6 +200,39 @@ function videoFormatOf(preset: DownloadPreset): string {
       // Same 1080p cap as "1080"; codecSortOf() forces H.264 + AAC via -S.
       return "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best";
   }
+}
+
+/**
+ * Container for a video job: the per-job override when set, else the global
+ * setting. Only values the bundled yt-dlp accepts are honoured — an unknown
+ * container makes it abort, so a stale or hand-edited setting is dropped rather
+ * than passed on (v1.7.2).
+ */
+function chosenContainer(input: Pick<DownloadArgsInput, "preset" | "mergeContainer">): string | null {
+  const override = input.preset.container;
+  const chosen =
+    typeof override === "string" && override.length > 0 ? override : input.mergeContainer;
+  const value = chosen.trim().toLowerCase();
+  return CONTAINERS.includes(value as Container) ? value : null;
+}
+
+/**
+ * `--merge-output-format` value, or null. yt-dlp's mergeable set is narrower
+ * than its remux set (no gif), so a remux-only target gets the remux flag only.
+ */
+export function mergeContainerOf(
+  input: Pick<DownloadArgsInput, "preset" | "mergeContainer">,
+): string | null {
+  const value = chosenContainer(input);
+  if (value === null) return null;
+  return MERGE_CONTAINERS.includes(value as Container) ? value : null;
+}
+
+/** `--remux-video` value, or null (covers single-stream sources too). */
+export function remuxContainerOf(
+  input: Pick<DownloadArgsInput, "preset" | "mergeContainer">,
+): string | null {
+  return chosenContainer(input);
 }
 
 /**
@@ -185,19 +293,30 @@ export function buildDownloadArgs(input: DownloadArgsInput): string[] {
     args.push("--format", input.preset.rawFormat.trim());
   } else if (input.preset.kind === "audio") {
     args.push("--format", "bestaudio/best");
-    args.push("--extract-audio");
-    args.push("--audio-format", audioFormatOf(input.preset));
-    // Default yt-dlp audio quality is VBR ~5 (~160kbps). Music downloads
-    // expect studio quality, so pin the best VBR level.
-    args.push("--audio-quality", "0");
+    // "Best" keeps the source stream: no extraction, no re-encode (v1.7.2).
+    const audioFormat = audioFormatOf(input.preset);
+    if (audioFormat !== null) {
+      args.push("--extract-audio");
+      args.push("--audio-format", audioFormat);
+      // Default yt-dlp audio quality is VBR ~5 (~160kbps). Music downloads
+      // expect studio quality, so pin the best VBR level.
+      args.push("--audio-quality", "0");
+    }
   } else {
     args.push("--format", videoFormatOf(input.preset));
     const sort = codecSortOf(input.preset, input.codecPreference);
     if (sort !== null) {
       args.push("--format-sort", sort);
     }
-    if (input.mergeContainer.trim().length > 0) {
-      args.push("--merge-output-format", input.mergeContainer.trim());
+    const container = chosenContainer(input);
+    if (container !== null) {
+      // Both flags on purpose: --merge-output-format only applies when a merge
+      // is required, while --remux-video also covers a single-stream source.
+      // Together they make the chosen container stick (v1.7.2). The merge set
+      // is narrower than the remux set (no gif), so they are gated separately.
+      const merge = mergeContainerOf(input);
+      if (merge !== null) args.push("--merge-output-format", merge);
+      args.push("--remux-video", container);
     }
   }
 
@@ -269,6 +388,16 @@ export function buildDownloadArgs(input: DownloadArgsInput): string[] {
     );
   }
   args.push(input.noPlaylist ? "--no-playlist" : "--yes-playlist");
+  // Polite pacing last, right before the URL (v1.7.2). Off by default: an
+  // empty array adds nothing, so the default argv is byte-identical to before.
+  args.push(
+    ...pacingArgs({
+      sleepRequestsSec: input.sleepRequestsSec,
+      minSleepIntervalSec: input.minSleepIntervalSec,
+      maxSleepIntervalSec: input.maxSleepIntervalSec,
+      sleepSubtitlesSec: input.sleepSubtitlesSec,
+    }),
+  );
   args.push(url);
   return args;
 }

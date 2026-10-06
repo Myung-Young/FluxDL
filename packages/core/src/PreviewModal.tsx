@@ -14,7 +14,18 @@ export interface PreviewModalProps {
 }
 
 function isVideo(path: string): boolean {
-  return /\.(mp4|m4v|webm|mkv)$/i.test(path);
+  return /\.(mp4|m4v|webm|mkv|mov|avi|3gp)$/i.test(path);
+}
+
+/** `m:ss` / `h:mm:ss` for the media element's reported duration. */
+function clock(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "—";
+  const total = Math.floor(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const mm = h > 0 ? String(m).padStart(2, "0") : String(m);
+  return h > 0 ? `${String(h)}:${mm}:${String(s).padStart(2, "0")}` : `${mm}:${String(s).padStart(2, "0")}`;
 }
 
 /**
@@ -33,8 +44,11 @@ export function PreviewModal({
   const S = useStrings(settings);
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState<boolean>(false);
+  /** Duration reported by the media element (null until metadata lands). */
+  const [duration, setDuration] = useState<number | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
-  const mediaRef = useRef<HTMLVideoElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -108,21 +122,35 @@ export function PreviewModal({
           </p>
         ) : isVideo(path) ? (
           <video
-            ref={mediaRef}
+            ref={videoRef}
             className="preview-media"
             src={url}
             controls
             preload="metadata"
             data-testid="preview-video"
+            onLoadedMetadata={(e) => {
+              setDuration(e.currentTarget.duration);
+            }}
           />
         ) : (
           <audio
+            ref={audioRef}
             className="preview-media"
             src={url}
             controls
             preload="metadata"
             data-testid="preview-audio"
+            onLoadedMetadata={(e) => {
+              setDuration(e.currentTarget.duration);
+            }}
           />
+        )}
+        {url !== null && duration !== null && (
+          // Surfaces the duration the file really has; a `0:00` readout here
+          // means the media protocol served a non-seekable response.
+          <p className="muted" data-testid="preview-duration">
+            {S.home.previewDuration}: {clock(duration)}
+          </p>
         )}
         <div className="chip-row">
           {isVideo(path) && url !== null && (
@@ -133,7 +161,7 @@ export function PreviewModal({
                 onClick={() => {
                   // Both APIs exist in Electron 36; failures (e.g. no video
                   // track loaded yet) stay silent by design.
-                  mediaRef.current?.requestPictureInPicture().catch(() => undefined);
+                  void videoRef.current?.requestPictureInPicture().catch(() => undefined);
                 }}
               >
                 {S.library.previewPip}
@@ -142,7 +170,7 @@ export function PreviewModal({
                 type="button"
                 className="btn btn-small"
                 onClick={() => {
-                  mediaRef.current?.requestFullscreen().catch(() => undefined);
+                  void videoRef.current?.requestFullscreen().catch(() => undefined);
                 }}
               >
                 {S.library.previewFullscreen}

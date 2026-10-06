@@ -27,6 +27,12 @@ async function installMock(page: Page): Promise<void> {
       embedSubs: false,
       includeAutoSubs: true,
       mergeContainer: "mp4",
+      pacing: {
+        sleepRequestsSec: null,
+        minSleepIntervalSec: null,
+        maxSleepIntervalSec: null,
+        sleepSubtitlesSec: null,
+      },
       sponsorBlock: false,
       codecPreference: "auto",
       skipArchived: true,
@@ -59,6 +65,7 @@ async function installMock(page: Page): Promise<void> {
     };
     const started: Array<unknown> = [];
     const historyFixture: unknown[] = [];
+    const clipboardWrites: string[] = [];
     let chromeState = { mini: false, theme: "obsidian" };
     let chromeListeners: Array<(s: { mini: boolean; theme: string }) => void> = [];
     const fireProgress = (id: string): void => {
@@ -79,6 +86,10 @@ async function installMock(page: Page): Promise<void> {
     let n = 0;
     const mock = {
       getInfo: (url: string): Promise<unknown> =>
+        // Every MediaInfo field is present on purpose: the mock used to omit
+        // `extractor`/`videoId`, and the renderer treated the missing key as a
+        // string, crashing the whole Home view (which is where the Batch
+        // button lives). A mock must satisfy the same contract as the engine.
         Promise.resolve({
           url,
           title: "Mock Video",
@@ -86,6 +97,11 @@ async function installMock(page: Page): Promise<void> {
           duration: 125,
           thumbnail: null,
           isPlaylist: false,
+          extractor: "generic",
+          // Derived from the URL: a constant id made every link share one
+          // identity, so the duplicate guard fired on unrelated URLs (the
+          // batch queue test queued three different links and was blocked).
+          videoId: url.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, ""),
           entries: [],
           formats: [
             {
@@ -102,6 +118,9 @@ async function installMock(page: Page): Promise<void> {
               protocol: "https",
             },
           ],
+          liveStatus: null,
+          chapters: null,
+          uploadDate: null,
         }),
       start: (job: unknown): Promise<string> => {
         started.push(job);
@@ -154,6 +173,9 @@ async function installMock(page: Page): Promise<void> {
       updateHistory: (): Promise<void> => Promise.resolve(),
       getThumbnailColor: (): Promise<null> => Promise.resolve(null),
       fileExistsBulk: (): Promise<boolean[]> => Promise.resolve([]),
+      // v1.7.2: the Stats screen measures sizeless history rows off disk.
+      fileSizesBulk: (paths: string[]): Promise<Array<number | null>> =>
+        Promise.resolve(paths.map(() => null)),
       archiveHas: (): Promise<boolean[]> => Promise.resolve([]),
       clearArchive: (): Promise<void> => Promise.resolve(),
       setAggregateProgress: (): Promise<void> => Promise.resolve(),
@@ -170,9 +192,13 @@ async function installMock(page: Page): Promise<void> {
         };
       },
       loadSettings: (): Promise<unknown> => Promise.resolve({ ...settings }),
+      // Persist into the same object the real engine uses, so a later
+      // `loadSettings()` returns what was saved. Returning a merged copy
+      // without keeping it made every setting silently revert on the next
+      // read — which is how a "dead" language selector got misread as a UI bug.
       saveSettings: (patch: unknown): Promise<unknown> => {
         if (typeof patch === "object" && patch !== null) {
-          return Promise.resolve({ ...settings, ...patch });
+          Object.assign(settings, patch);
         }
         return Promise.resolve({ ...settings });
       },
@@ -189,6 +215,12 @@ async function installMock(page: Page): Promise<void> {
       onDeepLink: (): (() => void) => () => undefined,
       onBatchLink: (): (() => void) => () => undefined,
       readClipboard: (): Promise<null> => Promise.resolve(null),
+      // v1.7.2: copies now go through main; the mock records them so the test
+      // can assert the text actually reached the clipboard bridge.
+      writeClipboard: (text: string): Promise<boolean> => {
+        clipboardWrites.push(text);
+        return Promise.resolve(true);
+      },
       getDiskSpace: (): Promise<null> => Promise.resolve(null),
       getJobArgs: (): Promise<null> => Promise.resolve(null),
       getStorageInsights: (): Promise<unknown> =>
@@ -222,6 +254,7 @@ async function installMock(page: Page): Promise<void> {
       openExternal: (): Promise<void> => Promise.resolve(),
       _started: started,
       _chrome: () => chromeState,
+      _clipboardWrites: clipboardWrites,
       _setHistory: (rows: unknown[]) => {
         historyFixture.length = 0;
         historyFixture.push(...rows);
@@ -381,12 +414,162 @@ test("logs: repair engine reports verified", async () => {
   await page.locator('[data-testid="logs-search"]').fill("zzz-no-match");
   await expect(page.locator(".grabber-view").getByText("No matching lines.")).toBeVisible();
   await page.locator('[data-testid="logs-copy-log"]').click();
-  // Headless clipboard permission varies: either note proves the button ran.
-  // Scoped to the log card (the diagnostics card shows its own copy note).
-  await expect(
-    page.locator(".grabber-view").getByText(/Log copied\.|Copy failed\./).first(),
-  ).toBeVisible();
+  // v1.7.2: copies MUST succeed now. This assertion used to accept
+  // "Copy failed." as a pass, which is exactly why the bug survived: the DOM
+  // clipboard path is refused inside the sandboxed renderer, so every Copy
+  // button was broken in the shipped app while CI stayed green. The note only
+  // appears when the MAIN-process clipboard write resolved true — this e2e app
+  // runs the real preload + IPC, so it exercises the shipped path.
+  await expect(page.locator(".grabber-view").getByText("Log copied.").first()).toBeVisible();
+  await expect(page.locator(".grabber-view").getByText("Copy failed.")).toHaveCount(0);
   await page.locator('[data-testid="logs-search"]').fill("");
+  expect(pageErrors).toEqual([]);
+});
+
+test("v1.7.2: Refresh + Show command work without picking a job first", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+  await installMock(page);
+  await page.reload();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await expect(page.locator('[data-testid="grabber-shell"]')).toBeVisible({ timeout: 30000 });
+  // Seed one history row so there is something to preselect.
+  await page.evaluate(() => {
+    const mock = (
+      window as unknown as { __grabberOverride?: { _setHistory?: (rows: unknown[]) => void } }
+    ).__grabberOverride;
+    mock?._setHistory?.([
+      {
+        id: "log-1",
+        url: "https://youtu.be/aqz-KE-bpKQ",
+        title: "A logged video",
+        preset: { kind: "video", videoPreset: "1080", audioPreset: "MP3", rawFormat: null },
+        outputDir: "C:\\Vids",
+        status: "done",
+        progress: 100,
+        speed: null,
+        eta: null,
+        downloadedBytes: 10,
+        totalBytes: 10,
+        stage: "done",
+        error: null,
+        createdAt: Date.now() - 1000,
+        finishedAt: Date.now(),
+        attempts: 0,
+        nextRetryAt: null,
+        destination: "C:\\Vids\\logged.mp4",
+      },
+    ]);
+  });
+
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Logs" }).click();
+  await expect(page.locator('[data-testid="logs-refresh"]')).toBeVisible({ timeout: 15000 });
+  // Both were permanently disabled before the fix.
+  await expect(page.locator('[data-testid="logs-refresh"]')).toBeEnabled();
+  await expect(page.locator('[data-testid="logs-show-command"]')).toBeEnabled();
+
+  await page.locator('[data-testid="logs-show-command"]').click();
+  await page.locator('[data-testid="logs-refresh"]').click();
+  await expect(page.locator('[data-testid="logs-refresh"]')).toBeEnabled();
+  expect(pageErrors).toEqual([]);
+});
+
+test("v1.7.2: every search box accepts a real click and filters", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+  await installMock(page);
+  await page.reload();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await expect(page.locator('[data-testid="grabber-shell"]')).toBeVisible({ timeout: 30000 });
+
+  // Library — the box must exist even with no history yet.
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Library" }).click();
+  await expect(page.locator('[data-testid="library-search"]')).toBeVisible({ timeout: 15000 });
+  await page.locator('[data-testid="library-search"]').click();
+  await page.locator('[data-testid="library-search"]').pressSequentially("abc");
+  await expect(page.locator('[data-testid="library-search"]')).toHaveValue("abc");
+
+  // Settings.
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Settings" }).click();
+  await expect(page.locator('[data-testid="settings-search"]')).toBeVisible({ timeout: 15000 });
+  await page.locator('[data-testid="settings-search"]').click();
+  await page.locator('[data-testid="settings-search"]').pressSequentially("proxy");
+  await expect(page.locator("#set-proxy")).toBeVisible();
+
+  // Logs.
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Logs" }).click();
+  await expect(page.locator('[data-testid="logs-search"]')).toBeVisible({ timeout: 15000 });
+  await page.locator('[data-testid="logs-search"]').click();
+  await page.locator('[data-testid="logs-search"]').pressSequentially("zz");
+  await expect(page.locator('[data-testid="logs-search"]')).toHaveValue("zz");
+
+  // Downloads — the command bar (and its search box) used to vanish entirely
+  // with an empty queue.
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Downloads" }).click();
+  await expect(page.locator('[data-testid="downloads-search"]')).toBeVisible({ timeout: 15000 });
+  await page.locator('[data-testid="downloads-search"]').click();
+  await page.locator('[data-testid="downloads-search"]').pressSequentially("queue");
+  await expect(page.locator('[data-testid="downloads-search"]')).toHaveValue("queue");
+  expect(pageErrors).toEqual([]);
+});
+
+test("v1.7.2: Batch explains why its buttons are disabled, then works", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+  await installMock(page);
+  await page.reload();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await expect(page.locator('[data-testid="grabber-shell"]')).toBeVisible({ timeout: 30000 });
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Home" }).click();
+  await page.locator('[data-testid="home-mode-batch"]').click();
+  await expect(page.locator('[data-testid="batch-panel"]')).toBeVisible({ timeout: 15000 });
+
+  // Unparseable input must say so instead of silently adding nothing.
+  await page.locator('[data-testid="batch-input"]').fill("https://");
+  await page.locator('[data-testid="batch-add"]').click();
+  await expect(
+    page.locator(".grabber-view").getByText(/No links found in that text/),
+  ).toBeVisible();
+  await expect(page.locator('[data-testid="batch-row"]')).toHaveCount(0);
+
+  // A real link enables Analyze, and the hint guides the next step.
+  await page.locator('[data-testid="batch-input"]').fill("https://example.com/b9");
+  await page.locator('[data-testid="batch-add"]').click();
+  await expect(page.locator('[data-testid="batch-row"]')).toHaveCount(1);
+  await expect(page.locator('[data-testid="batch-analyze"]')).toBeEnabled();
+  await expect(page.locator('[data-testid="batch-queue"]')).toBeDisabled();
+
+  await page.locator('[data-testid="batch-analyze"]').click();
+  await expect(page.locator('[data-testid="batch-queue"]')).toBeEnabled({
+    timeout: 15000,
+  });
+  await page.locator('[data-testid="batch-queue"]').click();
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Downloads" }).click();
+  await expect(page.locator(".dl-card")).toHaveCount(1, { timeout: 15000 });
   expect(pageErrors).toEqual([]);
 });
 
@@ -556,7 +739,8 @@ test("settings: search filters rows and clears", async () => {
   await page.locator('[data-testid="settings-search"]').fill("proxy");
   await expect(page.locator("#set-proxy")).toBeVisible();
   await expect(page.locator("#set-theme-label")).toBeHidden();
-  await expect(page.locator(".grabber-view")).toContainText("of 20 settings");
+  // The field count grows with every release, so match the shape not the number.
+  await expect(page.locator(".grabber-view")).toContainText(/\d+ of \d+ settings/);
   await page.locator('[data-testid="settings-search"]').fill("zzz-no-match");
   await expect(page.locator(".grabber-view")).toContainText("No settings match.");
   await page.locator('[data-testid="settings-search"]').fill("");
@@ -836,5 +1020,93 @@ outputDir: "C:\\Vids",
     return (mock?._started ?? [])[0] as { forceOverwrite?: boolean } | undefined;
   });
   expect(payload?.forceOverwrite).toBe(true);
+  expect(pageErrors).toEqual([]);
+});
+
+test("v1.7.2: every container and audio format is offered", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+  await installMock(page);
+  await page.reload();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await expect(page.locator('[data-testid="grabber-shell"]')).toBeVisible({ timeout: 30000 });
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Settings" }).click();
+  await expect(page.locator("#set-merge")).toBeVisible({ timeout: 15000 });
+
+  // Exactly the container set the bundled yt-dlp accepts (verified with
+  // `yt-dlp --help`): avi flv mkv mov mp4 webm, plus gif for --remux-video.
+  const containers = await page.locator("#set-merge option").allTextContents();
+  expect(containers.map((c) => c.trim()).sort()).toEqual(
+    ["avi", "flv", "gif", "mkv", "mov", "mp4", "webm"].sort(),
+  );
+
+  // …and the full --audio-format set on the audio preset chips.
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Home" }).click();
+  await page.locator("#home-url").fill("https://example.com/formats");
+  await page.locator(".url-row .btn").filter({ hasText: "Analyze" }).click();
+  await expect(page.locator(".preview-title")).toHaveText("Mock Video", { timeout: 15000 });
+  // The Batch panel has its own Audio chip, so scope to the preview card.
+  await page.locator(".grabber-card").filter({ has: page.locator(".preview-title") }).getByRole("button", { name: "Audio" }).click();
+// Chip labels carry an estimated size after the preset name.
+  const audioChips = (await page.locator(".chip-row .chip").allTextContents()).map(
+    (t) => t.split(" -")[0]?.trim() ?? t,
+  );
+  // Exactly yt-dlp's --audio-format set: best aac alac flac m4a mp3 opus
+  // vorbis wav.
+  expect(audioChips.sort()).toEqual(
+    ["AAC", "ALAC", "Best", "FLAC", "M4A", "MP3", "Opus", "Vorbis", "WAV"].sort(),
+  );
+  expect(pageErrors).toEqual([]);
+});
+
+test("v1.7.2: polite pacing persists and reaches the download", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+  await installMock(page);
+  await page.reload();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await expect(page.locator('[data-testid="grabber-shell"]')).toBeVisible({ timeout: 30000 });
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Settings" }).click();
+
+  // Empty by default = off.
+  await expect(page.locator('[data-setting="sleepRequestsSec"]')).toHaveValue("");
+
+  // The "Standard" preset fills in yt-dlp's documented flags.
+  await page.locator(".chip").filter({ hasText: "Standard" }).first().click();
+  await expect(page.locator('[data-setting="sleepRequestsSec"]')).toHaveValue("2", {
+    timeout: 10000,
+  });
+  await expect(page.locator('[data-setting="minSleepIntervalSec"]')).toHaveValue("5");
+  await expect(page.locator('[data-setting="maxSleepIntervalSec"]')).toHaveValue("10");
+
+  const saved = await page.evaluate(() => {
+    const mock = (
+      window as unknown as { __grabberOverride?: { loadSettings?: () => Promise<unknown> } }
+    ).__grabberOverride;
+    return mock?.loadSettings?.() ?? null;
+  });
+  expect(saved).toMatchObject({
+    pacing: {
+      sleepRequestsSec: 2,
+      minSleepIntervalSec: 5,
+      maxSleepIntervalSec: 10,
+    },
+  });
   expect(pageErrors).toEqual([]);
 });

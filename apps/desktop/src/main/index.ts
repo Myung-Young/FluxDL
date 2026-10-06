@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu, Tray, dialog, nativeImage, protocol, screen, session, shell } from "electron";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, createReadStream } from "node:fs";
 import { join } from "node:path";
+import { Readable } from "node:stream";
 import { APP_NAME } from "@grabber/core/branding.js";
 import { IPC_CHANNELS } from "@grabber/core/engine.js";
 import { STRINGS, STRINGS_MS } from "@grabber/core/strings.js";
@@ -11,7 +12,7 @@ import { DesktopEngine } from "./desktopEngine.js";
 import { registerEngineIpc } from "./ipc.js";
 import { resolveTaskbarCommand } from "./taskbar.js";
 import { loadSettingsFromDisk } from "./persist.js";
-import { boundsFor, centerIn, fitToWorkArea } from "@grabber/core/window.js";
+import { boundsFor, centerIn, fitToWorkArea, restoreOrigin } from "@grabber/core/window.js";
 import { colorsFor, createWindowChrome } from "./windowChrome.js";
 
 // Native dialogs (window.confirm, showOpenDialog) title themselves with the
@@ -46,7 +47,7 @@ try {
 
 function focusWindow(): void {
   if (mainWindow === null) {
-    void createWindow();
+    void createWindowOnce();
   } else {
     if (!mainWindow.isVisible()) mainWindow.show();
     mainWindow.focus();
@@ -56,6 +57,8 @@ function focusWindow(): void {
 /** Route an OS-provided URL to the UI (focus first, never lose it silently). */
 function handleDeepLink(url: string): void {
   focusWindow();
+  // Handed straight to the engine (it broadcasts to the renderer); if the
+  // window is not up yet the engine buffers it below instead of dropping it.
   try {
     getEngine().emitDeepLink(url);
   } catch {
@@ -113,6 +116,26 @@ let mainWindow: BrowserWindow | null = null;
 let engine: DesktopEngine | null = null;
 let tray: Tray | null = null;
 let quitting = false;
+/**
+ * In-flight window creation (v1.7.2).
+ *
+ * `createWindow` awaits `chrome.ready()` and then the page load, so
+ * `mainWindow` stays null for the whole of it. A protocol/second-instance event
+ * arriving in that window used to start ANOTHER create and then immediately
+ * emit its deep link into a `mainWindow?.webContents` that did not exist yet —
+ * silently dropping the link, and leaving an orphan window behind.
+ */
+let creatingWindow: Promise<void> | null = null;
+function createWindowOnce(): Promise<void> {
+  creatingWindow ??= createWindow().finally(() => {
+    creatingWindow = null;
+  });
+  return creatingWindow;
+}
+/** Deep link handed over before the renderer could receive it. */
+let pendingLink: string | null = null;
+/** Batch text handed over before the renderer could receive it. */
+let pendingBatch: string | null = null;
 /** Mini-mode chrome state (M4.4); owned here, mirrored to the renderer. */
 const chrome = createWindowChrome({
   userDataDir: app.getPath("userData"),
@@ -213,6 +236,21 @@ function handleBatchText(text: string): void {
   }
 }
 
+/**
+ * Deliver a queued deep link / batch once the renderer is actually able to
+ * receive IPC (v1.7.2). Called from `did-finish-load` alongside the boot-time
+ * links.
+ */
+function flushPending(): void {
+  if (mainWindow === null || mainWindow.webContents.isLoading()) return;
+  const link = pendingLink;
+  const batch = pendingBatch;
+  pendingLink = null;
+  pendingBatch = null;
+  if (link !== null) mainWindow.webContents.send(IPC_CHANNELS.onDeepLink, link);
+  if (batch !== null) mainWindow.webContents.send(IPC_CHANNELS.onBatchLink, batch);
+}
+
 function refreshTaskbar(): void {
   if (mainWindow === null) return;
   // Taskbar badge mirrors the active count (E4).
@@ -297,9 +335,21 @@ async function createWindow(): Promise<void> {
   // never be adjusted by the user, so it is clamped to the display work area
   // instead — otherwise the title bar or the last row would sit off-screen on
   // a 1366x768 laptop or a 150% scaled panel.
+  const displays = screen.getAllDisplays();
   const workArea = screen.getPrimaryDisplay().workArea;
   const size = fitToWorkArea(boundsFor(false), workArea);
-  const origin = centerIn(workArea, size);
+  // v1.7.2: reopen where the user last parked the window. The size is fixed but
+  // the position is theirs; it is only honoured while the remembered spot is
+  // still on a connected display (a monitor can be unplugged between runs),
+  // otherwise the window centres as before.
+  const restored = restoreOrigin(
+    state.normalX !== null && state.normalY !== null
+      ? { x: state.normalX, y: state.normalY }
+      : null,
+    size,
+    displays.map((d) => d.workArea),
+  );
+  const origin = restored ?? centerIn(workArea, size);
   const win = new BrowserWindow({
     ...origin,
     width: size.width,
@@ -331,7 +381,21 @@ async function createWindow(): Promise<void> {
   // before mini mode ever resizes this window (D124: minimum first).
   win.setMinimumSize(size.width, size.height);
   win.setMaximumSize(size.width, size.height);
+  // Remember the placement (v1.7.2). `move` fires continuously while the user
+  // drags, so it is debounced and the controller drops no-op writes.
+  let moveTimer: NodeJS.Timeout | null = null;
+  win.on("move", () => {
+    if (moveTimer !== null) clearTimeout(moveTimer);
+    moveTimer = setTimeout(() => {
+      moveTimer = null;
+      void chrome.notePosition().catch(() => undefined);
+    }, 400);
+  });
   win.on("closed", () => {
+    if (moveTimer !== null) {
+      clearTimeout(moveTimer);
+      moveTimer = null;
+    }
     if (mainWindow === win) mainWindow = null;
   });
   // Close behavior is a setting: "tray" hides (downloads continue),
@@ -436,6 +500,8 @@ async function createWindow(): Promise<void> {
         // Engine failure here is fatal elsewhere already.
       }
     }
+    // Anything the engine buffered while the page was still loading.
+    flushPending();
   });
   // Auto-start boots straight into the tray (E5).
   if (bootMinimized) win.hide();
@@ -451,7 +517,7 @@ function setupTray(): void {
         label: "Show",
         click: () => {
           if (mainWindow === null) {
-            void createWindow();
+            void createWindowOnce();
           } else {
             mainWindow.show();
             mainWindow.focus();
@@ -500,10 +566,19 @@ function getEngine(): DesktopEngine {
       appVersion: app.getVersion(),
       defaultOutputDir: app.getPath("downloads"),
       broadcastDeepLink: (url) => {
-        mainWindow?.webContents.send(IPC_CHANNELS.onDeepLink, url);
+        // Buffer until the renderer can actually receive IPC (v1.7.2).
+        if (mainWindow === null || mainWindow.webContents.isLoading()) {
+          pendingLink = url;
+          return;
+        }
+        mainWindow.webContents.send(IPC_CHANNELS.onDeepLink, url);
       },
       broadcastBatchLink: (text) => {
-        mainWindow?.webContents.send(IPC_CHANNELS.onBatchLink, text);
+        if (mainWindow === null || mainWindow.webContents.isLoading()) {
+          pendingBatch = text;
+          return;
+        }
+        mainWindow.webContents.send(IPC_CHANNELS.onBatchLink, text);
       },
       broadcast: (event) => {
         mainWindow?.webContents.send(IPC_CHANNELS.onProgress, event);
@@ -583,15 +658,29 @@ void app.whenReady().then(() => {
   maybeWriteUpdateNote();
   // In-app preview serves allowlisted download outputs over media://
   // (never file://). Unknown/forbidden paths resolve to HTTP errors.
+  // Range requests are honoured (206 + Accept-Ranges) — without them the
+  // media elements report a duration of 0:00 and cannot be scrubbed (v1.7.2).
   protocol.handle("media", async (request) => {
     try {
-      const served = await getEngine().serveMediaRequest(request.url);
+      const served = await getEngine().serveMediaRequest(
+        request.url,
+        request.headers.get("Range"),
+      );
       if (served === null) return new Response("Forbidden", { status: 403 });
-      // Buffer is a Uint8Array at runtime (accepted body); the DOM lib
-      // types do not know that, hence the narrow cast (no `any` involved).
-      const body = served.body as unknown as BodyInit;
-      return new Response(body, {
-        headers: { "Content-Type": served.mime },
+      if (served.path === undefined) {
+        return new Response(served.body ?? "", {
+          status: served.status,
+          headers: { ...served.headers },
+        });
+      }
+      const start = served.start ?? 0;
+      const end = served.end ?? 0;
+      const stream = createReadStream(served.path, { start, end });
+      // A stream keeps a 2 GB video out of the renderer heap; the old code
+      // read the entire file with readFile() before answering.
+      return new Response(Readable.toWeb(stream) as ReadableStream, {
+        status: served.status,
+        headers: { ...served.headers },
       });
     } catch {
       return new Response("Internal error", { status: 500 });
@@ -618,11 +707,11 @@ void app.whenReady().then(() => {
     // Non-fatal: engine falls back to bundled/PATH copies.
     console.warn("[binaries] userData copy skipped:", err instanceof Error ? err.message : err);
   });
-  void createWindow();
+  void createWindowOnce();
   if (bootOpenFolder) openDownloadsFolder();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      void createWindow();
+      void createWindowOnce();
     } else {
       mainWindow?.show();
     }

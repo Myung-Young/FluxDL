@@ -166,3 +166,51 @@ Further reading: `CHANGELOG.md` (release notes),
 Issues and pull requests are welcome. Conventional commits (`feat:`,
 `fix:`, `chore:`, `docs:`, `test:` …), surgical diffs, and please keep the
 four gates green before pushing.
+
+## Legal & responsible use
+
+FluxDL is a **neutral, general-purpose front end for `yt-dlp`**. It carries no
+third-party brand names or logos, and it is not affiliated with, endorsed by,
+or derived from any platform.
+
+- **Licence** — MIT, including the full "AS IS" warranty disclaimer and the
+  authors' limitation of liability. See [`LICENSE`](LICENSE).
+- **Neutral branding** — "FluxDL" only. No platform names appear in the app
+  name, icons or UI copy; `yt-dlp` is credited as the engine it drives.
+- **No DRM circumvention** — the app only uses `yt-dlp`'s standard
+  capabilities for media that is publicly accessible. It contains nothing for
+  defeating Widevine, FairPlay, PlayReady or any other encryption, and never
+  will. That keeps it firmly in the dual-use category rather than the
+  circumvention category.
+- **Zero telemetry** — no URLs, titles or history ever leave your machine.
+  The only outbound request the app ever makes is the GitHub Releases check for
+  app updates (`api.github.com`), plus thumbnail fetches for the media you
+  yourself asked to preview. There is no analytics, no crash reporting and no
+  server-side log.
+- **You are responsible** — you are responsible for respecting copyright and
+  each site's terms of service, and for having the right to keep whatever you
+  download. Only download content you own or are allowed to keep. The in-app
+  Logs screen repeats this notice.
+
+### Reducing the chance of an IP block
+
+Platforms rate-limit by IP, and HTTP 429 is what a burst of parallel requests
+looks like from the other side.
+
+- **Concurrency** — default **2** simultaneous downloads (`Settings ▸ Downloads`,
+  max 5). Staying at 1–2 is the single biggest factor.
+- **Polite pacing** — `Settings ▸ Network ▸ Polite pacing` maps 1:1 onto
+  `yt-dlp`'s documented flags (`--sleep-requests`,
+  `--min-sleep-interval` / `--max-sleep-interval`, `--sleep-subtitles`), so
+  requests and downloads are spaced out like ordinary viewing instead of a
+  scrape. Off by default; "Light" or "Standard" presets fill it in.
+- **Proxy / VPN support** — `Settings ▸ Network ▸ Proxy` accepts any
+  HTTP/HTTPS/SOCKS proxy (credentials are redacted before the command line is
+  ever shown or logged). Point it at your own proxy, or just run your VPN.
+- **Cookies** — for media that needs a signed-in session, use your own browser
+  cookie jar (`Settings ▸ Network`). It is read locally and never uploaded.
+- **Clear your history** — `Library ▸ Clear all` wipes the local download
+  history whenever you want it gone.
+
+None of these make downloading someone else's content legal; they only keep a
+legitimate download from looking like an attack.

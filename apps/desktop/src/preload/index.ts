@@ -50,6 +50,7 @@ export interface GrabberApi {
   revealInFolder(path: string): Promise<void>;
   fileExists(path: string): Promise<boolean>;
   fileExistsBulk(paths: string[]): Promise<boolean[]>;
+  fileSizesBulk(paths: string[]): Promise<Array<number | null>>;
   archiveHas(keys: string[]): Promise<boolean[]>;
   trashFile(path: string): Promise<void>;
   updateHistory(job: DownloadJob): Promise<void>;
@@ -62,6 +63,7 @@ export interface GrabberApi {
   loadHistory(): Promise<DownloadJob[]>;
   removeHistory(id: string): Promise<void>;
   clearHistory(): Promise<void>;
+  restoreHistory(jobs: DownloadJob[]): Promise<void>;
   loadWatchlist(): Promise<WatchChannel[]>;
   saveWatchlist(channels: WatchChannel[]): Promise<void>;
   getDiskSpace(path: string): Promise<{ freeBytes: number } | null>;
@@ -71,6 +73,7 @@ export interface GrabberApi {
   onDeepLink(cb: DeepLinkCallback): Unsubscribe;
   onBatchLink(cb: DeepLinkCallback): Unsubscribe;
   readClipboard(): Promise<string | null>;
+  writeClipboard(text: string): Promise<boolean>;
   checkForUpdates(force?: boolean): Promise<UpdateStatus>;
   startUpdateDownload(): Promise<void>;
   getUpdateDownloadProgress(): Promise<UpdateDownloadProgress>;
@@ -126,6 +129,8 @@ const api: GrabberApi = {
     ipcRenderer.invoke(IPC_CHANNELS.fileExists, path) as Promise<boolean>,
   fileExistsBulk: (paths) =>
     ipcRenderer.invoke(IPC_CHANNELS.fileExistsBulk, paths) as Promise<boolean[]>,
+  fileSizesBulk: (paths) =>
+    ipcRenderer.invoke(IPC_CHANNELS.fileSizesBulk, paths) as Promise<Array<number | null>>,
   archiveHas: (keys) =>
     ipcRenderer.invoke(IPC_CHANNELS.archiveHas, keys) as Promise<boolean[]>,
   trashFile: (path) => ipcRenderer.invoke(IPC_CHANNELS.trashFile, path) as Promise<void>,
@@ -141,6 +146,8 @@ const api: GrabberApi = {
   loadHistory: () => ipcRenderer.invoke(IPC_CHANNELS.loadHistory) as Promise<DownloadJob[]>,
   removeHistory: (id) => ipcRenderer.invoke(IPC_CHANNELS.removeHistory, id) as Promise<void>,
   clearHistory: () => ipcRenderer.invoke(IPC_CHANNELS.clearHistory) as Promise<void>,
+  restoreHistory: (jobs) =>
+    ipcRenderer.invoke(IPC_CHANNELS.restoreHistory, jobs) as Promise<void>,
   loadWatchlist: () =>
     ipcRenderer.invoke(IPC_CHANNELS.loadWatchlist) as Promise<WatchChannel[]>,
   saveWatchlist: (channels) =>
@@ -152,6 +159,8 @@ const api: GrabberApi = {
   getStorageInsights: () =>
     ipcRenderer.invoke(IPC_CHANNELS.getStorageInsights) as Promise<StorageInsights>,
   readClipboard: () => ipcRenderer.invoke(IPC_CHANNELS.readClipboard) as Promise<string | null>,
+  writeClipboard: (text) =>
+    ipcRenderer.invoke(IPC_CHANNELS.writeClipboard, text) as Promise<boolean>,
   getRawLog: (id) => ipcRenderer.invoke(IPC_CHANNELS.getRawLog, id) as Promise<string | null>,
   onDeepLink: (cb) => {
     const listener = (_event: IpcRendererEvent, url: string): void => {

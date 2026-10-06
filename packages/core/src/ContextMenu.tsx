@@ -46,10 +46,20 @@ export function ContextMenu({ label, items, x, y, onClose }: ContextMenuProps): 
   }
 
   const buttons = useRef<Array<HTMLButtonElement | null>>([]);
+  // v1.7.2: where to put focus when a submenu collapses. Left used to jump to
+  // the very top of the menu instead of back to the item that opened it.
+  const restoreId = useRef<string | null>(null);
+
+  // Only LIVE buttons: the ref array keeps its high-water length (React calls
+  // the ref callbacks with null when a submenu unmounts), so using `.length`
+  // as the arrow-key modulus made ArrowDown land on a null slot and silently
+  // do nothing — focus got stuck instead of wrapping.
+  const liveButtons = (): HTMLButtonElement[] =>
+    buttons.current.filter((b): b is HTMLButtonElement => b !== null);
 
   useEffect(() => {
     lastFocus.current = document.activeElement;
-    buttons.current[0]?.focus();
+    liveButtons()[0]?.focus();
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -57,18 +67,19 @@ export function ContextMenu({ label, items, x, y, onClose }: ContextMenuProps): 
         else closeRef.current();
         return;
       }
-      const idx = buttons.current.findIndex((b) => b === document.activeElement);
+      const items = liveButtons();
+      if (items.length === 0) return;
+      const idx = items.findIndex((b) => b === document.activeElement);
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         const dir = e.key === "ArrowDown" ? 1 : -1;
-        const next = (idx + dir + buttons.current.length) % buttons.current.length;
-        buttons.current[next]?.focus();
+        items[(idx + dir + items.length) % items.length]?.focus();
       } else if (e.key === "Home") {
         e.preventDefault();
-        buttons.current[0]?.focus();
+        items[0]?.focus();
       } else if (e.key === "End") {
         e.preventDefault();
-        buttons.current[buttons.current.length - 1]?.focus();
+        items[items.length - 1]?.focus();
       }
     };
     const onPointer = (e: PointerEvent): void => {
@@ -82,16 +93,22 @@ export function ContextMenu({ label, items, x, y, onClose }: ContextMenuProps): 
       document.removeEventListener("keydown", onKey);
       document.removeEventListener("pointerdown", onPointer);
       const back = lastFocus.current;
-      if (back instanceof HTMLElement) back.focus();
+      if (back instanceof HTMLElement) back.focus({ preventScroll: true });
     };
   }, [expanded]);
 
   useEffect(() => {
-    if (expanded === null) return;
-    const firstChild = buttons.current.find(
-      (b) => b?.dataset["parent"] === expanded,
-    );
-    firstChild?.focus();
+    if (expanded !== null) {
+      const firstChild = liveButtons().find((b) => b.dataset["parent"] === expanded);
+      firstChild?.focus();
+      return;
+    }
+    const back = restoreId.current;
+    restoreId.current = null;
+    if (back === null) return;
+    liveButtons()
+      .find((b) => b.dataset["id"] === back)
+      ?.focus();
   }, [expanded]);
 
   const left = Math.max(8, Math.min(x, window.innerWidth - MENU_WIDTH - 8));
@@ -115,6 +132,7 @@ export function ContextMenu({ label, items, x, y, onClose }: ContextMenuProps): 
           type="button"
           role="menuitem"
           data-parent={parent?.id ?? ""}
+          data-id={def.id}
           disabled={def.disabled === true}
           aria-haspopup={def.children !== undefined ? "true" : undefined}
           aria-expanded={
@@ -135,6 +153,8 @@ export function ContextMenu({ label, items, x, y, onClose }: ContextMenuProps): 
               setExpanded(def.id);
             } else if (e.key === "ArrowLeft" && parent !== null) {
               e.preventDefault();
+              // Collapse back onto the item that opened this submenu.
+              restoreId.current = parent.id;
               setExpanded(null);
             }
           }}

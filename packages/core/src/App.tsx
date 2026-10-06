@@ -30,8 +30,20 @@ export function App(): React.JSX.Element {
   const [toast] = useState<StoreApi<ToastStoreState>>(() => createToastStore());
 
   useEffect(() => {
-    void ensureNotificationPermission();
-  }, []);
+    // Ask ONLY when notifications are actually wanted, and only after settings
+    // are known. It used to run on every mount, before `load()` resolved, so
+    // the OS prompt appeared on every launch even for users who had turned
+    // finished-download notifications off (v1.7.2).
+    if (engine === null || settings === null) return;
+    void settings
+      .getState()
+      .load()
+      .then(() => {
+        if (!settings.getState().settings.notifyFinished) return;
+        return ensureNotificationPermission();
+      })
+      .catch(() => undefined);
+  }, [engine, settings]);
 
   useEffect(() => {
     if (engine === null || settings === null) return;

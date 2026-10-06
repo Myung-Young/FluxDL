@@ -63,9 +63,12 @@ test("a checkbox toggle is written to disk and survives a reload", async () => {
   await page.locator(".grabber-nav-btn").filter({ hasText: "Settings" }).click();
   await expect(page.locator(".grabber-view h1")).toHaveText("Settings", { timeout: 20000 });
 
-  const toggles = page.locator(".settings-grid .check-col");
-  await expect(toggles).toBeVisible();
-  const first = toggles.locator("input[type=checkbox]").first();
+  // Address the toggle by its SETTING KEY, not by position: the rows are
+  // regrouped and reordered with every release, which is what silently broke
+  // this test before (it was asserting `embedThumbnail` while clicking the
+  // first checkbox, which is now a subtitle toggle).
+  const first = page.locator('input[data-setting="embedThumbnail"]');
+  await expect(first).toBeVisible({ timeout: 15000 });
   const before = await first.isChecked();
   await first.click();
   await expect(first).toBeChecked({ timeout: 10000 });
@@ -78,7 +81,7 @@ test("a checkbox toggle is written to disk and survives a reload", async () => {
   await expect(page.locator('[data-testid="grabber-shell"]')).toBeVisible({ timeout: 60000 });
   await page.locator(".grabber-nav-btn").filter({ hasText: "Settings" }).click();
   await expect(page.locator(".grabber-view h1")).toHaveText("Settings", { timeout: 20000 });
-  await expect(page.locator(".settings-grid .check-col").locator("input[type=checkbox]").first()).toBeChecked({
+  await expect(page.locator('input[data-setting="embedThumbnail"]')).toBeChecked({
     timeout: 15000,
   });
 });

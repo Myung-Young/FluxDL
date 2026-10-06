@@ -6,12 +6,14 @@ import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
 import type {
   AudioPreset,
+  Container,
   DownloadJob,
   DownloadPreset,
   MediaInfo,
   MediaKind,
   VideoPreset,
 } from "./types.js";
+import { AUDIO_PRESETS as CORE_AUDIO_PRESETS, CONTAINERS } from "./types.js";
 import type { Strings } from "./strings.js";
 import { pressScale } from "./motion.js";
 import { formatStr, localeTag, resolveLanguage, useStrings } from "./locale.js";
@@ -20,6 +22,7 @@ import { sanitizePlaylistTitle } from "./playlist.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 import { useDuplicateGuard } from "./DuplicatePrompt.js";
 import type { GuardInput } from "./identity.js";
+import { newRequestId } from "./requestId.js";
 import {
   MAX_BATCH_BYTES,
   addBatchEntries,
@@ -53,7 +56,7 @@ const VIDEO_PRESETS: readonly VideoPreset[] = [
   "720",
   "480",
 ];
-const AUDIO_PRESETS: readonly AudioPreset[] = ["MP3", "M4A", "Opus", "FLAC"];
+const AUDIO_PRESETS: readonly AudioPreset[] = [...CORE_AUDIO_PRESETS];
 
 function statusLabel(strings: Strings, status: BatchStatus): string {
   switch (status) {
@@ -144,6 +147,16 @@ export function BatchPanel({
 
   const globalPreset: DownloadPreset = { kind, videoPreset, audioPreset, rawFormat: null };
 
+/**
+ * Attach a per-row container override to the preset (v1.7.2). Kept as a
+ * helper so `queueAll` cannot forget it — a lost override would silently
+ * download into the wrong container, which is exactly the kind of "I picked
+ * MKV and got MP4" bug this is meant to remove.
+ */
+function withContainer(preset: DownloadPreset, container: Container | null): DownloadPreset {
+  return container === null ? preset : { ...preset, container };
+}
+
   const ingest = (raw: string): void => {
     const parsed = parseBatchText(raw);
     setEntries(addBatchEntries(entriesRef.current, parsed.valid));
@@ -155,6 +168,12 @@ export function BatchPanel({
       parts.push(formatStr(S.batch.duplicatesSkipped, { n: parsed.duplicates }));
     }
     if (parsed.truncated) parts.push(S.batch.truncatedNote);
+    // v1.7.2: say what happened to a paste that produced NOTHING. Silence here
+    // is what made "Add" look broken — the list stayed empty and both action
+    // buttons stayed greyed out with no explanation anywhere on screen.
+    if (parsed.valid.length === 0 && raw.trim().length > 0) {
+      parts.push(S.batch.nothingFound);
+    }
     setNote(parts.length > 0 ? parts.join(" ") : null);
   };
 
@@ -209,7 +228,7 @@ export function BatchPanel({
             continue;
           }
           setEntries(updateBatchEntry(entriesRef.current, key, { status: "analyzing" }));
-          const requestId = crypto.randomUUID();
+          const requestId = newRequestId();
           inFlight.current.set(key, requestId);
           try {
             const info = await engine.getInfo(entry.url, { requestId });
@@ -240,6 +259,11 @@ export function BatchPanel({
         }
       };
       await Promise.all([worker(), worker(), worker()]);
+    } catch (err) {
+      // v1.7.2: never let the pool die quietly. A throw here used to leave the
+      // busy flag cleared with every row still "Pending" and nothing on screen
+      // explaining why Analyze appeared to do nothing.
+      setNote(err instanceof Error && err.message.length > 0 ? err.message : S.home.analyzeFailed);
     } finally {
       setBusy(false);
     }
@@ -292,7 +316,7 @@ export function BatchPanel({
         const row = byUrl.get(g.url);
         const info = row?.info;
         if (row === undefined || info === null || info === undefined) continue;
-        const preset = row.preset ?? globalPreset;
+        const preset = withContainer(row.preset ?? globalPreset, row.preset?.container ?? null);
         const playlist = info.isPlaylist && info.entries.length > 0;
         const playlistDir =
           playlist && settingsState.playlistSubfolder
@@ -337,11 +361,14 @@ export function BatchPanel({
 
   const readyCount = entries.filter((e) => e.status === "ready").length;
   const failedCount = entries.filter((e) => e.status === "failed").length;
+  /** Rows still waiting for their first analyze pass. */
+  const pendingCount = entries.filter((e) => e.status === "pending").length;
   const presets = kind === "video" ? VIDEO_PRESETS : AUDIO_PRESETS;
 
   return (
     <div
       className="grabber-card"
+      data-testid="batch-panel"
       aria-label={S.batch.title}
       onDragOver={(e) => {
         e.preventDefault();
@@ -361,6 +388,7 @@ export function BatchPanel({
       </label>
       <textarea
         id="batch-input"
+        data-testid="batch-input"
         className="input batch-text"
         placeholder={S.batch.inputPlaceholder}
         value={text}
@@ -373,6 +401,7 @@ export function BatchPanel({
       <div className="chip-row">
         <button
           id="batch-add"
+          data-testid="batch-add"
           type="button"
           className="btn"
           onPointerDown={(e) => {
@@ -513,6 +542,33 @@ export function BatchPanel({
                   </option>
                 ))}
               </select>
+              {/* Per-row output container (v1.7.2): every container the
+                  bundled yt-dlp can produce or remux into. */}
+              <select
+                className="input"
+                aria-label={S.settings.mergeContainer}
+                data-testid="batch-container"
+                value={e.preset?.container ?? "global"}
+                onChange={(sel) => {
+                  const value = sel.target.value;
+                  const next = value === "global" ? null : (value as Container);
+                  setEntries(
+                    updateBatchEntry(entriesRef.current, e.key, {
+                      preset:
+                        e.preset === null
+                          ? null
+                          : { ...e.preset, container: next },
+                    }),
+                  );
+                }}
+              >
+                <option value="global">{S.batch.useGlobalContainer}</option>
+                {CONTAINERS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
               <button
                 type="button"
                 className="btn btn-small"
@@ -530,9 +586,11 @@ export function BatchPanel({
       <div className="chip-row">
         <button
           id="batch-analyze"
+          data-testid="batch-analyze"
           type="button"
           className="btn btn-primary"
-          disabled={busy || entries.length === 0}
+          disabled={busy || pendingCount === 0}
+          title={pendingCount === 0 && entries.length > 0 ? S.batch.analyzedAll : S.batch.analyzeAll}
           onPointerDown={(e) => {
             pressScale(e.currentTarget);
           }}
@@ -555,9 +613,11 @@ export function BatchPanel({
         )}
         <button
           id="batch-queue"
+          data-testid="batch-queue"
           type="button"
           className="btn"
           disabled={busy || queueing || readyCount === 0}
+          title={readyCount === 0 ? S.batch.needReady : S.batch.queueAllReady}
           onPointerDown={(e) => {
             pressScale(e.currentTarget);
           }}
@@ -580,7 +640,32 @@ export function BatchPanel({
             {S.batch.retryFailed} ({String(failedCount)})
           </button>
         )}
+        {entries.length > 0 && (
+          <button
+            type="button"
+            className="btn btn-small"
+            disabled={busy || queueing}
+            onClick={() => {
+              setEntries([]);
+              setNote(null);
+            }}
+          >
+            {S.batch.clear}
+          </button>
+        )}
       </div>
+      {/* v1.7.2: never leave a greyed-out button unexplained. The Batch flow is
+          three clicks long (add -> analyze -> queue) and a disabled control with
+          no reason reads as "the button is broken". */}
+      {entries.length > 0 && !busy && (
+        <p className="hint" role="status">
+          {pendingCount > 0
+            ? S.batch.needLinks
+            : readyCount > 0
+              ? formatStr(S.batch.readyToQueue, { n: readyCount })
+              : S.batch.needReady}
+        </p>
+      )}
       {note !== null && (
         <p className="note" role="status">
           {note}

@@ -110,7 +110,13 @@ export function buildDiagnostics(data: DiagnosticsData): string {
     lines.push(L.reportNoErrors);
   } else {
     for (const e of errors) {
-      lines.push(`[${new Date(e.at).toISOString()}] (${e.category}) ${redactText(e.message, data.includeUrls)}`);
+      // v1.7.2: `toISOString()` THROWS on a non-finite timestamp. History rows
+      // are read from disk and a corrupt `createdAt` (or a `1e999` that JSON
+      // parses to Infinity) reaches here, the throw was swallowed by the Logs
+      // caller, and Copy/Save diagnostics silently did nothing. A report is
+      // more useful with one "?" in it than no report at all.
+      const stamp = Number.isFinite(e.at) ? new Date(e.at).toISOString() : "?";
+      lines.push(`[${stamp}] (${e.category}) ${redactText(e.message, data.includeUrls)}`);
     }
   }
   lines.push("", L.reportLog + (data.logJobTitle !== null ? ` (${data.logJobTitle})` : ""));

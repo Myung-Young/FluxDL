@@ -14,6 +14,7 @@ import { ShortcutsDialog } from "./ShortcutsDialog.js";
 import { CommandPalette } from "./CommandPalette.js";
 import type { CommandContext } from "./commands.js";
 import { AppIcon } from "./icons.js";
+import type { Strings } from "./strings.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
 import { UpdateModal } from "./UpdateModal.js";
 import type { UpdateStatus } from "./engine.js";
@@ -110,6 +111,13 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   const [pendingSection, setPendingSection] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState<boolean>(false);
   const [shortcutsOpen, setShortcutsOpen] = useState<boolean>(false);
+  // Stable identity for the dialog's onClose (v1.7.2). An inline arrow gave
+  // it a new identity on every Shell render — and the Shell re-renders on
+  // every progress event — so the dialog's focus effect tore down and re-ran
+  // constantly, restoring focus to the background element each time.
+  const closeShortcuts = useCallback((): void => {
+    setShortcutsOpen(false);
+  }, []);
   const [aggregateText, setAggregateText] = useState<string>("");
   const [replayOnboarding, setReplayOnboarding] = useState<boolean>(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState<boolean>(false);
@@ -164,7 +172,18 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   const mainRef = useRef<HTMLElement | null>(null);
 
   const resumedOnce = useRef<boolean>(false);
+  const bootedOnce = useRef<boolean>(false);
+  // The boot effect must run EXACTLY once. It used to list `S` as a
+  // dependency, so every language or theme change re-ran it: settings were
+  // re-read from disk and the whole queue re-hydrated mid-session. On top of
+  // being wasteful that re-hydration re-queued in-flight jobs, and the
+  // settings re-read could land after a just-made change and roll it back
+  // (v1.7.2). Latest strings are read through a ref instead.
+  const stringsRef = useRef<Strings>(S);
+  stringsRef.current = S;
   useEffect(() => {
+    if (bootedOnce.current) return;
+    bootedOnce.current = true;
     void settings
       .getState()
       .load()
@@ -179,11 +198,12 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
         resumedOnce.current = true;
         const paused = queue.getState().jobs.filter((j) => j.status === "paused");
         if (paused.length === 0) return;
+        const texts = stringsRef.current;
         toast.getState().push(
-          formatStr(S.status.pausedResume, { count: paused.length }),
+          formatStr(texts.status.pausedResume, { count: paused.length }),
           "info",
           {
-            label: S.downloads.resumeAll,
+            label: texts.downloads.resumeAll,
             run: () => {
               queue.getState().resumeAll().catch(() => undefined);
             },
@@ -191,7 +211,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
         );
       })
       .catch(() => undefined);
-  }, [queue, settings, toast, S]);
+  }, [queue, settings, toast]);
 
   useEffect(() => {
     document.documentElement.dataset["theme"] = effectiveTheme;
@@ -818,12 +838,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
         }}
       />
       {shortcutsOpen && (
-        <ShortcutsDialog
-          strings={S}
-          onClose={() => {
-            setShortcutsOpen(false);
-          }}
-        />
+        <ShortcutsDialog strings={S} onClose={closeShortcuts} />
       )}
       {((settingsReady && !onboardingDone && !onboardingDismissed) || replayOnboarding) && (
         <Onboarding

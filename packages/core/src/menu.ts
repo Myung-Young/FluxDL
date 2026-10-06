@@ -1,3 +1,4 @@
+import { AUDIO_PRESETS as CORE_AUDIO_PRESETS } from "./types.js";
 import type {
   AudioPreset,
   DownloadPreset,
@@ -41,7 +42,7 @@ export const MENU_VIDEO_PRESETS: readonly VideoPreset[] = [
   "720",
   "480",
 ];
-export const MENU_AUDIO_PRESETS: readonly AudioPreset[] = ["MP3", "M4A", "Opus", "FLAC"];
+export const MENU_AUDIO_PRESETS: readonly AudioPreset[] = [...CORE_AUDIO_PRESETS];
 
 export function presetForMenu(kind: "video" | "audio", name: string): DownloadPreset | null {
   if (kind === "video" && (MENU_VIDEO_PRESETS as readonly string[]).includes(name)) {

@@ -1,4 +1,4 @@
-import type { DownloadJob, DownloadJobInput, JobStatus } from "./types.js";
+import type { Container, DownloadJob, DownloadJobInput, JobStatus } from "./types.js";
 import type { ErrorCategory } from "./errors.js";
 import { isAudioMetadata, normalizeAudioMetadata } from "./metadata.js";
 import { fuzzyRank } from "./fuzzy.js";
@@ -129,8 +129,22 @@ export interface EngineProgressLike {
   readonly elapsed?: string | null;
 }
 
-/** Fold an engine progress event into queue state (pure). */
+/**
+ * Fold an engine progress event into queue state (pure).
+ *
+ * Byte counts are MONOTONIC here: yt-dlp reports `total: NA` / no byte fields
+ * on post-processing lines ([Merger], [ExtractAudio], [Fixup], …) and on the
+ * final `done` event. Writing those nulls straight through wiped the size the
+ * download phase had already reported, so every audio job (which always runs
+ * `[ExtractAudio]`) and every merged video reached the history — and the Stats
+ * "total size" tile — with no size at all, i.e. "Unknown". A null from the
+ * engine therefore means "no new information", never "forget what you knew".
+ */
 export function applyEngineProgress(job: DownloadJob, p: EngineProgressLike): DownloadJob {
+  const bytes = {
+    downloadedBytes: p.downloadedBytes ?? job.downloadedBytes,
+    totalBytes: p.totalBytes ?? job.totalBytes,
+  };
   switch (p.stage) {
     case "processing":
       if (!canTransition(job.status, "process") && job.status !== "processing") return job;
@@ -140,8 +154,7 @@ export function applyEngineProgress(job: DownloadJob, p: EngineProgressLike): Do
         progress: p.percent,
         speed: p.speed,
         eta: p.eta,
-        downloadedBytes: p.downloadedBytes,
-        totalBytes: p.totalBytes,
+        ...bytes,
         stage: p.stage,
         destination: p.destination ?? job.destination,
       };
@@ -153,15 +166,21 @@ export function applyEngineProgress(job: DownloadJob, p: EngineProgressLike): Do
         progress: 100,
         speed: null,
         eta: null,
-        downloadedBytes: p.downloadedBytes ?? job.downloadedBytes,
-        totalBytes: p.totalBytes ?? job.totalBytes,
+        ...bytes,
         stage: p.stage,
         error: null,
         nextRetryAt: null,
         destination: p.destination ?? job.destination,
       };
     case "error":
-      return transition(job, "fail", { error: job.error ?? "Download failed." });
+      // v1.7.2: never throw out of a progress fold (this runs inside a
+      // `void`-ed promise in the controller), and prefer the ENGINE's mapped
+      // message over the previous job error — the old `job.error ?? …` threw
+      // away `mapDownloadError`'s explanation for the generic string.
+      if (!canTransition(job.status, "fail")) return job;
+      return transition(job, "fail", {
+        error: p.errorMessage ?? job.error ?? "Download failed.",
+      });
     case "paused":
       if (!canTransition(job.status, "pause")) return job;
       return {
@@ -190,8 +209,7 @@ export function applyEngineProgress(job: DownloadJob, p: EngineProgressLike): Do
         progress: p.percent,
         speed: p.speed,
         eta: p.eta,
-        downloadedBytes: p.downloadedBytes,
-        totalBytes: p.totalBytes,
+        ...bytes,
         stage: p.stage,
         destination: p.destination ?? job.destination,
       };
@@ -213,6 +231,23 @@ export function activeCount(jobs: readonly DownloadJob[]): number {
   let n = 0;
   for (const j of jobs) {
     if (j.status === "analyzing" || j.status === "downloading" || j.status === "processing") {
+      n += 1;
+    }
+  }
+  return n;
+}
+
+/**
+ * Jobs the ENGINE still owns a child process for — anything not finished,
+ * PAUSED INCLUDED. `activeCount` is the wrong number for "is it safe to run
+ * `yt-dlp -U`": a paused download keeps its engine entry (and, for a resumed
+ * one, its file lock), so the engine refuses the update while the renderer's
+ * active-only check happily lets it through (v1.7.2).
+ */
+export function unfinishedCount(jobs: readonly DownloadJob[]): number {
+  let n = 0;
+  for (const j of jobs) {
+    if (j.status !== "done" && j.status !== "error" && j.status !== "cancelled") {
       n += 1;
     }
   }
@@ -294,7 +329,10 @@ type StartOptions = Partial<
     | "startAfter"
     | "pinned"
   >
->;
+> & {
+    /** Per-job container override (v1.7.2); lives on the preset. */
+    readonly container?: Container | null;
+  };
 
 function pickJobOptions(source: DownloadJobInput): StartOptions {
   return {
@@ -331,6 +369,11 @@ function pickJobOptions(source: DownloadJobInput): StartOptions {
       ? { startAfter: source.startAfter }
       : {}),
     ...(source.pinned === true ? { pinned: true as const } : {}),
+    // v1.7.2: a per-job container override rides on the preset, so it must
+    // survive this hop or the job silently falls back to the global setting.
+    ...(source.container !== undefined && source.container !== null
+      ? { container: source.container }
+      : {}),
   };
 }
 

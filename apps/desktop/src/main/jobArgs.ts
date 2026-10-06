@@ -51,5 +51,11 @@ export function buildStartArgs(input: DownloadJobInput, deps: StartArgsDeps): st
     splitChapters: input.splitChapters === true,
     audioMetadata: input.audioMetadata ?? null,
     forceOverwrite: input.forceOverwrite === true,
+    // Polite pacing (v1.7.2). Off by default; sanitized on the way in, so a
+    // hand-edited settings file can never hand yt-dlp a NaN or negative delay.
+    sleepRequestsSec: s.pacing.sleepRequestsSec,
+    minSleepIntervalSec: s.pacing.minSleepIntervalSec,
+    maxSleepIntervalSec: s.pacing.maxSleepIntervalSec,
+    sleepSubtitlesSec: s.pacing.sleepSubtitlesSec,
   });
 }

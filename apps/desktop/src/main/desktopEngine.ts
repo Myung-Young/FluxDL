@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, statfsSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, statfsSync, statSync } from "node:fs";
 import { open, readFile, readdir, rm, stat, unlink } from "node:fs/promises";
 import { platform as osPlatform, release as osRelease } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -72,13 +72,32 @@ import {
   loadSettingsFromDisk,
   loadWatchlistFromDisk,
   removeHistoryFromDisk,
+  restoreHistoryToDisk,
   saveQueueToDisk,
   saveSettingsToDisk,
   saveWatchlistToDisk,
   updateHistoryOnDisk,
 } from "./persist.js";
 import { thumbnailColor } from "./thumbnail.js";
+import { outputBytes } from "./outputSize.js";
+import { contentRange, parseByteRange } from "./mediaRange.js";
 import { buildStartArgs } from "./jobArgs.js";
+
+/**
+ * One `media://` answer. `start`/`end` are inclusive byte offsets into the
+ * file; the caller streams that window (never the whole file into memory) so
+ * a multi-gigabyte video costs the same as a 3 MB mp3.
+ */
+export interface MediaResponse {
+  readonly status: number;
+  readonly headers: Readonly<Record<string, string>>;
+  /** Absolute path to stream from (null for an empty error answer). */
+  readonly path?: string;
+  readonly start?: number;
+  readonly end?: number;
+  /** Pre-built body for answers that carry no bytes (416/403/…). */
+  readonly body?: string | null;
+}
 
 export class EngineError extends Error {
   readonly category: ErrorCategory;
@@ -131,6 +150,12 @@ const MERGER_RE = /\[Merger\] Merging formats into "(.+)"/;
 const EXTRACT_AUDIO_RE = /\[ExtractAudio\] Destination: (.+)/;
 const CHAPTER_DEST_RE = /\[SplitChapters\] Chapter \d+; Destination: (.+)/;
 const MAX_LOG_CHARS = 500_000;
+/**
+ * Hard ceiling on a `--dump-single-json` payload (v1.7.2). A 5000-item
+ * playlist's metadata is far larger than this; without a cap the main process
+ * held several times that in memory at once.
+ */
+const MAX_INFO_CHARS = 64 * 1024 * 1024;
 
 /** yt-dlp download-archive tracking already-fetched videos (M1.3). */
 export const ARCHIVE_FILE = "archive.txt";
@@ -231,32 +256,133 @@ function appendLog(log: string, chunk: string): string {
   return next.length > MAX_LOG_CHARS ? next.slice(next.length - MAX_LOG_CHARS) : next;
 }
 
-/** Playable preview extensions (audio first, common video second). */
+/**
+ * Playable preview extensions (v1.7.2).
+ *
+ * Mirrors the recognised-media list in core, minus the stream manifests (they
+ * are not playable on their own) — so a file in any container yt-dlp can
+ * produce can still be previewed, opened and measured.
+ */
 const MEDIA_EXTENSIONS = [
+  ".mp4",
+  ".m4v",
+  ".webm",
+  ".mkv",
+  ".flv",
+  ".f4v",
+  ".3gp",
+  ".3g2",
+  ".avi",
+  ".mov",
+  ".qt",
+  ".ts",
+  ".m2ts",
+  ".mts",
+  ".mpg",
+  ".mpeg",
+  ".m2v",
+  ".vob",
+  ".ogv",
+  ".wmv",
+  ".asf",
+  ".gif",
   ".mp3",
   ".m4a",
+  ".m4b",
+  ".aac",
   ".opus",
   ".ogg",
   ".oga",
   ".wav",
   ".flac",
-  ".mp4",
-  ".m4v",
-  ".webm",
-  ".mkv",
+  ".alac",
+  ".wma",
+  ".mka",
+  ".aiff",
+  ".aif",
+  ".amr",
+  ".ac3",
+  ".eac3",
+  ".dts",
 ] as const;
 
+/**
+ * True for `github.com` / `githubusercontent.com` and their real subdomains.
+ * A plain `endsWith` also accepted `evil-github.com`, which is exactly the
+ * class of host this allowlist exists to reject (v1.7.2).
+ */
+export function isGitHubHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return (
+    host === "github.com" ||
+    host === "githubusercontent.com" ||
+    host.endsWith(".github.com") ||
+    host.endsWith(".githubusercontent.com")
+  );
+}
+
+/**
+ * MIME type per extension for the in-app preview (v1.7.2).
+ *
+ * Table-driven rather than a chain of `endsWith` so the full container list
+ * stays readable and every entry is auditable. `null` = not previewable (the
+ * caller then refuses the request instead of serving a wrong type, which would
+ * make Chromium try to decode e.g. a DTS file as MP4).
+ */
+const MIME_BY_EXT: Readonly<Record<string, string>> = {
+  // Video
+  ".mp4": "video/mp4",
+  ".m4v": "video/mp4",
+  ".webm": "video/webm",
+  ".mkv": "video/x-matroska",
+  ".mka": "audio/x-matroska",
+  ".mov": "video/quicktime",
+  ".qt": "video/quicktime",
+  ".avi": "video/x-msvideo",
+  ".wmv": "video/x-ms-wmv",
+  ".asf": "video/x-ms-asf",
+  ".flv": "video/x-flv",
+  ".f4v": "video/x-f4v",
+  ".3gp": "video/3gpp",
+  ".3g2": "video/3gpp2",
+  ".ts": "video/mp2t",
+  ".m2ts": "video/mp2t",
+  ".mts": "video/mp2t",
+  ".tsv": "video/mp2t",
+  ".mpg": "video/mpeg",
+  ".mpeg": "video/mpeg",
+  ".m2v": "video/mpeg",
+  ".vob": "video/x-ms-vob",
+  ".ogv": "video/ogg",
+  ".gif": "image/gif",
+  // Audio
+  ".mp3": "audio/mpeg",
+  ".m4a": "audio/mp4",
+  ".m4b": "audio/mp4",
+  ".aac": "audio/aac",
+  ".opus": "audio/ogg",
+  ".ogg": "audio/ogg",
+  ".oga": "audio/ogg",
+  ".wav": "audio/wav",
+  ".flac": "audio/flac",
+  ".alac": "audio/mp4",
+  ".wma": "audio/x-ms-wma",
+  ".aiff": "audio/aiff",
+  ".aif": "audio/aiff",
+  ".amr": "audio/amr",
+  ".ac3": "audio/ac3",
+  ".eac3": "audio/eac3",
+  ".dts": "audio/vnd.dts",
+};
+
+function extOf(lowerPath: string): string {
+  const dot = lowerPath.lastIndexOf(".");
+  const slash = Math.max(lowerPath.lastIndexOf("/"), lowerPath.lastIndexOf("\\"));
+  return dot > slash && dot >= 0 ? lowerPath.slice(dot) : "";
+}
+
 function mimeFor(lowerPath: string): string | null {
-  if (lowerPath.endsWith(".mp3")) return "audio/mpeg";
-  if (lowerPath.endsWith(".m4a")) return "audio/mp4";
-  if (lowerPath.endsWith(".opus") || lowerPath.endsWith(".ogg") || lowerPath.endsWith(".oga"))
-    return "audio/ogg";
-  if (lowerPath.endsWith(".wav")) return "audio/wav";
-  if (lowerPath.endsWith(".flac")) return "audio/flac";
-  if (lowerPath.endsWith(".mp4") || lowerPath.endsWith(".m4v")) return "video/mp4";
-  if (lowerPath.endsWith(".webm")) return "video/webm";
-  if (lowerPath.endsWith(".mkv")) return "video/x-matroska";
-  return null;
+  return MIME_BY_EXT[extOf(lowerPath)] ?? null;
 }
 
 /** Best-effort GitHub latest-release tag (null on any failure). */
@@ -410,7 +536,7 @@ export class DesktopEngine implements DownloadEngine {
    * 5000 files), unreadable entries skipped. Orphans are yt-dlp leftovers
    * (.part/.ytdl/.temp) the UI can trash through the normal guard.
    */
-  getStorageInsights(): Promise<StorageInsights> {
+  async getStorageInsights(): Promise<StorageInsights> {
     const out: {
       audioFiles: number;
       audioBytes: number;
@@ -438,25 +564,22 @@ export class DesktopEngine implements DownloadEngine {
       root = this.deps.defaultOutputDir;
     }
     let seen = 0;
-    const walk = (dir: string, depth: number): void => {
+    // v1.7.2: async walk. This used `readdirSync`/`statSync` for up to 5000
+    // entries on the MAIN thread, which is exactly where progress events,
+    // taskbar updates and input all queue behind — on a slow drive the window
+    // froze for as long as the scan took, on the very screen the user opened
+    // to watch the disk.
+    const walk = async (dir: string, depth: number): Promise<void> => {
       if (depth > 3 || seen > 5000) return;
-      let names: string[];
-      try {
-        names = readdirSync(dir);
-      } catch {
-        return;
-      }
+      const names = await readdir(dir).catch(() => [] as string[]);
       for (const name of names) {
+        if (seen > 5000) return;
         if (name.startsWith(".")) continue;
         const full = join(dir, name);
-        let st: { isDirectory(): boolean; isFile(): boolean; size: number };
-        try {
-          st = statSync(full);
-        } catch {
-          continue;
-        }
+        const st = await stat(full).catch(() => null);
+        if (st === null) continue;
         if (st.isDirectory()) {
-          walk(full, depth + 1);
+          await walk(full, depth + 1);
           continue;
         }
         if (!st.isFile()) continue;
@@ -482,11 +605,11 @@ export class DesktopEngine implements DownloadEngine {
       }
     };
     try {
-      walk(resolve(root), 0);
+      await walk(resolve(root), 0);
     } catch {
       // Best effort; partial totals still render.
     }
-    return Promise.resolve(out);
+    return out;
   }
 
   /** System clipboard text via the Electron API (no DOM permission). */
@@ -496,6 +619,24 @@ export class DesktopEngine implements DownloadEngine {
       return Promise.resolve(text.length > 0 ? text : null);
     } catch {
       return Promise.resolve(null);
+    }
+  }
+
+  /**
+   * System clipboard write via the Electron API (v1.7.2).
+   *
+   * `navigator.clipboard.writeText()` inside the sandboxed, isolated renderer
+   * is refused on Windows, so every "Copy log" / "Copy diagnostics" button
+   * reported "Copy failed." while the clipboard was in fact writable from the
+   * main process. Mirrors readClipboard so both directions are symmetric.
+   */
+  writeClipboard(text: string): Promise<boolean> {
+    try {
+      if (typeof text !== "string") return Promise.resolve(false);
+      clipboard.writeText(text);
+      return Promise.resolve(true);
+    } catch {
+      return Promise.resolve(false);
     }
   }
 
@@ -679,11 +820,11 @@ export class DesktopEngine implements DownloadEngine {
       return Promise.reject(new Error("The update link is invalid."));
     }
     // Only GitHub-hosted artifacts, never an arbitrary executable URL.
-    if (
-      parsed.protocol !== "https:" ||
-      (!parsed.hostname.endsWith("github.com") &&
-        !parsed.hostname.endsWith("githubusercontent.com"))
-    ) {
+    // v1.7.2: `endsWith` has no notion of a DNS label boundary, so hosts like
+    // `evil-github.com` or `attacker-githubusercontent.com` passed. This check
+    // guards a DOWNLOAD-AND-EXECUTE, so it now matches the apex domain or a
+    // real subdomain of it.
+    if (parsed.protocol !== "https:" || !isGitHubHost(parsed.hostname)) {
       return Promise.reject(new Error("The update link is not allowed."));
     }
     const safeName =
@@ -824,7 +965,10 @@ export class DesktopEngine implements DownloadEngine {
    * the path fails the trust boundary (the protocol handler turns that
    * into a 403). Main-only helper, not part of the renderer interface.
    */
-  async serveMediaRequest(requestUrl: string): Promise<{ body: Buffer; mime: string } | null> {
+  async serveMediaRequest(
+    requestUrl: string,
+    rangeHeader?: string | null,
+  ): Promise<MediaResponse | null> {
     const prefix = "media://play/";
     if (!requestUrl.startsWith(prefix)) return null;
     let decoded = "";
@@ -837,11 +981,51 @@ export class DesktopEngine implements DownloadEngine {
     const lower = decoded.toLowerCase();
     const mime = mimeFor(lower);
     if (mime === null) return null;
+    let size: number;
     try {
-      return { body: await readFile(decoded), mime };
+      const st = await stat(resolve(decoded));
+      if (!st.isFile()) return null;
+      size = st.size;
     } catch {
       return null;
     }
+    // Range support is what makes <video>/<audio> show a real duration and
+    // seek (v1.7.2): Chromium's media stack marks a resource without
+    // `Accept-Ranges: bytes` as non-seekable, which left every preview stuck
+    // at 0:00 with no timeline.
+    const range = parseByteRange(rangeHeader ?? null, size);
+    const common = {
+      "Content-Type": mime,
+      "Accept-Ranges": "bytes",
+      "Cache-Control": "no-store",
+    } as const;
+    if (range.kind === "unsatisfiable") {
+      return {
+        status: 416,
+        headers: { ...common, "Content-Range": `bytes */${String(size)}` },
+        body: null,
+      };
+    }
+    if (range.kind === "all") {
+      return {
+        status: 200,
+        headers: { ...common, "Content-Length": String(size) },
+        path: resolve(decoded),
+        start: 0,
+        end: size - 1,
+      };
+    }
+    return {
+      status: 206,
+      headers: {
+        ...common,
+        "Content-Length": String(range.end - range.start + 1),
+        "Content-Range": contentRange(range.start, range.end, size),
+      },
+      path: resolve(decoded),
+      start: range.start,
+      end: range.end,
+    };
   }
 
   async getInfo(url: string, init?: GetInfoInit): Promise<MediaInfo> {
@@ -879,8 +1063,21 @@ export class DesktopEngine implements DownloadEngine {
       }, timeoutSec * 1000);
       let stdout = "";
       let stderr = "";
+      // v1.7.2: cap the metadata dump. `--dump-single-json` on a large playlist
+      // emits tens of MB, and it was concatenated with no limit — peak memory
+      // was ~3x the payload (raw string + the sliced copy + the parsed tree) in
+      // the main process, unbounded by the analyze timeout. Past the cap the
+      // child is killed and reported like any other analyze failure.
+      let overflowed = false;
       proc.stdout.on("data", (chunk: Buffer) => {
+        if (overflowed) return;
         stdout += chunk.toString("utf8");
+        if (stdout.length > MAX_INFO_CHARS) {
+          overflowed = true;
+          stdout = "";
+          entry.timedOut = false;
+          killProcessTree(proc);
+        }
       });
       proc.stderr.on("data", (chunk: Buffer) => {
         stderr += chunk.toString("utf8");
@@ -896,6 +1093,12 @@ export class DesktopEngine implements DownloadEngine {
         if (entry.cancelled) {
           settle(() => {
             reject(new EngineError(cancelledMapped(this.errorLang())));
+          });
+          return;
+        }
+        if (overflowed) {
+          settle(() => {
+            reject(new EngineError(timeoutMapped(timeoutSec, this.errorLang())));
           });
           return;
         }
@@ -1100,13 +1303,18 @@ export class DesktopEngine implements DownloadEngine {
           await this.repairDestination(current).catch(() => undefined);
           this.rememberFinished(id, current.rawLog, current.downloadArgs);
           this.jobs.delete(id);
+          // v1.7.2: report the REAL size of the finished output. The download
+          // phase only knows the pre-merge/pre-extract byte count and often
+          // reports no total at all, which is why the Stats "total size" tile
+          // read "Unknown" for most libraries.
+          const bytes = outputBytes(current.destination);
           this.emit({
             id,
             percent: 100,
             speed: null,
             eta: null,
-            downloadedBytes: null,
-            totalBytes: null,
+            downloadedBytes: bytes,
+            totalBytes: bytes,
             stage: "done",
             destination: current.destination,
           });
@@ -1378,18 +1586,60 @@ export class DesktopEngine implements DownloadEngine {
   }
 
   async fileExistsBulk(paths: string[]): Promise<boolean[]> {
+    // v1.7.2: build the trust snapshot ONCE. `isAllowed` re-reads settings.json
+    // (a synchronous readFileSync + JSON.parse + a 40-field merge) and, for
+    // any path outside a download root, the whole history.jsonl — per path.
+    // The Library health check sends up to 500 destinations, so that was up to
+    // 500 full history parses on the main thread for one screen.
+    const allow = await this.allowList();
     const out: boolean[] = [];
     for (const p of paths.slice(0, 2000)) {
-      out.push(typeof p === "string" ? await this.fileExists(p) : false);
+      if (typeof p !== "string" || !allow(p)) {
+        out.push(false);
+        continue;
+      }
+      out.push(
+        await stat(resolve(p)).then(
+          () => true,
+          () => false,
+        ),
+      );
+    }
+    return out;
+  }
+
+  /**
+   * Real on-disk size per path, guard-checked exactly like fileExists (v1.7.2).
+   * Lets the Stats screen fill in sizes for history rows recorded before the
+   * engine reported them, instead of showing "Unknown" forever.
+   */
+  async fileSizesBulk(paths: string[]): Promise<Array<number | null>> {
+    // Same one-shot trust snapshot as fileExistsBulk (see the note there).
+    const allow = await this.allowList();
+    const out: Array<number | null> = [];
+    for (const p of paths.slice(0, 2000)) {
+      if (typeof p !== "string" || !allow(p)) {
+        out.push(null);
+        continue;
+      }
+      out.push(outputBytes(p));
     }
     return out;
   }
 
   async archiveHas(keys: string[]): Promise<boolean[]> {
     const known = await this.readArchiveKeys();
-    return keys
-      .slice(0, 2000)
-      .map((k) => typeof k === "string" && !k.includes("://") && known.has(k.toLowerCase()));
+    return keys.slice(0, 2000).map((k) => {
+      if (typeof k !== "string" || k.length === 0 || k.includes("://")) return false;
+      // Normalize ONLY the extractor half. Video ids are case-sensitive
+      // (`jNQXAC9IVRw` != `jnqxac9ivrw`), so lowercasing the whole key made
+      // every lookup miss: the "already downloaded" badge and the
+      // download-remaining count were silently dead for real ids.
+      const sep = k.indexOf("::");
+      const normalized =
+        sep === -1 ? k.toLowerCase() : `${k.slice(0, sep).toLowerCase()}${k.slice(sep)}`;
+      return known.has(normalized) || known.has(k);
+    });
   }
 
   /** Parse <userData>/archive.txt ("extractor id" lines) into identity keys. */
@@ -1441,12 +1691,55 @@ export class DesktopEngine implements DownloadEngine {
   }
 
   private async isAllowed(path: string): Promise<boolean> {
-    return isAllowedPath(
-      this.deps.userDataDir,
-      this.deps.defaultOutputDir,
-      this.activeDestinations(),
-      path,
-    );
+    const allow = await this.allowList();
+    return allow(path);
+  }
+
+  /**
+   * The trust boundary, resolved ONCE for a batch of paths (v1.7.2).
+   *
+   * `isAllowedPath` reads settings synchronously and, for any path outside a
+   * download root, parses the entire history file. Per-path that is O(n) disk
+   * work per path; the bulk callers (Library health check, Stats back-fill)
+   * send hundreds at a time. The snapshot is built once and reused, with the
+   * exact same rule set.
+   */
+  private async allowList(): Promise<(path: string) => boolean> {
+    const userDataDir = this.deps.userDataDir;
+    const defaultOutputDir = this.deps.defaultOutputDir;
+    const active = this.activeDestinations();
+    const settings = loadSettingsFromDisk(userDataDir);
+    const roots: string[] = [];
+    if (settings.downloadDir.trim().length > 0) roots.push(resolve(settings.downloadDir));
+    if (defaultOutputDir.trim().length > 0) roots.push(resolve(defaultOutputDir));
+    let history: readonly DownloadJob[] = [];
+    try {
+      history = await loadHistoryFromDisk(userDataDir);
+    } catch {
+      // History read failure just narrows the allow-list.
+    }
+    const known = new Set<string>();
+    for (const d of active) {
+      if (d !== null && d.length > 0) known.add(resolve(d));
+    }
+    for (const h of history) {
+      if (h.destination !== null && h.destination.length > 0) {
+        known.add(resolve(h.destination));
+      }
+    }
+    return (path: string): boolean => {
+      if (typeof path !== "string" || path.trim().length === 0) return false;
+      let candidate: string;
+      try {
+        candidate = resolve(path);
+      } catch {
+        return false;
+      }
+      for (const root of roots) {
+        if (isInsideDir(root, candidate)) return true;
+      }
+      return known.has(candidate);
+    };
   }
 
   private async assertAllowed(path: string): Promise<void> {
@@ -1487,6 +1780,15 @@ export class DesktopEngine implements DownloadEngine {
 
   async clearHistory(): Promise<void> {
     await clearHistoryOnDisk(this.deps.userDataDir);
+  }
+
+  /**
+   * Replace the whole history in one atomic write (backup restore, v1.7.2).
+   * Replaces the old clear-then-append loop, which destroyed the existing
+   * history before writing the new one and swallowed every failure.
+   */
+  async restoreHistory(jobs: DownloadJob[]): Promise<void> {
+    await restoreHistoryToDisk(this.deps.userDataDir, jobs);
   }
 
   async loadWatchlist(): Promise<WatchChannel[]> {

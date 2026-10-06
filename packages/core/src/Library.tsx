@@ -400,15 +400,41 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
     <section className="grabber-view" aria-label={S.library.title}>
       <h1>{S.library.title}</h1>
       <div className="grabber-card">
-        <input
-          className="input"
-          placeholder={S.library.searchPlaceholder}
-          value={query}
-          aria-label={S.library.searchPlaceholder}
-          onChange={(e) => {
-            setQuery(e.target.value);
-          }}
-        />
+        {/* v1.7.2: a real `type="search"` box with a clear button and a live
+            match count, so typing visibly does something on every page. */}
+        <div className="url-row">
+          <input
+            id="library-search"
+            data-testid="library-search"
+            className="input"
+            type="search"
+            placeholder={S.library.searchPlaceholder}
+            value={query}
+            aria-label={S.library.searchPlaceholder}
+            spellCheck={false}
+            autoComplete="off"
+            onChange={(e) => {
+              setQuery(e.target.value);
+            }}
+          />
+          {query.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-small"
+              aria-label={S.logs.clearSearch}
+              onClick={() => {
+                setQuery("");
+              }}
+            >
+              {S.logs.clearSearch}
+            </button>
+          )}
+        </div>
+        {!loading && history.length > 0 && (
+          <p className="muted" role="status">
+            {formatStr(S.library.results, { n: visible.length, t: history.length })}
+          </p>
+        )}
         {checking && <p className="muted">{S.library.checking}</p>}
       </div>
       <div className="grabber-card">

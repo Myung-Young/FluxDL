@@ -23,6 +23,21 @@ function data(over: Partial<DiagnosticsData> = {}): DiagnosticsData {
 }
 
 describe("diagnostics redaction", () => {
+  it("survives a corrupt timestamp instead of throwing (v1.7.2)", () => {
+    // A hand-edited/partial history line can carry a non-finite createdAt.
+    // `toISOString()` throws on those, and the Logs caller swallowed it — Copy
+    // and Save diagnostics then did nothing at all, silently.
+    for (const at of [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NaN]) {
+      const text = buildDiagnostics(
+        data({
+          errorEvents: [{ at, category: "network", message: "boom" }],
+        }),
+      );
+      expect(text).toContain("boom");
+      expect(text).toContain("[?]");
+    }
+  });
+
   it("strips proxy credentials but keeps plain hosts", () => {
     expect(redactProxyCredentials("http://user:pass@host:8080/x")).toBe("http://***@host:8080/x");
     expect(redactProxyCredentials("socks5://127.0.0.1:1080")).toBe("socks5://127.0.0.1:1080");

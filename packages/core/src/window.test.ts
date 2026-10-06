@@ -3,13 +3,16 @@ import {
   MINI_HEIGHT,
   MINI_WIDTH,
   NORMAL_BOUNDS,
+  RESTORE_VISIBLE_PX,
   WORK_AREA_MARGIN,
   boundsFor,
   centerIn,
   chromeState,
   fitToWorkArea,
+  isRestorable,
   miniRows,
   miniSummary,
+  restoreOrigin,
 } from "./window.js";
 import type { DownloadJob, JobStatus } from "./types.js";
 
@@ -135,6 +138,63 @@ describe("centerIn", () => {
     expect(origin.x + 1180).toBeLessThanOrEqual(area.width);
     expect(origin.y + 640).toBeLessThanOrEqual(area.height);
     expect(origin).toEqual({ x: 50, y: 30 });
+  });
+});
+
+describe("remembered position (v1.7.2)", () => {
+  const primary = { x: 0, y: 0, width: 1920, height: 1040 };
+  const left = { x: -1920, y: 0, width: 1920, height: 1040 };
+
+  it("honours a saved origin that is still on screen", () => {
+    expect(restoreOrigin({ x: 137, y: 42 }, NORMAL_BOUNDS, [primary])).toEqual({
+      x: 137,
+      y: 42,
+    });
+  });
+
+  it("keeps a negative origin (monitor left of the primary one)", () => {
+    expect(restoreOrigin({ x: -1500, y: 90 }, NORMAL_BOUNDS, [primary, left])).toEqual({
+      x: -1500,
+      y: 90,
+    });
+  });
+
+  it("rounds fractional coordinates", () => {
+    expect(restoreOrigin({ x: 10.6, y: -3.2 }, NORMAL_BOUNDS, [primary])).toEqual({
+      x: 11,
+      y: -3,
+    });
+  });
+
+  it("falls back to centring when nothing was saved", () => {
+    expect(restoreOrigin(null, NORMAL_BOUNDS, [primary])).toBeNull();
+  });
+
+  it("falls back to centring when the saved spot is off every display", () => {
+    // Unplugged second monitor: the old position is nowhere on screen now.
+    expect(restoreOrigin({ x: 4000, y: 2000 }, NORMAL_BOUNDS, [primary])).toBeNull();
+  });
+
+  it("falls back to centring when too little would stay visible", () => {
+    // The last RESTORE_VISIBLE_PX of the right edge is the boundary: on it the
+    // window is still usable, one pixel further right it is not (and the title
+    // bar drag handle would be effectively unreachable).
+    const edge = primary.width - RESTORE_VISIBLE_PX;
+    expect(restoreOrigin({ x: edge, y: 0 }, NORMAL_BOUNDS, [primary])).not.toBeNull();
+    expect(restoreOrigin({ x: edge + 1, y: 0 }, NORMAL_BOUNDS, [primary])).toBeNull();
+    // Same rule vertically.
+    const vEdge = primary.height - RESTORE_VISIBLE_PX;
+    expect(restoreOrigin({ x: 0, y: vEdge }, NORMAL_BOUNDS, [primary])).not.toBeNull();
+    expect(restoreOrigin({ x: 0, y: vEdge + 1 }, NORMAL_BOUNDS, [primary])).toBeNull();
+  });
+
+  it("rejects non-finite coordinates", () => {
+    expect(restoreOrigin({ x: Number.NaN, y: 0 }, NORMAL_BOUNDS, [primary])).toBeNull();
+    expect(restoreOrigin({ x: 0, y: Number.POSITIVE_INFINITY }, NORMAL_BOUNDS, [primary])).toBeNull();
+  });
+
+  it("isRestorable is false with no displays at all", () => {
+    expect(isRestorable(0, 0, NORMAL_BOUNDS, [])).toBe(false);
   });
 });
 

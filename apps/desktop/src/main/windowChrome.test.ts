@@ -28,18 +28,22 @@ describe("sanitizeWindowState", () => {
     }
   });
 
-  it("keeps only positive finite numbers", () => {
+  it("keeps only finite coordinates (0 and negatives are real positions)", () => {
     const state = sanitizeWindowState({
       mini: true,
       theme: "paper",
       miniX: Number.NaN,
       miniY: 40.6,
+      normalX: -1920,
+      normalY: 0,
     });
     expect(state).toEqual({
       mini: true,
       theme: "paper",
       miniX: null,
       miniY: 41,
+      normalX: -1920,
+      normalY: 0,
     });
   });
 
@@ -53,8 +57,17 @@ describe("sanitizeWindowState", () => {
       normalHeight: 900,
       miniX: 10,
       miniY: 20,
+      normalX: 30,
+      normalY: 40,
     });
-    expect(state).toEqual({ mini: false, theme: "obsidian", miniX: 10, miniY: 20 });
+    expect(state).toEqual({
+      mini: false,
+      theme: "obsidian",
+      miniX: 10,
+      miniY: 20,
+      normalX: 30,
+      normalY: 40,
+    });
     expect(resolveBounds(state, false)).toEqual({
       width: NORMAL_BOUNDS.width,
       height: NORMAL_BOUNDS.height,
@@ -117,7 +130,15 @@ describe("window state persistence", () => {
   it("round-trips through userData", async () => {
     const base = dir();
     try {
-      const state = { ...DEFAULT_WINDOW_STATE, mini: true, theme: "paper", miniX: 130, miniY: 60 };
+      const state = {
+        ...DEFAULT_WINDOW_STATE,
+        mini: true,
+        theme: "paper",
+        miniX: 130,
+        miniY: 60,
+        normalX: -40,
+        normalY: 900,
+      };
       await saveWindowState(base, state);
       expect(await loadWindowState(base)).toEqual(state);
     } finally {

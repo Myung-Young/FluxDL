@@ -31,24 +31,47 @@ function nextId(): string {
 /**
  * Ephemeral UI messages. No engine involved; auto-dismiss keeps the
  * stack bounded. TTL is injectable for tests.
+ *
+ * v1.7.2: every dismissal timer is tracked and cleared. The old version
+ * scheduled a `setTimeout` per push and never cancelled it — not on manual
+ * dismiss, not on `clear()`, and not when the toast had already been evicted
+ * by the 3-item cap. A burst of toasts (retry-all over a large queue, several
+ * failures in one tick) therefore accumulated timers that each performed a
+ * `set` → re-render seconds after the toast was gone.
  */
 export function createToastStore(ttlMs = 4000): StoreApi<ToastStoreState> {
+  const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  const dropTimer = (id: string): void => {
+    const handle = timers.get(id);
+    if (handle !== undefined) {
+      clearTimeout(handle);
+      timers.delete(id);
+    }
+  };
   return create<ToastStoreState>()((set, get) => ({
     toasts: [],
     push: (message, kind = "info", action) => {
       const id = nextId();
       const trimmed = get().toasts.slice(-2);
+      // Anything pushed out by the cap is already gone: stop its timer.
+      for (const t of trimmed) dropTimer(t.id);
       const toast: Toast = action === undefined ? { id, kind, message } : { id, kind, message, action };
       set({ toasts: [...trimmed, toast] });
-      setTimeout(() => {
-        get().dismiss(id);
-      }, ttlMs);
+      timers.set(
+        id,
+        setTimeout(() => {
+          timers.delete(id);
+          get().dismiss(id);
+        }, ttlMs),
+      );
       return id;
     },
     dismiss: (id) => {
+      dropTimer(id);
       set({ toasts: get().toasts.filter((t) => t.id !== id) });
     },
     clear: () => {
+      for (const id of [...timers.keys()]) dropTimer(id);
       set({ toasts: [] });
     },
   }));

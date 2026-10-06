@@ -11,6 +11,8 @@ import {
   loadSettingsFromDisk,
   loadWatchlistFromDisk,
   removeHistoryFromDisk,
+  pruneHistoryText,
+  restoreHistoryToDisk,
   saveQueueToDisk,
   saveSettingsToDisk,
   saveWatchlistToDisk,
@@ -125,6 +127,56 @@ describe("persist", () => {
     expect(isDownloadJob(null)).toBe(false);
     expect(isDownloadJob({ id: "x" })).toBe(false);
     expect(isDownloadJob({ ...job("x"), status: "flying" })).toBe(false);
+  });
+
+  it("rejects a non-finite timestamp (it crashes the diagnostics report)", () => {
+    expect(isDownloadJob({ ...job("x"), createdAt: Number.POSITIVE_INFINITY })).toBe(false);
+    expect(isDownloadJob({ ...job("x"), createdAt: Number.NaN })).toBe(false);
+    expect(isDownloadJob({ ...job("x"), attempts: Number.NaN })).toBe(false);
+  });
+
+  it("pruneHistoryText only rewrites when over the limit", () => {
+    const two = '{"a":1}\n{"b":2}\n';
+    expect(pruneHistoryText(two, 10)).toBeNull();
+    expect(pruneHistoryText(two, 2)).toBeNull();
+    expect(pruneHistoryText('{"a":1}\n\n{"b":2}\n{"c":3}\n', 2)).toBe('{"b":2}\n{"c":3}\n');
+    // A nonsense limit falls back to the 500 default rather than dropping all.
+    expect(pruneHistoryText(two, 0)).toBeNull();
+    expect(pruneHistoryText(two, Number.NaN)).toBeNull();
+  });
+
+  it("restoreHistoryToDisk replaces the whole history in one write", async () => {
+    // v1.7.2: backup restore used to clear-then-append, so a failure mid-loop
+    // destroyed the existing history and still reported success.
+    const d = dir("histrestore");
+    await appendHistoryToDisk(d, job("old-1"));
+    await appendHistoryToDisk(d, job("old-2"));
+    await restoreHistoryToDisk(d, [job("new-1"), job("new-2"), job("new-3")]);
+    expect((await loadHistoryFromDisk(d)).map((j) => j.id)).toEqual([
+      "new-1",
+      "new-2",
+      "new-3",
+    ]);
+    // Invalid rows are dropped, never written.
+    await restoreHistoryToDisk(d, [{ nope: true } as never]);
+    expect(await loadHistoryFromDisk(d)).toEqual([]);
+    // No temp file left behind.
+    expect(existsSync(join(d, "history.jsonl.tmp"))).toBe(false);
+  });
+
+  it("a restored history keeps the keep-last-N prune honest", async () => {
+    const d = dir("histrestore2");
+    saveSettingsToDisk(d, { historyLimit: 10 });
+    await restoreHistoryToDisk(
+      d,
+      Array.from({ length: 25 }, (_, i) => job(`r${String(i)}`)),
+    );
+    for (let i = 0; i < 3; i += 1) {
+      await appendHistoryToDisk(d, job(`post${String(i)}`));
+    }
+    const loaded = await loadHistoryFromDisk(d);
+    expect(loaded).toHaveLength(10);
+    expect(loaded[9]?.id).toBe("post2");
   });
 });
 

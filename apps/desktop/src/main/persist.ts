@@ -25,6 +25,7 @@ const SETTINGS_TMP = "grabber-settings.json.tmp";
 const QUEUE_FILE = "queue.json";
 const QUEUE_TMP = "queue.json.tmp";
 const HISTORY_FILE = "history.jsonl";
+const HISTORY_TMP = "history.jsonl.tmp";
 const WATCHLIST_FILE = "watchlist.json";
 const WATCHLIST_TMP = "watchlist.json.tmp";
 
@@ -48,8 +49,8 @@ export function isDownloadJob(value: unknown): value is DownloadJob {
   if (typeof value["id"] !== "string" || value["id"].length === 0) return false;
   if (typeof value["url"] !== "string" || typeof value["title"] !== "string") return false;
   if (typeof value["outputDir"] !== "string") return false;
-  if (typeof value["createdAt"] !== "number") return false;
-  if (typeof value["attempts"] !== "number") return false;
+  if (typeof value["createdAt"] !== "number" || !Number.isFinite(value["createdAt"])) return false;
+  if (typeof value["attempts"] !== "number" || !Number.isFinite(value["attempts"])) return false;
   if (!STATUSES.includes(value["status"] as JobStatus)) return false;
   if (!isRecord(value["preset"])) return false;
   const kind = value["preset"]["kind"];
@@ -113,10 +114,50 @@ export async function saveQueueToDisk(
   await rename(tmpPath, finalPath);
 }
 
+/**
+ * Serialise the last `limit` records of a history JSONL, or null when the
+ * file is already within the limit (no rewrite needed). Pure string work so it
+ * is directly testable.
+ */
+export function pruneHistoryText(text: string, limit: number): string | null {
+  const cap = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 500;
+  const records = text.split("\n").filter((l) => l.trim().length > 0);
+  if (records.length <= cap) return null;
+  return `${records.slice(-cap).join("\n")}\n`;
+}
+
+/**
+ * Live record count per history file, so an append does NOT have to re-read
+ * the whole JSONL just to find out whether it is over the limit.
+ *
+ * v1.7.2: the prune used to read the entire file and rewrite it on EVERY
+ * append (plus a synchronous settings read). Restoring a backup appends N
+ * records in a loop, which turned that into O(n^2) whole-file rewrites on the
+ * Electron main thread — enough to freeze the window for minutes on a
+ * 5000-record restore. The count is a hint: it is only ever used to SKIP work,
+ * never to decide what to keep, so a stale value can at worst cost one extra
+ * read (or miss one prune until the next append).
+ */
+const historyCounts = new Map<string, number>();
+
+function historyFilePath(userDataDir: string): string {
+  return join(userDataDir, HISTORY_FILE);
+}
+
+async function historyRecordCount(file: string): Promise<number> {
+  try {
+    const text = await readFile(file, "utf8");
+    return text.split("\n").filter((l) => l.trim().length > 0).length;
+  } catch {
+    return 0;
+  }
+}
+
 export async function appendHistoryToDisk(userDataDir: string, job: DownloadJob): Promise<void> {
   if (!isDownloadJob(job)) throw new Error("Invalid history entry.");
   await mkdir(userDataDir, { recursive: true });
-  await appendFile(join(userDataDir, HISTORY_FILE), `${JSON.stringify(job)}\n`, "utf8");
+  const file = historyFilePath(userDataDir);
+  await appendFile(file, `${JSON.stringify(job)}\n`, "utf8");
   // Enforce the keep-last-N prune setting (M2.9).
   let limit = 500;
   try {
@@ -124,15 +165,46 @@ export async function appendHistoryToDisk(userDataDir: string, job: DownloadJob)
   } catch {
     // Defaults stand.
   }
+  const cap = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 500;
+  const cached = historyCounts.get(file);
+  const count = cached === undefined ? await historyRecordCount(file) : cached + 1;
+  historyCounts.set(file, count);
+  if (count <= cap) return;
   try {
-    const lines = (await readFile(join(userDataDir, HISTORY_FILE), "utf8")).split("\n");
-    const records = lines.filter((l) => l.trim().length > 0);
-    if (records.length > limit) {
-      await writeFile(join(userDataDir, HISTORY_FILE), `${records.slice(-limit).join("\n")}\n`, "utf8");
-    }
+    const text = await readFile(file, "utf8");
+    const pruned = pruneHistoryText(text, cap);
+    historyCounts.set(file, cap);
+    if (pruned === null) return;
+    await writeFile(file, pruned, "utf8");
   } catch {
     // Best effort; the append above already landed.
   }
+}
+
+/**
+ * Replace the whole history in ONE atomic write (tmp + rename).
+ *
+ * v1.7.2: backup restore used to `clearHistory()` and then append the records
+ * one by one, swallowing every failure. Any error mid-loop left the user with
+ * no history at all while the UI reported "restored N". A single atomic write
+ * either lands completely or not at all — and it also removes the N-appends
+ * path entirely.
+ */
+export async function restoreHistoryToDisk(
+  userDataDir: string,
+  jobs: readonly DownloadJob[],
+): Promise<void> {
+  const clean = jobs.filter(isDownloadJob);
+  await mkdir(userDataDir, { recursive: true });
+  const finalPath = historyFilePath(userDataDir);
+  const tmpPath = join(userDataDir, HISTORY_TMP);
+  await writeFile(
+    tmpPath,
+    clean.map((h) => JSON.stringify(h)).join("\n") + (clean.length > 0 ? "\n" : ""),
+    "utf8",
+  );
+  await rename(tmpPath, finalPath);
+  historyCounts.set(finalPath, clean.length);
 }
 
 export async function loadHistoryFromDisk(userDataDir: string): Promise<DownloadJob[]> {
@@ -160,11 +232,9 @@ export async function loadHistoryFromDisk(userDataDir: string): Promise<Download
 export async function removeHistoryFromDisk(userDataDir: string, id: string): Promise<void> {
   const kept = (await loadHistoryFromDisk(userDataDir)).filter((h) => h.id !== id);
   await mkdir(userDataDir, { recursive: true });
-  await writeFile(
-    join(userDataDir, HISTORY_FILE),
-    kept.map((h) => JSON.stringify(h)).join("\n") + (kept.length > 0 ? "\n" : ""),
-    "utf8",
-  );
+  const file = historyFilePath(userDataDir);
+  await writeFile(file, kept.map((h) => JSON.stringify(h)).join("\n") + (kept.length > 0 ? "\n" : ""), "utf8");
+  historyCounts.set(file, kept.length);
 }
 
 /** Replace one history record (matched by id; appended when absent). */
@@ -175,16 +245,16 @@ export async function updateHistoryOnDisk(userDataDir: string, job: DownloadJob)
     ? loaded.map((h) => (h.id === job.id ? job : h))
     : [...loaded, job];
   await mkdir(userDataDir, { recursive: true });
-  await writeFile(
-    join(userDataDir, HISTORY_FILE),
-    next.map((h) => JSON.stringify(h)).join("\n") + (next.length > 0 ? "\n" : ""),
-    "utf8",
-  );
+  const file = historyFilePath(userDataDir);
+  await writeFile(file, next.map((h) => JSON.stringify(h)).join("\n") + (next.length > 0 ? "\n" : ""), "utf8");
+  historyCounts.set(file, next.length);
 }
 
 export async function clearHistoryOnDisk(userDataDir: string): Promise<void> {
   await mkdir(userDataDir, { recursive: true });
-  await writeFile(join(userDataDir, HISTORY_FILE), "", "utf8");
+  const file = historyFilePath(userDataDir);
+  await writeFile(file, "", "utf8");
+  historyCounts.set(file, 0);
 }
 
 /** Watched channels (atomic JSON like the queue snapshot). */

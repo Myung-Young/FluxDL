@@ -14,9 +14,13 @@ export interface DuplicateTarget {
 
 /** Stable identity key for one download target. */
 export function identityKey(target: DuplicateTarget): string {
-  const extractor = target.extractor?.trim().toLowerCase();
-  const videoId = target.videoId?.trim();
-  if (extractor !== undefined && extractor.length > 0 && videoId !== undefined && videoId.length > 0) {
+  // `typeof` on both fields: these come from the engine / disk, so a missing
+  // OR wrongly typed value must degrade to the URL instead of throwing inside
+  // the duplicate guard (which would abort an otherwise valid enqueue).
+  const extractor =
+    typeof target.extractor === "string" ? target.extractor.trim().toLowerCase() : "";
+  const videoId = typeof target.videoId === "string" ? target.videoId.trim() : "";
+  if (extractor.length > 0 && videoId.length > 0) {
     return `${extractor}::${videoId}`;
   }
   return normalizeUrl(target.url);

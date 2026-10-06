@@ -3,12 +3,18 @@ import { IPC_CHANNELS } from "@grabber/core/engine.js";
 import { normalizeUrl } from "@grabber/core/url.js";
 import type {
   AudioPreset,
+  Container,
   DownloadJobInput,
   LiveStatus,
   VideoPreset,
   WatchChannel,
 } from "@grabber/core/types.js";
-import { AUDIO_PRESETS, LIVE_STATUSES, VIDEO_PRESETS } from "@grabber/core/types.js";
+import {
+  AUDIO_PRESETS,
+  CONTAINERS,
+  LIVE_STATUSES,
+  VIDEO_PRESETS,
+} from "@grabber/core/types.js";
 import { isAudioMetadata, normalizeAudioMetadata } from "@grabber/core/metadata.js";
 import type { DesktopEngine } from "./desktopEngine.js";
 import { isDownloadJob } from "./persist.js";
@@ -36,6 +42,15 @@ function parseJobInput(raw: unknown): DownloadJobInput {
     typeof presetRaw["rawFormat"] === "string" || presetRaw["rawFormat"] === null
       ? presetRaw["rawFormat"]
       : null;
+  // v1.7.2: per-job container override. Only values the bundled yt-dlp accepts
+  // are forwarded; an unknown one aborts the download, so it is dropped here
+  // and the global setting applies instead.
+  const containerRaw = presetRaw["container"];
+  const containerLower =
+    typeof containerRaw === "string" ? containerRaw.trim().toLowerCase() : "";
+  const container = CONTAINERS.includes(containerLower as Container)
+    ? (containerLower as Container)
+    : null;
   if (kind !== "video" && kind !== "audio") throw new Error("Invalid preset kind.");
   if (!VIDEO_PRESETS.includes(videoPreset as VideoPreset)) {
     throw new Error("Invalid video preset.");
@@ -56,6 +71,7 @@ function parseJobInput(raw: unknown): DownloadJobInput {
       videoPreset: videoPreset as VideoPreset,
       audioPreset: audioPreset as AudioPreset,
       rawFormat,
+      ...(container !== null ? { container } : {}),
     },
     outputDir: outputDirRaw,
     ...(raw["useArchive"] === true ? { useArchive: true as const } : {}),
@@ -179,6 +195,10 @@ export function registerEngineIpc(engine: DesktopEngine): void {
     if (!Array.isArray(rawPaths)) throw new Error("Invalid paths.");
     return engine.fileExistsBulk(rawPaths.filter((p): p is string => typeof p === "string"));
   });
+  ipcMain.handle(IPC_CHANNELS.fileSizesBulk, async (_event, rawPaths: unknown) => {
+    if (!Array.isArray(rawPaths)) throw new Error("Invalid paths.");
+    return engine.fileSizesBulk(rawPaths.filter((p): p is string => typeof p === "string"));
+  });
   ipcMain.handle(IPC_CHANNELS.archiveHas, async (_event, rawKeys: unknown) => {
     if (!Array.isArray(rawKeys)) throw new Error("Invalid keys.");
     return engine.archiveHas(rawKeys.filter((k): k is string => typeof k === "string"));
@@ -227,6 +247,10 @@ export function registerEngineIpc(engine: DesktopEngine): void {
   ipcMain.handle(IPC_CHANNELS.clearHistory, async () => {
     await engine.clearHistory();
   });
+  ipcMain.handle(IPC_CHANNELS.restoreHistory, async (_event, jobs: unknown) => {
+    if (!Array.isArray(jobs)) throw new Error("Invalid history snapshot.");
+    await engine.restoreHistory(jobs.filter(isDownloadJob));
+  });
   ipcMain.handle(IPC_CHANNELS.loadWatchlist, async () => {
     return engine.loadWatchlist();
   });
@@ -245,6 +269,12 @@ export function registerEngineIpc(engine: DesktopEngine): void {
   });
   ipcMain.handle(IPC_CHANNELS.readClipboard, async () => {
     return engine.readClipboard();
+  });
+  ipcMain.handle(IPC_CHANNELS.writeClipboard, async (_event, rawText: unknown) => {
+    if (typeof rawText !== "string") return false;
+    // Clipboard payloads are logs/diagnostics: bounded so a runaway caller
+    // cannot pin an unbounded string in the OS clipboard.
+    return engine.writeClipboard(rawText.slice(0, 2_000_000));
   });
   ipcMain.handle(IPC_CHANNELS.saveWatchlist, async (_event, raw: unknown) => {
     if (!Array.isArray(raw)) throw new Error("Invalid watchlist.");

@@ -76,6 +76,35 @@ describe("isAllowedPath (renderer trust boundary)", () => {
     expect(archivePathFor("C:\\Data")).toBe(join("C:\\Data", "archive.txt"));
   });
 
+  it("archiveHas matches case-sensitive video ids (v1.7.2)", async () => {
+    // yt-dlp writes "extractor id" and the id keeps its case. The lookup used
+    // to lowercase the WHOLE key, so no real id could ever match and the
+    // "Archived" state was permanently off.
+    const d = dir("archive");
+    const engine = new DesktopEngine({
+      userDataDir: d,
+      bundledBinDir: join(d, "bundled-missing"),
+      appVersion: "0.0.0-test",
+      defaultOutputDir: join(d, "dl"),
+      broadcast: () => undefined,
+      broadcastDeepLink: () => undefined,
+      broadcastBatchLink: () => undefined,
+      onAggregate: () => undefined,
+    });
+    mkdirSync(d, { recursive: true });
+    writeFileSync(archivePathFor(d), "youtube jNQXAC9IVRw\ngeneric lower-case-id\n", "utf8");
+    await expect(
+      engine.archiveHas([
+        "youtube::jNQXAC9IVRw",
+        "generic::lower-case-id",
+        "youtube::jnqxac9ivrw",
+        "youtube::dQw4w9WgXcQ",
+        "https://youtu.be/jNQXAC9IVRw",
+        "",
+      ]),
+    ).resolves.toEqual([true, true, false, false, false, false]);
+  });
+
   it("trashFile rejects paths outside the allowed roots (never reaches shell)", async () => {
     const d = dir("trash");
     const engine = new DesktopEngine({

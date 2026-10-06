@@ -231,6 +231,21 @@ body {
   -webkit-app-region: no-drag;
 }
 
+/* v1.7.2: the titlebar strip is the ONLY native drag region. `-webkit-app-region`
+   turns a rect into OS-level caption hit-testing, so a stray `drag` anywhere
+   else makes Windows swallow clicks before the renderer ever sees them — which
+   is exactly the "the search bar / the Batch button is not clickable" class of
+   report. Everything outside the strip opts out explicitly. */
+.grabber-body,
+.grabber-main,
+.grabber-nav,
+.toasts,
+.grabber-modal,
+.grabber-menu,
+.skip-link {
+  -webkit-app-region: no-drag;
+}
+
 .grabber-mark {
   width: 22px;
   height: 22px;
@@ -1361,10 +1376,15 @@ video.preview-media {
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   transition: top 120ms ease;
+  /* v1.7.2: parked above the viewport, so it must not intercept anything
+     until the keyboard actually moves focus onto it. */
+  pointer-events: none;
 }
 
+.skip-link:focus,
 .skip-link:focus-visible {
   top: var(--space-2);
+  pointer-events: auto;
 }
 
 .grabber-main:focus {
@@ -1380,6 +1400,12 @@ video.preview-media {
   gap: var(--space-2);
   z-index: 40;
   max-width: min(380px, 90vw);
+  /* v1.7.2: the column is a fixed overlay pinned over the bottom-right of the
+     view, so without this its empty gaps (and the space between stacked
+     toasts) silently swallowed clicks on whatever sits underneath — the Batch
+     action row and the Library buttons live exactly there. Only the toasts
+     themselves are clickable again. */
+  pointer-events: none;
 }
 
 .grabber-modal {
@@ -1546,6 +1572,9 @@ video.preview-media {
 }
 
 .toast {
+  /* Counterpart to `.toasts { pointer-events: none }`: the toast itself is a
+     real control surface, so only it takes the pointer. */
+  pointer-events: auto;
   display: flex;
   align-items: center;
   gap: var(--space-3);

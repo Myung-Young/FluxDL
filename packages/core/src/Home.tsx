@@ -6,6 +6,7 @@ import type {
   AudioPreset,
   ChapterInfo,
   CodecPreference,
+  Container,
   DownloadJob,
   DownloadPreset,
   MediaInfo,
@@ -13,6 +14,7 @@ import type {
   PlaylistEntry,
   VideoPreset,
 } from "./types.js";
+import { AUDIO_PRESETS as CORE_AUDIO_PRESETS, CONTAINERS } from "./types.js";
 import type { Strings } from "./strings.js";
 import { isValidUrl, normalizeUrl } from "./url.js";
 import { estimatePresetSize, formatSize } from "./media.js";
@@ -26,6 +28,7 @@ import { parseBatchText } from "./batch.js";
 import { autoSortSubdir } from "./destination.js";
 import { useDuplicateGuard } from "./DuplicatePrompt.js";
 import type { GuardInput } from "./identity.js";
+import { newRequestId } from "./requestId.js";
 import { identityKey } from "./identity.js";
 import { deriveEntryStates, sanitizePlaylistTitle, type EntryState } from "./playlist.js";
 import {
@@ -57,7 +60,7 @@ const VIDEO_PRESETS: readonly VideoPreset[] = [
   "720",
   "480",
 ];
-const AUDIO_PRESETS: readonly AudioPreset[] = ["MP3", "M4A", "Opus", "FLAC"];
+const AUDIO_PRESETS: readonly AudioPreset[] = [...CORE_AUDIO_PRESETS];
 
 function presetLabel(
   strings: Strings,
@@ -114,6 +117,8 @@ export function Home({
     () => settings.getState().settings.defaultPreset.audioPreset,
   );
   const [rawFormat, setRawFormat] = useState<string | null>(null);
+  // Per-job output container override (v1.7.2); null = global setting.
+  const [container, setContainer] = useState<Container | null>(null);
   const [selected, setSelected] = useState<readonly string[]>([]);
   const [watchClipboard, setWatchClipboard] = useState<boolean>(false);
   const [queuedNote, setQueuedNote] = useState<string | null>(null);
@@ -284,6 +289,7 @@ export function Home({
           setInfo(cached);
           setSelected(cached.entries.map((e) => e.id));
           setRawFormat(null);
+          setContainer(null);
           setEntryStates(null);
           setEntryPresets({});
           setSplitChapters(false);
@@ -300,7 +306,7 @@ export function Home({
       lastAccent.current = null;
       setThumbAccent(null);
       setAnalyzing(true);
-      const requestId = crypto.randomUUID();
+      const requestId = newRequestId();
       analyzeReq.current = requestId;
       try {
         const media = await engine.getInfo(value, { requestId });
@@ -309,6 +315,7 @@ export function Home({
         setInfo(media);
         setSelected(media.entries.map((e) => e.id));
         setRawFormat(null);
+        setContainer(null);
         setEntryStates(null);
         setEntryPresets({});
         setSplitChapters(false);
@@ -354,16 +361,22 @@ export function Home({
   // tweaks afterwards are never clobbered.
   const appliedSite = useRef<string | null>(null);
   useEffect(() => {
-    if (info === null || info.extractor === null) return;
-    const key = `${info.extractor.toLowerCase()}::${info.url}`;
+    // `typeof` guard, not `=== null`: the engine is a trust boundary and a
+    // payload may simply omit the field. `undefined.toLowerCase()` used to
+    // throw inside this effect, which the per-view ErrorBoundary turned into a
+    // dead Home screen (Batch included) with no clue why.
+    const site = typeof info?.extractor === "string" ? info.extractor.toLowerCase() : null;
+    if (info === null || site === null || site.length === 0) return;
+    const key = `${site}::${info.url}`;
     if (appliedSite.current === key) return;
     appliedSite.current = key;
-    const remembered = settings.getState().settings.presetBySite[info.extractor.toLowerCase()];
+    const remembered = settings.getState().settings.presetBySite[site];
     if (remembered !== undefined) {
       setKind(remembered.kind);
       setVideoPreset(remembered.videoPreset);
       setAudioPreset(remembered.audioPreset);
       setRawFormat(null);
+      setContainer(null);
     }
   }, [info, settings]);
 
@@ -540,6 +553,28 @@ export function Home({
             </option>
           ))}
         </select>
+        {/* Per-entry output container (v1.7.2). */}
+        <select
+          className="input"
+          aria-label={S.settings.mergeContainer}
+          value={override?.container ?? "global"}
+          onChange={(sel) => {
+            const value = sel.target.value;
+            const next = value === "global" ? null : (value as Container);
+            setEntryPresets((prev) => {
+              const base = prev[e.id];
+              if (base === undefined) return prev;
+              return { ...prev, [e.id]: { ...base, container: next } };
+            });
+          }}
+        >
+          <option value="global">{S.batch.useGlobalContainer}</option>
+          {CONTAINERS.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
       </label>
     );
   };
@@ -552,7 +587,13 @@ export function Home({
     try {
       // Disk-space precheck (C4): the drive must hold the estimate (or at
       // least 1 GB for playlists whose total is unknowable up front).
-      const preset: DownloadPreset = { kind, videoPreset, audioPreset, rawFormat };
+      const preset: DownloadPreset = {
+        kind,
+        videoPreset,
+        audioPreset,
+        rawFormat,
+        ...(container !== null ? { container } : {}),
+      };
       const outputDir = settingsState.downloadDir;
       const needBytes = info.isPlaylist
         ? 0
@@ -568,8 +609,10 @@ export function Home({
         return;
       }
       // Remember this preset for the site (silent smart default for next time).
-      if (info.extractor !== null) {
-        const site = info.extractor.toLowerCase();
+      // `typeof` guard again: a payload without an extractor must not abort
+      // the whole enqueue.
+      const site = typeof info.extractor === "string" ? info.extractor.toLowerCase() : "";
+      if (site.length > 0) {
         const known = settings.getState().settings.presetBySite;
         void settings
           .getState()
@@ -1049,6 +1092,40 @@ export function Home({
                   </span>
                 </label>
               ))}
+            </details>
+          )}
+
+          {/* Output container (v1.7.2): every container the bundled yt-dlp can
+              produce or remux into, applied per job. */}
+          {kind === "video" && (
+            <details className="advanced">
+              <summary>{S.settings.mergeContainer}</summary>
+              <div className="chip-row">
+                <button
+                  type="button"
+                  className="chip"
+                  aria-pressed={container === null}
+                  onClick={() => {
+                    setContainer(null);
+                  }}
+                >
+                  {S.settings.containerDefault}
+                </button>
+                {CONTAINERS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    className="chip"
+                    aria-pressed={container === c}
+                    onClick={() => {
+                      setContainer(c);
+                    }}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+              <p className="hint">{S.settings.mergeContainerHint}</p>
             </details>
           )}
 

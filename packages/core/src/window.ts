@@ -79,6 +79,49 @@ export function centerIn(workArea: Rect, size: WindowSize): { x: number; y: numb
   };
 }
 
+/**
+ * How much of the window must still be on a work area for a remembered
+ * position to count as "restorable". Below this the user would be looking at
+ * (almost) nothing and the titlebar drag handle would be unreachable.
+ */
+export const RESTORE_VISIBLE_PX = 120;
+
+/** True when `size` at (x, y) still shows `RESTORE_VISIBLE_PX` on some display. */
+export function isRestorable(
+  x: number,
+  y: number,
+  size: WindowSize,
+  workAreas: readonly Rect[],
+): boolean {
+  return workAreas.some((area) => {
+    const overlapX =
+      Math.min(x + size.width, area.x + area.width) - Math.max(x, area.x);
+    const overlapY =
+      Math.min(y + size.height, area.y + area.height) - Math.max(y, area.y);
+    return overlapX >= RESTORE_VISIBLE_PX && overlapY >= RESTORE_VISIBLE_PX;
+  });
+}
+
+/**
+ * Where to open the window from a remembered position (v1.7.2).
+ *
+ * The window is FIXED in size but free in position, and the user's placement
+ * is a preference worth keeping: re-centring on every launch threw the window
+ * back to the middle of the screen. Returns the saved origin when it is still
+ * on a connected display, otherwise null so the caller centres instead.
+ */
+export function restoreOrigin(
+  saved: { readonly x: number; readonly y: number } | null,
+  size: WindowSize,
+  workAreas: readonly Rect[],
+): { x: number; y: number } | null {
+  if (saved === null) return null;
+  if (!Number.isFinite(saved.x) || !Number.isFinite(saved.y)) return null;
+  const x = Math.round(saved.x);
+  const y = Math.round(saved.y);
+  return isRestorable(x, y, size, workAreas) ? { x, y } : null;
+}
+
 export interface WindowChromeState {
   readonly mini: boolean;
   /** Native titlebar/window colors must follow the light theme (M4.6). */

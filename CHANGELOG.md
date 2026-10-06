@@ -3,6 +3,128 @@
 All notable changes to FluxDL are documented here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.7.2] — 2026-10-05
+
+"Trust the numbers, trust the buttons, trust the formats": the six reported
+bugs are fixed, a full audit pass closed a dozen more behind them, and every
+container yt-dlp can produce is now reachable from the UI.
+
+### Fixed — the reported bugs
+
+- **The window jumped back to the middle of the screen.** The renderer re-applies
+  window chrome on *every* theme change, and the main process re-centred the
+  window on *every* apply — so moving the window and then touching any setting
+  snapped it back. It now stays exactly where you put it, remembers that spot
+  across restarts, and only re-centres when the size genuinely changes (mini
+  <-> normal) or when the remembered display is gone.
+- **Stats showed "Unknown" for total size.** yt-dlp's post-processing lines
+  (`[ExtractAudio]`, `[Merger]`, …) carry no byte counts and were overwriting the
+  size the download phase had already reported — so every audio download and
+  every merged video lost its size on the way to history. Byte counts are now
+  monotonic, the finished file is measured on disk, and the Stats screen
+  back-fills the real size of history rows recorded before this fix.
+- **Preview showed `0:00` and could not be scrubbed.** The in-app `media://`
+  protocol answered every request with one flat `200` body. It now speaks HTTP
+  byte ranges (`206`, `Accept-Ranges`, `Content-Range`), streams the window
+  instead of loading the whole file, and the modal shows the real duration.
+- **Copy log / Copy diagnostics always failed.** There was no main-side clipboard
+  *write* — only a read — so the buttons fell back to the DOM clipboard API,
+  which the sandboxed renderer refuses. Writes now go through the main process,
+  like reads already did.
+- **Refresh and Show command were permanently disabled.** Both waited for a
+  manually picked job. The newest job is preselected now, Refresh re-reads the
+  versions, the job list and the open log in one go, and neither button is
+  disabled while there is anything to show.
+- **Search boxes and the Batch buttons looked dead.** Downloads had no search box
+  at all until the queue was non-empty; the toast column silently swallowed
+  clicks on whatever sat under it (the Batch action row lives there); the skip
+  link did the same while parked off-screen; and a payload without an `extractor`
+  crashed the whole Home view behind the error boundary. All four are fixed, and
+  only the titlebar strip is ever a native drag region.
+- **Batch gave no feedback.** A paste that contained no links silently added
+  nothing, `crypto.randomUUID` could throw out of the click handler, and a failed
+  analyze pool reset the busy flag with no message. Now: the reason is always
+  shown, the id helper cannot throw, and a disabled button always explains
+  itself.
+
+### Fixed — found by the audit
+
+- **Already-downloaded never worked.** The archive lookup lowercased the whole
+  identity key while the video id is case-sensitive, so no real id could ever
+  match: every archived playlist entry showed as not downloaded.
+- **A settings change could silently revert.** The boot effect re-read settings
+  and re-hydrated the queue on every language/theme change, and a slow `load()`
+  landing after a `save()` rolled the change back. The store now counts writes so
+  a stale load yields.
+- **Backup restore could destroy history.** It cleared history first and then
+  appended the records one at a time, swallowing failures — a single error left
+  the user with nothing while the UI reported success. It is one atomic replace
+  now, and the report shows the reason when it fails.
+- **Restoring a large backup froze the app.** Each history append re-read and
+  rewrote the whole file, so restoring N records was N² whole-file rewrites on
+  the main thread. The prune is now incremental and batched.
+- **The update popup was a trap.** After a failed update, Escape and the backdrop
+  were disabled and Retry was the only button. Every phase except an in-flight
+  download is dismissible now.
+- **Update / repair buttons blamed the wrong thing.** The pre-check counted only
+  active jobs while the engine counts paused ones too, so a paused download turned
+  into a generic "update failed".
+- **Copy/Save diagnostics could do nothing at all** — a corrupt timestamp in the
+  history file made the report builder throw and the error was swallowed.
+- **A crashed view told you nothing.** The error boundary discarded the message;
+  it is now shown and logged.
+- **Notification permission was requested on every launch**, even for users who
+  had notifications switched off.
+- **The update download allowlist was too loose**: `endsWith("github.com")`
+  accepted `evil-github.com`.
+- **The main thread blocked** while scanning the download folder and while
+  checking hundreds of file paths, and the metadata dump was unbounded.
+- **Toast timers were never cancelled** and fired re-renders seconds after the
+  toast was gone.
+- Context-menu arrow keys could get stuck instead of wrapping, and Left collapsed
+  a submenu to the top of the menu instead of back to its parent.
+- A deep link or `.fluxdl` file arriving during launch was silently dropped.
+
+### Changed
+
+- The e2e suite was repaired: 8 of its tests had been failing (stale mock, stale
+  field counts, position-based selectors) and one of them *accepted "Copy failed."
+  as a pass*, which is why the clipboard bug survived. All 29 pass, including new
+  coverage for the window position, the search boxes, the Batch flow, the
+  clipboard, the format lists and the pacing settings.
+- Every search box is a real `type="search"` field with a clear button and a live
+  match count, so typing visibly does something on every page.
+
+### Added — full format support
+
+- **Every container yt-dlp can produce is now recognised** — a finished file in
+  MKV, AVI, FLV, MOV, 3GP, MPEG-TS, VOB, WMV, MKA, DTS, AC3, AMR, AIFF, a live
+  manifest and more no longer shows up as "Missing" in the Library, and can be
+  previewed, opened, measured and counted in storage insights.
+- **Output container picker** (Settings, plus a per-job override in Advanced and
+  per-row/per-entry in Batch and playlists): mp4, mkv, webm, avi, flv, mov and
+  gif. Verified against the bundled `yt-dlp 2026.08.19` — values it rejects
+  (`ogv`, `mpg`, `ts`, `vob`, `3gp`, `m2ts`, `wmv`, `f4v` for remux; `mka`,
+  `ogg`, `wma` for `--audio-format`) are deliberately not offered, because
+  yt-dlp aborts on an unknown value. A stale or hand-edited setting degrades to
+  the default instead of breaking the download.
+- **Audio formats** now cover yt-dlp's whole `--audio-format` set: MP3, M4A,
+  AAC, Opus, Vorbis, FLAC, ALAC, WAV — plus **Best**, which keeps the source
+  stream untouched (no extraction, no re-encode).
+- **Polite pacing** (Settings ▸ Network): request delay, minimum/maximum delay
+  before each download, and a subtitle delay, each mapping 1:1 onto yt-dlp's
+  documented flags, with Off / Light / Standard presets. Off by default, so the
+  default command line is unchanged. Combined with the existing concurrency
+  cap (2 by default) and proxy support, this is what keeps a legitimate
+  download from looking like a scrape and getting your IP rate-limited.
+
+### Legal
+
+- README now carries an explicit legal section: MIT licence with the full "AS
+  IS" warranty disclaimer and limitation of liability, neutral branding (no
+  third-party names or logos anywhere in the app), no DRM circumvention of any
+  kind, and zero telemetry — with the practical anti-block guidance next to it.
+
 ## [1.7.1] — 2026-10-04
 
 "One size, done right": the window is now a fixed 1180x820 — it cannot be

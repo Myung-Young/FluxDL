@@ -70,10 +70,54 @@ describe("engine addons (lifecycle/deeplink/media/updates)", () => {
     writeFileSync(song, "audio-bytes");
     const url = (await engine.getMediaUrl(song)) ?? "";
     const served = await engine.serveMediaRequest(url);
-    expect(served?.mime).toBe("audio/mpeg");
-    expect(served?.body.toString()).toBe("audio-bytes");
+    expect(served?.status).toBe(200);
+    expect(served?.headers["Content-Type"]).toBe("audio/mpeg");
+    // Byte ranges are what make <audio>/<video> show a real duration (v1.7.2).
+    expect(served?.headers["Accept-Ranges"]).toBe("bytes");
+    expect(served?.headers["Content-Length"]).toBe("11");
+    expect(served?.path).toBe(song);
+    expect(served?.start).toBe(0);
+    expect(served?.end).toBe(10);
+
+    const partial = await engine.serveMediaRequest(url, "bytes=0-4");
+    expect(partial?.status).toBe(206);
+    expect(partial?.headers["Content-Range"]).toBe("bytes 0-4/11");
+    expect(partial?.headers["Content-Length"]).toBe("5");
+    expect(partial?.start).toBe(0);
+    expect(partial?.end).toBe(4);
+
+    const bad = await engine.serveMediaRequest(url, "bytes=99-");
+    expect(bad?.status).toBe(416);
+    expect(bad?.headers["Content-Range"]).toBe("bytes */11");
+
     expect(await engine.serveMediaRequest("media://play/%2Fetc%2Fpasswd")).toBeNull();
     expect(await engine.serveMediaRequest("https://evil.example/a.mp3")).toBeNull();
+  });
+
+  it("fileSizesBulk measures allowlisted outputs and refuses the rest", async () => {
+    const { engine, base } = makeEngine();
+    const { mkdirSync } = await import("node:fs");
+    const dl = join(base, "dl");
+    mkdirSync(dl, { recursive: true });
+    await engine.saveSettings({ downloadDir: dl });
+    writeFileSync(join(dl, "a.mp3"), "12345678");
+    const sizes = await engine.fileSizesBulk([
+      join(dl, "a.mp3"),
+      join(dl, "ghost.mp3"),
+      join(base, "..", "evil.mp3"),
+    ]);
+    expect(sizes[0]).toBe(8);
+    expect(sizes[1]).toBeNull();
+    expect(sizes[2]).toBeNull();
+  });
+
+  it("writeClipboard resolves a boolean, never throws", async () => {
+    const { engine } = makeEngine();
+    // Outside a real Electron runtime the clipboard stub refuses, so only the
+    // contract (a boolean, no throw) is pinned here — the e2e suite proves the
+    // happy path end to end.
+    const ok = await engine.writeClipboard("fluxdl");
+    expect(typeof ok).toBe("boolean");
   });
 
   it("openExternal rejects non-Releases URLs", async () => {

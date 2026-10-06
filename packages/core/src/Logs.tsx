@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine, EngineVersions, UpdateStatus } from "./engine.js";
@@ -39,6 +39,7 @@ export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element 
   const [cmdArgs, setCmdArgs] = useState<string[] | null>(null);
   const [errorsOnly, setErrorsOnly] = useState<boolean>(false);
   const [follow, setFollow] = useState<boolean>(true);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
   const [logNote, setLogNote] = useState<string | null>(null);
   const logPreRef = useRef<HTMLPreElement | null>(null);
 
@@ -47,15 +48,16 @@ export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element 
     setVersions(v);
   }, [engine]);
 
+  const loadHistory = useCallback(async (): Promise<readonly DownloadJob[]> => {
+    const h = await engine.loadHistory().catch(() => [] as DownloadJob[]);
+    setHistory(h);
+    return h;
+  }, [engine]);
+
   useEffect(() => {
     void refreshVersions();
-    engine
-      .loadHistory()
-      .then((h) => {
-        setHistory(h);
-      })
-      .catch(() => undefined);
-  }, [engine, refreshVersions]);
+    void loadHistory();
+  }, [engine, refreshVersions, loadHistory]);
 
   const checkUpdate = async (): Promise<void> => {
     setUpdating(true);
@@ -99,18 +101,42 @@ export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element 
     }
   };
 
-  const viewLog = async (id: string): Promise<void> => {
+  const viewLog = useCallback(async (id: string): Promise<void> => {
     setSelectedId(id);
     setCmdArgs(null);
     const text = await engine.getRawLog(id).catch(() => null);
     setLogText(text);
-  };
+  }, [engine]);
 
   // Transparency (C6): the exact (redacted) yt-dlp argv behind a job.
   const viewCommand = async (): Promise<void> => {
     if (selectedId === null) return;
     const argv = await engine.getJobArgs(selectedId).catch(() => null);
     setCmdArgs(argv);
+  };
+
+  const rows: readonly DownloadJob[] = useMemo(() => [...jobs, ...history], [jobs, history]);
+
+  // Nothing selected yet? Preselect the newest row (v1.7.2). Refresh and Show
+  // command used to sit permanently disabled until the user happened to click
+  // a job chip, which read as "those buttons are broken".
+  useEffect(() => {
+    if (selectedId !== null || rows.length === 0) return;
+    const newest = [...rows].sort(
+      (a, b) => (b.finishedAt ?? b.createdAt) - (a.finishedAt ?? a.createdAt),
+    )[0];
+    if (newest !== undefined) void viewLog(newest.id);
+  }, [rows, selectedId, viewLog]);
+
+  /** Refresh: engine versions, the job list, and the open log in one go. */
+  const refreshAll = async (): Promise<void> => {
+    setRefreshing(true);
+    try {
+      await Promise.all([refreshVersions(), loadHistory()]);
+      if (selectedId !== null) await viewLog(selectedId);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   // Follow live output: pin the scroll to the tail on new log text.
@@ -130,7 +156,7 @@ export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element 
     setLogNote(ok ? S.logs.logCopied : S.menu.copyFailed);
   };
 
-  const buildReport = async (): Promise<string | null> => {
+  const buildReport = async (): Promise<string> => {
     const [loadedSettings, loadedHistory] = await Promise.all([
       engine.loadSettings().catch(() => DEFAULT_SETTINGS),
       engine.loadHistory().catch(() => [] as DownloadJob[]),
@@ -156,31 +182,49 @@ export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element 
     return text;
   };
 
-  const copyReport = async (): Promise<void> => {
-    const text = (await buildReport().catch(() => null)) ?? report;
-    if (text === null) return;
+  const buildReportOrError = async (): Promise<string | Error> =>
+    buildReport().catch((err: unknown) =>
+      err instanceof Error ? err : new Error(String(err)),
+    );
+
+const copyReport = async (): Promise<void> => {
+    // v1.7.2: never a silent no-op. If the report cannot be built there is now
+    // a visible reason, because "the button did nothing" is exactly what made
+    // these two controls untrustworthy.
+    const built = await buildReportOrError();
+    if (built instanceof Error) {
+      setDiagNote(built.message.length > 0 ? built.message : S.settings.saveFailed);
+      return;
+    }
+    const text = built;
     const ok = await writeClipboardText(text);
     setDiagNote(ok ? S.diagnostics.copied : S.menu.copyFailed);
   };
 
   const saveReport = async (): Promise<void> => {
-    const text = (await buildReport().catch(() => null)) ?? report;
-    if (text === null) return;
-    const blob = new Blob([text], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "fluxdl-diagnostics.txt";
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    setTimeout(() => {
-      URL.revokeObjectURL(url);
-    }, 5000);
-    setDiagNote(S.diagnostics.saved);
+    const built = await buildReportOrError();
+    if (built instanceof Error) {
+      setDiagNote(built.message.length > 0 ? built.message : S.settings.saveFailed);
+      return;
+    }
+    const text = built;
+    try {
+      const blob = new Blob([text], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "fluxdl-diagnostics.txt";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 5000);
+      setDiagNote(S.diagnostics.saved);
+    } catch (err) {
+      setDiagNote(err instanceof Error && err.message.length > 0 ? err.message : S.settings.saveFailed);
+    }
   };
-
-  const rows: readonly DownloadJob[] = [...jobs, ...history];
 
   return (
     <section className="grabber-view" aria-label={S.logs.title}>
@@ -322,10 +366,12 @@ export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element 
             id="logs-search"
             data-testid="logs-search"
             className="input"
+            type="search"
             value={logQuery}
             placeholder={S.logs.search}
             aria-label={S.logs.search}
             spellCheck={false}
+            autoComplete="off"
             onChange={(e) => {
               setLogQuery(e.target.value);
             }}
@@ -366,12 +412,14 @@ export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element 
           <button
             type="button"
             className="btn btn-small"
-            disabled={selectedId === null}
+            data-testid="logs-refresh"
+            disabled={refreshing}
+            title={S.logs.refresh}
             onClick={() => {
-              if (selectedId !== null) void viewLog(selectedId);
+              void refreshAll();
             }}
           >
-            {S.logs.refresh}
+            {refreshing ? S.settings.loading : S.logs.refresh}
           </button>
           <button
             type="button"
@@ -386,7 +434,9 @@ export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element 
           <button
             type="button"
             className="btn btn-small"
-            disabled={selectedId === null}
+            data-testid="logs-show-command"
+            disabled={rows.length === 0}
+            title={selectedId === null ? S.logs.selectJobFirst : S.logs.showCommand}
             onClick={() => {
               void viewCommand();
             }}

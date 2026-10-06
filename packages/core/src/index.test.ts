@@ -8,7 +8,10 @@ describe("core M0", () => {
   });
 
   it("exposes a fixed single IPC channel map", () => {
-    expect(Object.keys(IPC_CHANNELS)).toHaveLength(47);
-    expect(new Set(Object.values(IPC_CHANNELS)).size).toBe(47);
+    // v1.7.2 added `writeClipboard` (main-side copy), `fileSizesBulk`
+    // (Stats back-fill) and `restoreHistory` (atomic backup restore), so the
+    // pinned count is 50.
+    expect(Object.keys(IPC_CHANNELS)).toHaveLength(50);
+    expect(new Set(Object.values(IPC_CHANNELS)).size).toBe(50);
   });
 });

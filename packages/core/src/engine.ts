@@ -171,6 +171,12 @@ export interface DownloadEngine {
   fileExists(path: string): Promise<boolean>;
   /** Bulk existence check (each path guard-checked; invalid entries read false). */
   fileExistsBulk(paths: string[]): Promise<boolean[]>;
+  /**
+   * Real on-disk size per path (guard-checked, null when unknown). Used by the
+   * Stats screen to fill in sizes for history rows that predate the engine
+   * reporting them — without it "total size" reads "Unknown" for old records.
+   */
+  fileSizesBulk(paths: string[]): Promise<Array<number | null>>;
   /** Which extractor::id keys appear in the download archive. */
   archiveHas(keys: string[]): Promise<boolean[]>;
   /** Move a finished file to the Recycle Bin (guard-checked, never unlink). */
@@ -205,6 +211,13 @@ export interface DownloadEngine {
    * involved). Null when empty or unreadable — never throws.
    */
   readClipboard(): Promise<string | null>;
+  /**
+   * System clipboard write (main-side Electron clipboard). The DOM
+   * `navigator.clipboard.writeText` path is denied inside the sandboxed
+   * renderer, which is why every "Copy" button used to report a failure.
+   * False when the clipboard refused it — never throws.
+   */
+  writeClipboard(text: string): Promise<boolean>;
   /**
    * One round trip for both updatables: the app itself (GitHub Releases)
    * and yt-dlp. Best-effort: offline checkers resolve update=false, never
@@ -241,6 +254,13 @@ export interface DownloadEngine {
   loadHistory(): Promise<DownloadJob[]>;
   removeHistory(id: string): Promise<void>;
   clearHistory(): Promise<void>;
+  /**
+   * Replace the WHOLE history in one atomic write (backup restore).
+   * Never implemented as clear-then-append: that destroyed the existing
+   * history before the new one was written and reported success on a partial
+   * restore (v1.7.2).
+   */
+  restoreHistory(jobs: DownloadJob[]): Promise<void>;
 }
 
 /**
@@ -269,6 +289,7 @@ export const IPC_CHANNELS = {
   revealInFolder: "engine:reveal",
   fileExists: "engine:fileExists",
   fileExistsBulk: "engine:fileExistsBulk",
+  fileSizesBulk: "engine:fileSizesBulk",
   archiveHas: "engine:archiveHas",
   trashFile: "engine:trashFile",
   updateHistory: "store:updateHistory",
@@ -281,6 +302,7 @@ export const IPC_CHANNELS = {
   loadHistory: "store:loadHistory",
   removeHistory: "store:removeHistory",
   clearHistory: "store:clearHistory",
+  restoreHistory: "store:restoreHistory",
   loadWatchlist: "store:loadWatchlist",
   saveWatchlist: "store:saveWatchlist",
   getDiskSpace: "engine:diskSpace",
@@ -293,6 +315,7 @@ export const IPC_CHANNELS = {
   onDeepLink: "app:deepLink",
   onBatchLink: "app:batchLink",
   readClipboard: "app:readClipboard",
+  writeClipboard: "app:writeClipboard",
   checkForUpdates: "engine:checkUpdates",
   getMediaUrl: "engine:mediaUrl",
   openExternal: "app:openExternal",

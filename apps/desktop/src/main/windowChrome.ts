@@ -18,6 +18,13 @@ import { boundsFor, centerIn, fitToWorkArea, MINI_HEIGHT, MINI_WIDTH, NORMAL_BOU
  * user cannot resize, maximize or fullscreen it. Nothing about the old size is
  * remembered any more — a remembered size could resurrect a pre-fixed window
  * (the D122 class of bug) and break the one-size guarantee.
+ *
+ * v1.7.2: POSITION is remembered. The window is fixed in size but free in
+ * place, so where the user parks it is a preference like any other. Before
+ * this, every chrome apply (and the renderer pushes one on *every* theme
+ * change) re-centred the window, so moving it and then changing any setting
+ * snapped it back to the middle of the screen. A re-centre now happens only
+ * when the size actually changes (mini <-> normal).
  */
 const STATE_FILE = "window-state.json";
 
@@ -36,6 +43,9 @@ export interface WindowState {
   readonly theme: string;
   readonly miniX: number | null;
   readonly miniY: number | null;
+  /** Last known normal-mode top-left, so the window reopens where it was. */
+  readonly normalX: number | null;
+  readonly normalY: number | null;
 }
 
 export const DEFAULT_WINDOW_STATE: WindowState = {
@@ -43,6 +53,8 @@ export const DEFAULT_WINDOW_STATE: WindowState = {
   theme: "obsidian",
   miniX: null,
   miniY: null,
+  normalX: null,
+  normalY: null,
 };
 
 /** Colors for a theme name, falling back to obsidian for unknown values. */
@@ -50,20 +62,29 @@ export function colorsFor(theme: string): { bg: string; fg: string } {
   return THEME_COLORS[theme] ?? FALLBACK_COLORS;
 }
 
+/**
+ * Window coordinates are screen coordinates, so 0 and negatives are both
+ * legitimate (a taskbar on the left, a monitor to the left of the primary).
+ * Only non-finite values are rejected.
+ */
+function coord(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? Math.round(value) : null;
+}
+
 /** Sanitize a persisted state file (never trust disk content). */
 export function sanitizeWindowState(raw: unknown): WindowState {
   if (typeof raw !== "object" || raw === null) return DEFAULT_WINDOW_STATE;
   const rec = raw as Record<string, unknown>;
-  const num = (v: unknown): number | null =>
-    typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : null;
   const theme = typeof rec["theme"] === "string" ? rec["theme"] : DEFAULT_WINDOW_STATE.theme;
   return {
     mini: rec["mini"] === true,
     theme: colorsFor(theme) === FALLBACK_COLORS && theme !== "obsidian" ? "obsidian" : theme,
-    // Stored mini position only (a remembered normal size is never trusted:
-    // the window is fixed now, see the module note).
-    miniX: num(rec["miniX"]),
-    miniY: num(rec["miniY"]),
+    // Stored positions only (a remembered normal SIZE is never trusted: the
+    // window is fixed now, see the module note).
+    miniX: coord(rec["miniX"]),
+    miniY: coord(rec["miniY"]),
+    normalX: coord(rec["normalX"]),
+    normalY: coord(rec["normalY"]),
   };
 }
 
@@ -126,6 +147,8 @@ export async function applyChrome(
   const target = resolveBounds(state, next);
   let miniX = state.miniX;
   let miniY = state.miniY;
+  let normalX = state.normalX;
+  let normalY = state.normalY;
   if (win !== null && !win.isDestroyed()) {
     win.setAlwaysOnTop(next, "floating");
     // The fixed size, shrunk only if the display is smaller than it (a fixed
@@ -140,26 +163,38 @@ export async function applyChrome(
     const fixed = fitToWorkArea(target, workArea);
     win.setMinimumSize(fixed.width, fixed.height);
     win.setMaximumSize(fixed.width, fixed.height);
+    const current = win.getBounds();
+    // v1.7.2: only a real SIZE change is allowed to move the window. The
+    // renderer re-applies chrome on every theme switch, so re-centring here
+    // used to yank the window back to the middle of the screen as soon as the
+    // user touched any setting after parking it somewhere.
+    const sizeChanged =
+      current.width !== fixed.width || current.height !== fixed.height;
     if (next) {
       // Center on the current window so the compact view appears in place.
       // No clamping to 0: a monitor to the left of the primary one has
       // negative coordinates and those positions are legitimate (D133).
-      const size = win.getSize();
-      const pos = win.getPosition();
-      const w = size[0] ?? NORMAL_BOUNDS.width;
-      const h = size[1] ?? NORMAL_BOUNDS.height;
       miniX = target.stored
-        ? (state.miniX ?? 0)
-        : (pos[0] ?? 0) + Math.round((w - fixed.width) / 2);
+        ? (state.miniX ?? current.x)
+        : current.x + Math.round((current.width - fixed.width) / 2);
       miniY = target.stored
-        ? (state.miniY ?? 0)
-        : (pos[1] ?? 0) + Math.round((h - fixed.height) / 2);
+        ? (state.miniY ?? current.y)
+        : current.y + Math.round((current.height - fixed.height) / 2);
       win.setBounds({ x: miniX, y: miniY, width: fixed.width, height: fixed.height });
-    } else {
-      // Re-center on the display it came from: leaving mini would otherwise
-      // leave the full window at the compact window's top-left corner.
+    } else if (sizeChanged) {
+      // Leaving mini (or landing on a smaller display) does change the size.
+      // Re-centre on the display it came from so the full window does not sit
+      // half off-screen at the compact window's top-left corner.
       const origin = centerIn(workArea, fixed);
+      normalX = origin.x;
+      normalY = origin.y;
       win.setBounds({ x: origin.x, y: origin.y, width: fixed.width, height: fixed.height });
+    } else {
+      // Same size: the window stays exactly where the user put it. No
+      // setBounds at all — moving a window the OS already considers settled
+      // is what produced the "it jumped back" feel.
+      normalX = current.x;
+      normalY = current.y;
     }
     const colors = colorsFor(state.theme);
     try {
@@ -170,7 +205,7 @@ export async function applyChrome(
       // Older Electron / unsupported platform: CSS still themes the frame.
     }
   }
-  const saved: WindowState = { ...state, mini: next, miniX, miniY };
+  const saved: WindowState = { ...state, mini: next, miniX, miniY, normalX, normalY };
   await saveWindowState(userDataDir, saved);
   return saved;
 }
@@ -185,6 +220,12 @@ export interface WindowChromeController {
   readonly current: () => WindowState;
   /** Resolve once the persisted state has been read (idempotent). */
   readonly ready: () => Promise<WindowState>;
+  /**
+   * Remember where the user has dragged the window (v1.7.2). Called from the
+   * window's `move` event; a no-op when nothing changed, so the caller can
+   * debounce freely.
+   */
+  readonly notePosition: () => Promise<void>;
 }
 
 /**
@@ -225,5 +266,30 @@ export function createWindowChrome(deps: {
     },
     current: () => state,
     ready: () => loaded,
+    notePosition: async () => {
+      const win = deps.getWindow();
+      if (win === null || win.isDestroyed()) return;
+      let bounds: ReturnType<BrowserWindow["getBounds"]>;
+      try {
+        bounds = win.getBounds();
+      } catch {
+        return;
+      }
+      const next: WindowState = state.mini
+        ? { ...state, miniX: bounds.x, miniY: bounds.y }
+        : { ...state, normalX: bounds.x, normalY: bounds.y };
+      // Windows emits `move` continuously while dragging; only the settled
+      // position is worth a disk write.
+      if (
+        next.miniX === state.miniX &&
+        next.miniY === state.miniY &&
+        next.normalX === state.normalX &&
+        next.normalY === state.normalY
+      ) {
+        return;
+      }
+      state = next;
+      await saveWindowState(deps.userDataDir, next);
+    },
   };
 }

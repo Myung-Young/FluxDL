@@ -775,14 +775,21 @@ export function Downloads({
   return (
     <section className="grabber-view" aria-label={S.downloads.title}>
       <h1>{S.downloads.title}</h1>
-      {jobs.length > 0 && (
-        <div className="grabber-card dl-toolbar">
+      {/* v1.7.2: the command bar is always mounted. It used to disappear with
+          an empty queue, so on a fresh install the page had no search box at
+          all — the search looked "missing" rather than empty. */}
+      <div className="grabber-card dl-toolbar">
+        <div className="url-row">
           <input
+            id="downloads-search"
+            data-testid="downloads-search"
             className="input"
+            type="search"
             placeholder={S.downloads.searchPlaceholder}
             value={query}
             aria-label={S.downloads.searchPlaceholder}
             spellCheck={false}
+            autoComplete="off"
             onChange={(e) => {
               setQuery(e.target.value);
             }}
@@ -790,8 +797,23 @@ export function Downloads({
               if (e.key === "Enter") commitSearch(query);
             }}
           />
-          {savedSearches.length > 0 && (
-            <div className="chip-row" role="group" aria-label={S.downloads.savedSearches}>
+          {query.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-small"
+              aria-label={S.logs.clearSearch}
+              onClick={() => {
+                setQuery("");
+              }}
+            >
+              {S.logs.clearSearch}
+            </button>
+          )}
+        </div>
+        {jobs.length > 0 && (
+          <>
+            {savedSearches.length > 0 && (
+              <div className="chip-row" role="group" aria-label={S.downloads.savedSearches}>
               <span className="muted">{S.downloads.savedSearches}:</span>
               {savedSearches.map((s) => (
                 <button
@@ -914,8 +936,9 @@ export function Downloads({
               })}
             </p>
           )}
-        </div>
-      )}
+          </>
+        )}
+      </div>
       {jobs.length > 0 && (
         <div className="chip-row" role="group" aria-label={S.downloads.bulkActions}>
           <button

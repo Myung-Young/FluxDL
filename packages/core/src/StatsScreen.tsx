@@ -37,10 +37,50 @@ export function Stats({ engine, settings }: StatsProps): React.JSX.Element {
   const [storage, setStorage] = useState<StorageInsights | null>(null);
   const [cleaning, setCleaning] = useState<boolean>(false);
 
+  /**
+   * Fill in the size of finished rows that have none (v1.7.2).
+   *
+   * Records written before the engine reported the real output size — or by a
+   * build whose post-processing wiped it — leave the "total size" tile on
+   * "Unknown" forever, even though the file is sitting right there on disk. The
+   * engine measures it for us (guard-checked), so the tile is correct for the
+   * whole existing library, not just for new downloads.
+   */
+  const backfillSizes = useCallback(
+    async (rows: readonly DownloadJob[]): Promise<readonly DownloadJob[]> => {
+      const targets: Array<{ index: number; path: string }> = [];
+      rows.forEach((r, index) => {
+        if (r.status !== "done") return;
+        if (typeof r.totalBytes === "number" && r.totalBytes > 0) return;
+        const dest = r.destination;
+        if (dest === null || dest.length === 0) return;
+        targets.push({ index, path: dest });
+      });
+      if (targets.length === 0) return rows;
+      const sizes = await engine
+        .fileSizesBulk(targets.map((t) => t.path))
+        .catch(() => [] as Array<number | null>);
+      if (sizes.length === 0) return rows;
+      const byIndex = new Map<number, number>();
+      targets.forEach((t, i) => {
+        const size = sizes[i];
+        if (size !== null && size !== undefined && size > 0) byIndex.set(t.index, size);
+      });
+      if (byIndex.size === 0) return rows;
+      return rows.map((r, index) => {
+        const size = byIndex.get(index);
+        if (size === undefined) return r;
+        return { ...r, totalBytes: size, downloadedBytes: r.downloadedBytes ?? size };
+      });
+    },
+    [engine],
+  );
+
   const refresh = useCallback(async (): Promise<void> => {
     try {
       const loaded = await engine.loadHistory();
-      setHistory(pruneHistory(loaded, settings.getState().settings.historyLimit));
+      const pruned = pruneHistory(loaded, settings.getState().settings.historyLimit);
+      setHistory(await backfillSizes(pruned));
     } catch {
       setHistory([]);
     } finally {
@@ -52,7 +92,7 @@ export function Stats({ engine, settings }: StatsProps): React.JSX.Element {
         setStorage(s);
       })
       .catch(() => undefined);
-  }, [engine, settings]);
+  }, [engine, settings, backfillSizes]);
 
   const cleanOrphans = async (): Promise<void> => {
     if (storage === null || storage.orphans.length === 0) return;
