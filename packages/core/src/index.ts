@@ -8,15 +8,20 @@ export type {
   DownloadJob,
   DownloadJobInput,
   DownloadPreset,
+  EngineId,
+  FileResult,
   FormatOption,
+  ImagesSettings,
   JobStatus,
   MediaInfo,
   MediaKind,
   PlaylistEntry,
+  RouterMode,
   ThemeName,
   VideoPreset,
+  YtDlpChannel,
 } from "./types.js";
-export { CLOSE_BEHAVIORS } from "./types.js";
+export { CLOSE_BEHAVIORS, ENGINE_IDS, ROUTER_MODES, YTDLP_CHANNELS } from "./types.js";
 export type { WatchChannel } from "./types.js";
 export { addWatchChannel, diffWatch, normalizeWatchlist, touchWatch } from "./watchlist.js";
 export { fuzzyMatch, fuzzyRank } from "./fuzzy.js";
@@ -219,6 +224,7 @@ export {
   buildFfmpegVersionArgs,
   buildInfoArgs,
   buildUpdateArgs,
+  buildUpdateToArgs,
   buildVersionArgs,
   codecSortOf,
   redactArgs,
@@ -226,6 +232,22 @@ export {
 export type { DownloadArgsInput } from "./args.js";
 export { parseProgressLine, PROGRESS_TEMPLATE, parseSpeedBps } from "./progress.js";
 export type { ParsedProgress } from "./progress.js";
+export { resolveEngine, domainOf, engineLabel, BUILTIN_ENGINE_RULES } from "./engines.js";
+export type { DomainRule, ResolveInput, ResolveOutput, ResolveReason, ProbeResult } from "./engines.js";
+export { buildGalleryDlConfig, validateGalleryConfigJson } from "./galleryConfig.js";
+export type { GalleryConfig, GalleryConfigInput } from "./galleryConfig.js";
+export {
+  parseGalleryDlLine,
+  applyGalleryFileEvent,
+  parseGalleryTotal,
+  splitGalleryChunk,
+  emptyGalleryProgress,
+} from "./galleryProgress.js";
+export type { GalleryFileEvent, GalleryProgress } from "./galleryProgress.js";
+export { TOOL_MANIFESTS, toolManifest, compareVersions, MIN_TOOL_VERSIONS } from "./tools.js";
+export type { ToolInstallMode, ToolManifest } from "./tools.js";
+export { buildDoctorReport, isCheckDue, isStalled, versionCheck } from "./doctor.js";
+export type { DoctorCheck, DoctorReport, DoctorStatus } from "./doctor.js";
 export { mapDownloadError, actionsFor, cancelledMapped, timeoutMapped } from "./errors.js";
 export type { ErrorAction, ErrorActionId, ErrorCategory, MappedError } from "./errors.js";
 export { ErrorActionButtons } from "./ErrorActions.js";
@@ -250,6 +272,7 @@ export {
   retryInSeconds,
   makeJob,
   isFinished,
+  engineOf,
   searchHistory,
   pruneHistory,
   reorder,

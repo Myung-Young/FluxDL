@@ -33,6 +33,11 @@ const FFMPEG_ZIP_URL =
   "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip";
 const FFMPEG_SUMS_URL =
   "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/checksums.sha256";
+// gallery-dl standalone Windows exe (Phase 1, GPL-2.0 — see THIRD_PARTY_NOTICES.md).
+// Pinned version verified against https://github.com/mikf/gallery-dl/releases.
+const GALLERYDL_VERSION = process.env["GALLERYDL_VERSION"] ?? "1.26.12";
+const GALLERYDL_EXE_URL = `https://github.com/mikf/gallery-dl/releases/download/v${GALLERYDL_VERSION}/gallery-dl.exe`;
+const GALLERYDL_SUMS_URL = `https://github.com/mikf/gallery-dl/releases/download/v${GALLERYDL_VERSION}/gallery-dl_SHA256SUM.txt`;
 
 function sha256File(path) {
   return new Promise((resolve, reject) => {
@@ -127,6 +132,24 @@ async function main() {
       await copyFile(src, join(outDir, name));
       console.log(`[bins] ${name} OK`);
     }
+
+    console.log(`[bins] gallery-dl ${GALLERYDL_VERSION} (GPL-2.0)`);
+    let galleryDlVersion = GALLERYDL_VERSION;
+    let galleryDlSha = null;
+    try {
+      const gsums = await fetchText(GALLERYDL_SUMS_URL);
+      galleryDlSha = parseSums(gsums, "gallery-dl.exe");
+      const gTmp = join(tmp, "gallery-dl.exe");
+      await download(GALLERYDL_EXE_URL, gTmp);
+      const gotG = await sha256File(gTmp);
+      if (gotG !== galleryDlSha) throw new Error("gallery-dl.exe SHA256 mismatch");
+      await copyFile(gTmp, join(outDir, "gallery-dl.exe"));
+      console.log("[bins] gallery-dl.exe OK");
+    } catch (err) {
+      // gallery-dl is optional for the yt-dlp-only build; the engine reports
+      // a clear "not installed" error when the binary is absent.
+      console.warn(`[bins] gallery-dl skipped: ${err instanceof Error ? err.message : err}`);
+    }
     await writeFile(
       join(outDir, "versions.json"),
       JSON.stringify(
@@ -134,6 +157,8 @@ async function main() {
           ytdlp: YTDLP_VERSION,
           ytdlpSha256: wantExe,
           ffmpegSha256: wantZip,
+          galleryDl: galleryDlVersion,
+          galleryDlSha256: galleryDlSha,
           fetchedAt: new Date().toISOString(),
         },
         null,

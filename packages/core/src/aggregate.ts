@@ -28,6 +28,7 @@ export function aggregateStatus(jobs: readonly DownloadJob[]): AggregateStatus {
       queued += 1;
     } else if (
       j.status === "analyzing" ||
+      j.status === "probing" ||
       j.status === "downloading" ||
       j.status === "processing"
     ) {

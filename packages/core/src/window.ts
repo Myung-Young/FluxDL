@@ -151,7 +151,12 @@ export interface MiniSummary {
 export function miniSummary(jobs: readonly DownloadJob[]): MiniSummary {
   let active = 0;
   for (const job of jobs) {
-    if (job.status === "downloading" || job.status === "processing" || job.status === "analyzing") {
+    if (
+      job.status === "downloading" ||
+      job.status === "processing" ||
+      job.status === "analyzing" ||
+      job.status === "probing"
+    ) {
       active += 1;
     }
   }
@@ -166,8 +171,10 @@ export function miniRows(jobs: readonly DownloadJob[]): readonly DownloadJob[] {
       case "processing":
         return 0;
       case "analyzing":
+      case "probing":
         return 1;
       case "queued":
+      case "interrupted":
         return 2;
       case "paused":
         return 3;

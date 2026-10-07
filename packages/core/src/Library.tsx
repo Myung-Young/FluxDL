@@ -204,6 +204,8 @@ export function Library({ engine, queue, settings, toast }: LibraryProps): React
         // Without this yt-dlp answers "has already been downloaded" and exits
         // successfully without fetching anything.
         forceOverwrite: true,
+        // Re-download stays on the original engine.
+        ...(h.engineId === "gallery-dl" ? { engineId: "gallery-dl" as const } : {}),
       });
       toast.getState().push(S.toast.queued, "info");
     } finally {

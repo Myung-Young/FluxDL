@@ -6,6 +6,9 @@ import type {
   WatchChannel,
 } from "./types.js";
 import type { ErrorCategory } from "./errors.js";
+import type { DoctorReport } from "./doctor.js";
+
+export type { DoctorCheck, DoctorReport, DoctorStatus } from "./doctor.js";
 
 /** Progress event pushed by the engine. */
 export interface EngineProgress {
@@ -34,6 +37,14 @@ export interface EngineVersions {
   readonly ytdlp: string;
   readonly ffmpeg: string | null;
   readonly app: string;
+  /** gallery-dl version when installed, else null (Phase 1). */
+  readonly galleryDl?: string | null;
+  /** Detected JS runtime version (deno/node) or null (Phase 2). */
+  readonly jsRuntime?: string | null;
+  /** aria2c version when a binary is present, else null (Phase 2). */
+  readonly aria2c?: string | null;
+  /** Resolved path per tool id (missing tools read null). */
+  readonly toolPaths?: Readonly<Record<string, string | null>>;
   /** Platform details for diagnostics (absent from old mocks). */
   readonly os?: string;
   readonly arch?: string;
@@ -150,6 +161,18 @@ export interface DownloadEngine {
   updateEngine(): Promise<EngineVersions>;
   /** Re-copy bundled binaries, verify hashes, re-check versions. */
   repairEngine(): Promise<RepairReport>;
+  /**
+   * Restore the previous (.bak) copy of a userData/bin tool installed by
+   * installToolAtomic. False when there is nothing to roll back.
+   */
+  rollbackTool(toolId: string): Promise<boolean>;
+  /**
+   * Reinstall a bundled tool from the packaged resources (re-copy + verify).
+   * External tools (deno/aria2c) reject with placement guidance.
+   */
+  reinstallTool(toolId: string): Promise<EngineVersions>;
+  /** Run the Doctor health checks (Phase 2). Never throws for offline. */
+  runDoctor(): Promise<DoctorReport>;
   /** Throttled aggregate state (taskbar progress bar + tray tooltip). */
   setAggregateProgress(state: AggregateProgressState): Promise<void>;
   /**
@@ -279,6 +302,9 @@ export const IPC_CHANNELS = {
   getEngineVersion: "engine:getVersion",
   updateEngine: "engine:update",
   repairEngine: "engine:repair",
+  rollbackTool: "engine:rollbackTool",
+  reinstallTool: "engine:reinstallTool",
+  runDoctor: "engine:runDoctor",
   setAggregateProgress: "engine:aggregate",
   applyWindowChrome: "engine:windowChrome",
   onWindowChrome: "engine:windowChromeChanged",

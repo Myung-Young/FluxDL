@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "@grabber/core/settings.js";
 import type { AppSettings, DownloadJobInput } from "@grabber/core/types.js";
 import { makeJob, toStartInput } from "@grabber/core/queue.js";
-import { buildStartArgs } from "./jobArgs.js";
+import { buildGalleryDlArgs, buildStartArgs } from "./jobArgs.js";
 
 /**
  * R1: the job -> argv hop. Before this milestone the live/chapter flags were
@@ -142,5 +142,38 @@ describe("buildStartArgs", () => {
     });
     expect(valueOf(argv, "--audio-quality")).toBe("0");
     expect(flagIndex(args(input), "--audio-quality")).toBe(-1);
+  });
+});
+
+describe("buildGalleryDlArgs", () => {
+  it("emits an args array ending with -- <url> (never shell)", () => {
+    const argv = buildGalleryDlArgs(input, {
+      settings: DEFAULT_SETTINGS,
+      configPath: "C:\\data\\gallery-dl.conf.json",
+      downloadDir: "C:\\dl\\Images",
+      cookiesFile: null,
+    });
+    expect(argv).toContain("--config");
+    expect(argv).toContain("--dest");
+    expect(argv.slice(-2)).toEqual(["--", input.url]);
+    expect(argv).not.toContain(input.url.replace("https://", ""));
+  });
+
+  it("passes retries/proxy/sleep only when set", () => {
+    const argv = buildGalleryDlArgs(
+      { ...input, engineId: "gallery-dl" },
+      {
+        settings: {
+          ...DEFAULT_SETTINGS,
+          images: { ...DEFAULT_SETTINGS.images, retries: 5, proxy: "http://127.0.0.1:8080" },
+        },
+        configPath: "c",
+        downloadDir: "d",
+        cookiesFile: "C:\\cookies.txt",
+      },
+    );
+    expect(valueOf(argv, "--retries")).toBe("5");
+    expect(valueOf(argv, "--proxy")).toBe("http://127.0.0.1:8080");
+    expect(valueOf(argv, "--cookies")).toBe("C:\\cookies.txt");
   });
 });

@@ -18,6 +18,8 @@ interface Fake extends QueueEngine {
   saved: DownloadJob[][];
   history: DownloadJob[];
   failStart: Error | null;
+  updated: number;
+  failUpdate: boolean;
   fire(p: EngineProgress): void;
 }
 
@@ -32,6 +34,8 @@ function makeFake(): Fake {
     saved: [],
     history: [],
     failStart: null,
+    updated: 0,
+    failUpdate: false,
     fire: (p) => {
       cb?.(p);
     },
@@ -74,6 +78,15 @@ function makeFake(): Fake {
     removeHistory: (id) => {
       fake.history = fake.history.filter((h) => h.id !== id);
       return Promise.resolve();
+    },
+    updateEngine: () => {
+      if (fake.failUpdate) return Promise.reject(new Error("offline"));
+      fake.updated += 1;
+      return Promise.resolve({
+        ytdlp: "2026.08.19",
+        ffmpeg: "7.1",
+        app: "test",
+      });
     },
   };
   return fake;
@@ -217,7 +230,7 @@ describe("QueueController", () => {
     ctrl.dispose();
   });
 
-  it("hydrate re-queues in-flight jobs from a snapshot", async () => {    const fake = makeFake();
+  it("hydrate recovers in-flight jobs as interrupted (never auto-starts)", async () => {    const fake = makeFake();
     const ctrl = new QueueController({ engine: fake, concurrency: 1, maxRetries: 3 });
     ctrl.hydrate([
       {
@@ -240,8 +253,10 @@ describe("QueueController", () => {
         destination: null,
       },
     ]);
-    expect(ctrl.getJobs()[0]?.status).toBe("queued");
+    expect(ctrl.getJobs()[0]?.status).toBe("interrupted");
     await ctrl.pump();
+    expect(fake.started).toHaveLength(0);
+    await ctrl.resume("old");
     expect(fake.started).toHaveLength(1);
     ctrl.dispose();
   });
@@ -409,12 +424,13 @@ describe("QueueController", () => {
     const saved = fake.saved[fake.saved.length - 1] ?? [];
     const queuedSaved = saved.filter((j) => j.status === "queued");
     expect(queuedSaved[0]?.id).toBe("q3");
-    // Hydrate restores the same start order.
+    // Hydrate restores the same start order (in-flight q1 comes back
+    // interrupted and needs an explicit resume, so only queued jobs start).
     const fake2 = makeFake();
     const ctrl2 = new QueueController({ engine: fake2, concurrency: 5, maxRetries: 3 });
     ctrl2.hydrate(saved);
     await ctrl2.pump();
-    expect(fake2.started.map((s) => s.title)).toEqual(["Big Buck Bunny", "C", "B"]);
+    expect(fake2.started.map((s) => s.title)).toEqual(["C", "B"]);
     ctrl.dispose();
     ctrl2.dispose();
   });
@@ -576,6 +592,7 @@ describe("QueueController", () => {
       saveQueue: () => Promise.resolve(),
       appendHistory: () => Promise.resolve(),
       removeHistory: () => Promise.resolve(),
+      updateEngine: () => Promise.reject(new Error("not implemented in test fake")),
     };
     const ctrl = new QueueController({
       engine: slow,
@@ -687,6 +704,115 @@ describe("idle pumping (M4.8)", () => {
     await ctrl.pump();
     expect(fake.started.length).toBeGreaterThan(1);
     expect(fake.saved.length).toBeGreaterThan(before);
+    ctrl.dispose();
+  });
+
+  it("auto-retries an outdated engine once when it is the only job", async () => {
+    const fake = makeFake();
+    let n = 0;
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 1,
+      maxRetries: 3,
+      createId: () => `q${String((n += 1))}`,
+    });
+    await ctrl.enqueue(input);
+    fake.fire({
+      ...downloading("eng-1"),
+      stage: "error",
+      errorMessage: "Signature extraction failed",
+      errorCategory: "extractor-failed",
+    });
+    await vi.waitFor(() => {
+      expect(fake.updated).toBe(1);
+    });
+    // Updated once, then re-queued and restarted exactly once more.
+    expect(fake.started).toHaveLength(2);
+    expect(ctrl.getJobs()[0]?.outdatedRetried).toBe(true);
+    ctrl.dispose();
+  });
+
+  it("never loops the outdated retry (flag set, update failure falls through)", async () => {
+    const fake = makeFake();
+    fake.failUpdate = true;
+    let n = 0;
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 1,
+      maxRetries: 3,
+      createId: () => `q${String((n += 1))}`,
+    });
+    await ctrl.enqueue(input);
+    fake.fire({
+      ...downloading("eng-1"),
+      stage: "error",
+      errorMessage: "HTTP Error 403",
+      errorCategory: "extractor-failed",
+    });
+    await vi.waitFor(() => {
+      expect(ctrl.getJobs()[0]?.status).toBe("error");
+    });
+    expect(fake.started).toHaveLength(1);
+    expect(ctrl.getJobs()[0]?.outdatedRetried).toBe(true);
+    // A second identical failure (after an explicit manual retry) must not
+    // update again: the flag allows exactly one automatic attempt.
+    await ctrl.retry("q1");
+    await vi.waitFor(() => {
+      expect(fake.started).toHaveLength(2);
+    });
+    fake.fire({
+      ...downloading("eng-2"),
+      stage: "error",
+      errorMessage: "HTTP Error 403",
+      errorCategory: "extractor-failed",
+    });
+    await vi.waitFor(() => {
+      expect(ctrl.getJobs()[0]?.status).toBe("error");
+    });
+    expect(fake.updated).toBe(0);
+    expect(fake.started).toHaveLength(2);
+    ctrl.dispose();
+  });
+
+  it("leaves outdated failures to the banner when other jobs run", async () => {
+    const fake = makeFake();
+    let n = 0;
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 2,
+      maxRetries: 3,
+      createId: () => `q${String((n += 1))}`,
+    });
+    await ctrl.enqueue(input);
+    await ctrl.enqueue({ ...input, title: "B" });
+    fake.fire({
+      ...downloading("eng-1"),
+      stage: "error",
+      errorMessage: "Signature extraction failed",
+      errorCategory: "extractor-failed",
+    });
+    await vi.waitFor(() => {
+      expect(ctrl.getJobs().some((j) => j.status === "error")).toBe(true);
+    });
+    expect(fake.updated).toBe(0);
+    ctrl.dispose();
+  });
+
+  it("keeps stalled progress in place without moving state", async () => {
+    const fake = makeFake();
+    let n = 0;
+    const ctrl = new QueueController({
+      engine: fake,
+      concurrency: 1,
+      maxRetries: 3,
+      createId: () => `q${String((n += 1))}`,
+    });
+    await ctrl.enqueue(input);
+    fake.fire({ ...downloading("eng-1"), stage: "stalled" });
+    await vi.waitFor(() => {
+      expect(ctrl.getJobs()[0]?.stage).toBe("stalled");
+    });
+    expect(ctrl.getJobs()[0]?.status).toBe("downloading");
     ctrl.dispose();
   });
 });

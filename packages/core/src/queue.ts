@@ -17,34 +17,48 @@ export const MAX_HISTORY_ITEMS = 500;
 
 export type QueueEvent =
   | "analyze"
+  | "probe"
   | "start"
   | "resume"
   | "pause"
   | "progress"
   | "process"
   | "done"
+  | "partial"
   | "fail"
   | "cancel"
   | "retry";
 
 const TRANSITIONS: Readonly<Record<QueueEvent, ReadonlySet<JobStatus>>> = {
-  analyze: new Set<JobStatus>(["queued", "error"]),
-  start: new Set<JobStatus>(["queued", "analyzing", "paused"]),
-  resume: new Set<JobStatus>(["paused"]),
-  pause: new Set<JobStatus>(["queued", "analyzing", "downloading", "processing"]),
-  progress: new Set<JobStatus>(["downloading", "processing", "paused"]),
+  analyze: new Set<JobStatus>(["queued", "error", "interrupted"]),
+  probe: new Set<JobStatus>(["queued", "error", "interrupted"]),
+  start: new Set<JobStatus>(["queued", "analyzing", "probing", "paused", "interrupted"]),
+  resume: new Set<JobStatus>(["paused", "interrupted"]),
+  pause: new Set<JobStatus>(["queued", "analyzing", "probing", "downloading", "processing"]),
+  progress: new Set<JobStatus>(["downloading", "processing", "paused", "probing"]),
   process: new Set<JobStatus>(["downloading"]),
-  done: new Set<JobStatus>(["downloading", "processing", "analyzing", "paused"]),
-  fail: new Set<JobStatus>(["queued", "analyzing", "downloading", "processing", "paused"]),
+  done: new Set<JobStatus>(["downloading", "processing", "analyzing", "probing", "paused"]),
+  partial: new Set<JobStatus>(["downloading", "processing", "probing", "paused"]),
+  fail: new Set<JobStatus>([
+    "queued",
+    "analyzing",
+    "probing",
+    "downloading",
+    "processing",
+    "paused",
+    "interrupted",
+  ]),
   cancel: new Set<JobStatus>([
     "queued",
     "analyzing",
+    "probing",
     "downloading",
     "processing",
     "paused",
     "error",
+    "interrupted",
   ]),
-  retry: new Set<JobStatus>(["error", "cancelled"]),
+  retry: new Set<JobStatus>(["error", "cancelled", "partial", "interrupted"]),
 };
 
 export function canTransition(from: JobStatus, event: QueueEvent): boolean {
@@ -60,17 +74,23 @@ export function nextStatus(from: JobStatus, event: QueueEvent): JobStatus {
   switch (event) {
     case "analyze":
       return "analyzing";
+    case "probe":
+      return "probing";
     case "start":
     case "resume":
       return "downloading";
     case "pause":
       return "paused";
     case "progress":
-      return from === "processing" ? "processing" : "downloading";
+      if (from === "processing") return "processing";
+      if (from === "probing") return "probing";
+      return "downloading";
     case "process":
       return "processing";
     case "done":
       return "done";
+    case "partial":
+      return "partial";
     case "fail":
       return "error";
     case "cancel":
@@ -109,6 +129,8 @@ export function transition(
       return { ...job, status, error: null, nextRetryAt: null };
     case "done":
       return { ...job, status, progress: 100, error: null, nextRetryAt: null };
+    case "partial":
+      return { ...job, status, error: job.error, nextRetryAt: null };
     case "cancel":
       return { ...job, status, error: null, nextRetryAt: null };
     default:
@@ -172,6 +194,18 @@ export function applyEngineProgress(job: DownloadJob, p: EngineProgressLike): Do
         nextRetryAt: null,
         destination: p.destination ?? job.destination,
       };
+    case "partial":
+      if (!canTransition(job.status, "partial")) return job;
+      return {
+        ...job,
+        status: "partial",
+        speed: null,
+        eta: null,
+        ...bytes,
+        stage: p.stage,
+        destination: p.destination ?? job.destination,
+        nextRetryAt: null,
+      };
     case "error":
       // v1.7.2: never throw out of a progress fold (this runs inside a
       // `void`-ed promise in the controller), and prefer the ENGINE's mapped
@@ -191,6 +225,11 @@ export function applyEngineProgress(job: DownloadJob, p: EngineProgressLike): Do
         stage: p.stage,
         destination: p.destination ?? job.destination,
       };
+    case "stalled":
+      // Watchdog heartbeat (Phase 2): the job is still downloading, but no
+      // output arrived within the stall window. Never throws, never moves.
+      if (job.status !== "downloading" && job.status !== "processing") return job;
+      return { ...job, stage: "stalled" };
     case "cancelled":
       if (!canTransition(job.status, "cancel")) return job;
       return {
@@ -205,7 +244,7 @@ export function applyEngineProgress(job: DownloadJob, p: EngineProgressLike): Do
       if (!canTransition(job.status, "progress") && job.status !== "downloading") return job;
       return {
         ...job,
-        status: job.status === "processing" ? "processing" : "downloading",
+        status: job.status === "processing" || job.status === "probing" ? job.status : "downloading",
         progress: p.percent,
         speed: p.speed,
         eta: p.eta,
@@ -230,7 +269,12 @@ export function clampConcurrency(n: number): number {
 export function activeCount(jobs: readonly DownloadJob[]): number {
   let n = 0;
   for (const j of jobs) {
-    if (j.status === "analyzing" || j.status === "downloading" || j.status === "processing") {
+    if (
+      j.status === "analyzing" ||
+      j.status === "probing" ||
+      j.status === "downloading" ||
+      j.status === "processing"
+    ) {
       n += 1;
     }
   }
@@ -247,7 +291,12 @@ export function activeCount(jobs: readonly DownloadJob[]): number {
 export function unfinishedCount(jobs: readonly DownloadJob[]): number {
   let n = 0;
   for (const j of jobs) {
-    if (j.status !== "done" && j.status !== "error" && j.status !== "cancelled") {
+    if (
+      j.status !== "done" &&
+      j.status !== "partial" &&
+      j.status !== "error" &&
+      j.status !== "cancelled"
+    ) {
       n += 1;
     }
   }
@@ -328,6 +377,10 @@ type StartOptions = Partial<
     | "forceOverwrite"
     | "startAfter"
     | "pinned"
+    | "engineId"
+    | "trimStart"
+    | "trimEnd"
+    | "outdatedRetried"
   >
 > & {
     /** Per-job container override (v1.7.2); lives on the preset. */
@@ -369,6 +422,16 @@ function pickJobOptions(source: DownloadJobInput): StartOptions {
       ? { startAfter: source.startAfter }
       : {}),
     ...(source.pinned === true ? { pinned: true as const } : {}),
+    ...(source.engineId === "yt-dlp" || source.engineId === "gallery-dl"
+      ? { engineId: source.engineId }
+      : {}),
+    ...(typeof source.trimStart === "string" && source.trimStart.trim().length > 0
+      ? { trimStart: source.trimStart.trim().slice(0, 32) }
+      : {}),
+    ...(typeof source.trimEnd === "string" && source.trimEnd.trim().length > 0
+      ? { trimEnd: source.trimEnd.trim().slice(0, 32) }
+      : {}),
+    ...(source.outdatedRetried === true ? { outdatedRetried: true as const } : {}),
     // v1.7.2: a per-job container override rides on the preset, so it must
     // survive this hop or the job silently falls back to the global setting.
     ...(source.container !== undefined && source.container !== null
@@ -399,6 +462,7 @@ export function toStartInput(source: DownloadJobInput): DownloadJobInput {
 
 /** Factory for new queue entries (status queued, zero attempts). */
 export function makeJob(id: string, input: DownloadJobInput, createdAt: number): DownloadJob {
+  const carried = pickJobOptions(input);
   return {
     id,
     url: input.url,
@@ -417,12 +481,24 @@ export function makeJob(id: string, input: DownloadJobInput, createdAt: number):
     attempts: 0,
     nextRetryAt: null,
     destination: null,
-    ...pickJobOptions(input),
+    // Old callers omit engineId — default to yt-dlp so history stays honest.
+    engineId: "yt-dlp",
+    ...carried,
   };
 }
 
 export function isFinished(job: DownloadJob): boolean {
-  return job.status === "done" || job.status === "error" || job.status === "cancelled";
+  return (
+    job.status === "done" ||
+    job.status === "partial" ||
+    job.status === "error" ||
+    job.status === "cancelled"
+  );
+}
+
+/** Engine id with back-compat default (rows before v1.8 omit it). */
+export function engineOf(job: Pick<DownloadJob, "engineId">): "yt-dlp" | "gallery-dl" {
+  return job.engineId === "gallery-dl" ? "gallery-dl" : "yt-dlp";
 }
 
 /**

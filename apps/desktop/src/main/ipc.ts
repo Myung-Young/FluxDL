@@ -12,6 +12,7 @@ import type {
 import {
   AUDIO_PRESETS,
   CONTAINERS,
+  ENGINE_IDS,
   LIVE_STATUSES,
   VIDEO_PRESETS,
 } from "@grabber/core/types.js";
@@ -98,6 +99,16 @@ function parseJobInput(raw: unknown): DownloadJobInput {
     ...(typeof raw["startAfter"] === "number" && Number.isFinite(raw["startAfter"])
       ? { startAfter: raw["startAfter"] }
       : {}),
+    ...(typeof raw["trimStart"] === "string" && raw["trimStart"].trim().length > 0
+      ? { trimStart: raw["trimStart"].trim().slice(0, 32) }
+      : {}),
+    ...(typeof raw["trimEnd"] === "string" && raw["trimEnd"].trim().length > 0
+      ? { trimEnd: raw["trimEnd"].trim().slice(0, 32) }
+      : {}),
+    ...(typeof raw["engineId"] === "string" &&
+    (ENGINE_IDS as readonly string[]).includes(raw["engineId"])
+      ? { engineId: raw["engineId"] as "yt-dlp" | "gallery-dl" }
+      : {}),
     ...(raw["pinned"] === true ? { pinned: true as const } : {}),
     // Audio tag overrides (M4.3): rebuilt from primitives, never trusted.
     ...(isAudioMetadata(raw["audioMetadata"])
@@ -151,6 +162,19 @@ export function registerEngineIpc(engine: DesktopEngine): void {
   });
   ipcMain.handle(IPC_CHANNELS.repairEngine, async () => {
     return engine.repairEngine();
+  });
+  ipcMain.handle(IPC_CHANNELS.rollbackTool, async (_event, rawId: unknown) => {
+    const id = asNonEmptyString(rawId);
+    if (id === null) throw new Error("Missing tool id.");
+    return engine.rollbackTool(id);
+  });
+  ipcMain.handle(IPC_CHANNELS.reinstallTool, async (_event, rawId: unknown) => {
+    const id = asNonEmptyString(rawId);
+    if (id === null) throw new Error("Missing tool id.");
+    return engine.reinstallTool(id);
+  });
+  ipcMain.handle(IPC_CHANNELS.runDoctor, async () => {
+    return engine.runDoctor();
   });
   ipcMain.handle(IPC_CHANNELS.setAggregateProgress, async (_event, raw: unknown) => {
     if (!isRecord(raw)) throw new Error("Invalid aggregate state.");

@@ -51,6 +51,30 @@ async function installMock(page: Page): Promise<void> {
       historyLimit: 500,
       closeBehavior: "quit",
       minimizeToTray: false,
+      ytdlpChannel: "stable",
+      autoUpdateTools: false,
+      useAria2c: false,
+      concurrentFragments: null,
+      downloadRetries: null,
+      socketTimeoutSec: null,
+      stalledTimeoutSec: 120,
+      sponsorBlockCategories: "all,-filler",
+      impersonateClient: null,
+      lastToolCheckAt: null,
+      routerMode: "auto",
+      domainRules: {},
+      images: {
+        downloadDir: "",
+        folderTemplate: "{site}/{gallery}",
+        filenameTemplate: "{filename}.{extension}",
+        sleepRequestsSec: null,
+        maxSleepIntervalSec: null,
+        retries: 3,
+        proxy: null,
+        archive: true,
+        metadataSidecar: false,
+      },
+      lastFolderByMedia: {},
       notifyFinished: true,
       followSystemTheme: false,
       launchAtLogin: false,
@@ -82,7 +106,25 @@ async function installMock(page: Page): Promise<void> {
         });
       }
     };
-    const versions = { ytdlp: "mock", ffmpeg: null, app: "0.0.0-e2e" };
+    const versions = {
+      ytdlp: "mock",
+      ffmpeg: null,
+      app: "0.0.0-e2e",
+      galleryDl: null,
+      jsRuntime: null,
+      aria2c: null,
+      toolPaths: {
+        ytDlp: "yt-dlp",
+        ffmpeg: null,
+        galleryDl: null,
+        deno: null,
+        aria2c: null,
+      },
+      os: "mock-os",
+      arch: "mock-arch",
+      electron: "mock",
+      node: "mock",
+    };
     let n = 0;
     const mock = {
       getInfo: (url: string): Promise<unknown> =>
@@ -164,6 +206,10 @@ async function installMock(page: Page): Promise<void> {
       updateEngine: (): Promise<unknown> => Promise.resolve({ ...versions }),
       repairEngine: (): Promise<unknown> =>
         Promise.resolve({ ok: true, repaired: ["yt-dlp.exe"], failed: [], versions }),
+      rollbackTool: (): Promise<boolean> => Promise.resolve(false),
+      reinstallTool: (): Promise<unknown> => Promise.resolve({ ...versions }),
+      runDoctor: (): Promise<unknown> =>
+        Promise.resolve({ ok: true, checkedAt: Date.now(), checks: [] }),
       pickFolder: (): Promise<null> => Promise.resolve(null),
       pickFile: (): Promise<null> => Promise.resolve(null),
       openPath: (): Promise<void> => Promise.resolve(),

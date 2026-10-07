@@ -3,6 +3,32 @@
 All notable changes to FluxDL are documented here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased] — v1.8.0-foundation (Phase 1)
+
+Multi-engine groundwork with zero yt-dlp behaviour change.
+
+### Added
+
+- Engine foundation: `yt-dlp` / `gallery-dl` router (Auto / Video / Images),
+  engine badge on download cards, `interrupted` recovery (in-flight jobs come
+  back as interrupted and never auto-start), `partial` terminal state with
+  retry, and `probing` status.
+- gallery-dl spawn path (bundled `gallery-dl.exe`, app-owned config in
+  userData, atomic install + rollback, clear "not installed" guidance when
+  the binary is absent). See `THIRD_PARTY_NOTICES.md` (GPL-2.0).
+- Images preferences backend (`images` settings block, config generator with
+  validation, per-media last folders, domain rule overrides).
+- Tool hardening: JS-runtime (deno/node) + aria2c detection with 10-minute
+  cache, optional `--downloader aria2c`, fragment concurrency, retry/timeout
+  knobs, SponsorBlock categories, trim (`--download-sections`), client
+  impersonation, run timeouts, stall watchdog, output-integrity check
+  (archive-skips still report done), atomic tool install + rollback,
+  channel-aware self-update (stable/nightly), 24 h update throttle, and a
+  Doctor report API (`runDoctor`) over three new IPC channels.
+- Router wiring: single/batch enqueue resolves the engine (Auto / Video /
+  Images + domain rules); retries and re-downloads stay on the original
+  engine; download cards keep their engine badge.
+
 ## [1.7.2] — 2026-10-05
 
 "Trust the numbers, trust the buttons, trust the formats": the six reported

@@ -6,7 +6,53 @@ import type { ErrorCategory } from "./errors.js";
 import type { AudioMetadata } from "./metadata.js";
 
 export type JobStatus =
-  "queued" | "analyzing" | "downloading" | "processing" | "paused" | "done" | "error" | "cancelled";
+  | "queued"
+  | "analyzing"
+  | "probing"
+  | "downloading"
+  | "processing"
+  | "paused"
+  | "done"
+  | "partial"
+  | "interrupted"
+  | "error"
+  | "cancelled";
+
+/** yt-dlp release channel (Phase 2). */
+export type YtDlpChannel = "stable" | "nightly";
+
+export const YTDLP_CHANNELS: readonly YtDlpChannel[] = ["stable", "nightly"];
+
+/** Which engine owns a job. Old rows omit it (= yt-dlp). */
+export type EngineId = "yt-dlp" | "gallery-dl";
+
+export const ENGINE_IDS: readonly EngineId[] = ["yt-dlp", "gallery-dl"];
+
+/** Router mode: Auto picks per domain/rules, or pin one engine. */
+export type RouterMode = "auto" | "video" | "images";
+
+export const ROUTER_MODES: readonly RouterMode[] = ["auto", "video", "images"];
+
+/** One downloaded file inside a (possibly multi-file) job. */
+export interface FileResult {
+  readonly path: string;
+  readonly size: number | null;
+  readonly status: "downloaded" | "skipped" | "failed";
+}
+
+/** Images (gallery-dl) preferences. All optional-safe via mergeSettings. */
+export interface ImagesSettings {
+  /** Default folder for image jobs (empty = Downloads/FluxDL/Images). */
+  readonly downloadDir: string;
+  readonly folderTemplate: string;
+  readonly filenameTemplate: string;
+  readonly sleepRequestsSec: number | null;
+  readonly maxSleepIntervalSec: number | null;
+  readonly retries: number | null;
+  readonly proxy: string | null;
+  readonly archive: boolean;
+  readonly metadataSidecar: boolean;
+}
 
 export interface FormatOption {
   readonly formatId: string;
@@ -246,6 +292,21 @@ export interface DownloadJob {
   readonly startAfter?: number | null;
   /** Pinned jobs sort to the top of the list (B7). */
   readonly pinned?: boolean;
+  /** Trim section for this job (Phase 2, --download-sections). */
+  readonly trimStart?: string | null;
+  readonly trimEnd?: string | null;
+  /** Set once the outdated-engine auto-retry has fired (never loops). */
+  readonly outdatedRetried?: boolean;
+  /**
+   * Owning engine (Phase 1). Optional: rows written before v1.8 omit it
+   * and read as yt-dlp.
+   */
+  readonly engineId?: EngineId | null;
+  /** Per-file outcomes for multi-file (gallery) jobs. */
+  readonly fileResults?: readonly FileResult[] | null;
+  readonly downloadedCount?: number | null;
+  readonly skippedCount?: number | null;
+  readonly failedCount?: number | null;
 }
 
 export interface DownloadJobInput extends Pick<
@@ -267,6 +328,10 @@ export interface DownloadJobInput extends Pick<
   | "forceOverwrite"
   | "startAfter"
   | "pinned"
+  | "engineId"
+  | "trimStart"
+  | "trimEnd"
+  | "outdatedRetried"
 > {
   readonly useArchive?: boolean;
   /** Sanitized playlist subfolder (UI-side, when the setting is on). */
@@ -356,4 +421,32 @@ export interface AppSettings {
   readonly closeBehavior: CloseBehavior;
   /** Minimizing also hides the window to the tray. */
   readonly minimizeToTray: boolean;
+  /** yt-dlp release channel (Phase 2). */
+  readonly ytdlpChannel: YtDlpChannel;
+  /** Auto-install tool updates when idle (opt-in, default off). */
+  readonly autoUpdateTools: boolean;
+  /** Use aria2c as external downloader when its binary is present. */
+  readonly useAria2c: boolean;
+  /** Concurrent HLS/DASH fragments (-N), null = yt-dlp default. */
+  readonly concurrentFragments: number | null;
+  /** Network retries (-R + --fragment-retries), null = yt-dlp default. */
+  readonly downloadRetries: number | null;
+  /** Socket timeout seconds, null = yt-dlp default. */
+  readonly socketTimeoutSec: number | null;
+  /** Stall watchdog seconds (0 = off). */
+  readonly stalledTimeoutSec: number;
+  /** SponsorBlock remove list (used when sponsorBlock is on). */
+  readonly sponsorBlockCategories: string;
+  /** Experimental anti-bot impersonate client (null = off). */
+  readonly impersonateClient: string | null;
+  /** Last tool-check epoch ms (Tools page), null = never. */
+  readonly lastToolCheckAt: number | null;
+  /** Engine router (Phase 1): auto picks per domain/rules. */
+  readonly routerMode: RouterMode;
+  /** User domain → engine overrides (suffix match, lowercase host). */
+  readonly domainRules: Record<string, EngineId>;
+  /** Images (gallery-dl) preferences (Phase 1). */
+  readonly images: ImagesSettings;
+  /** Last-used folder per media type ("video" | "images"). */
+  readonly lastFolderByMedia: Record<string, string>;
 }

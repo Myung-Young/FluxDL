@@ -51,6 +51,7 @@ Pasting **multiple links**? They route to the **Batch** tab automatically
 | Area               | What you get                                                                                                                                                                   |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 📥 Downloading     | Single links, playlists with entry picker, batch paste, duplicate guard + download archive, pause / resume / cancel / retry, concurrency 1–5, speed limiter with quick presets |
+| 🖼️ Images (new)      | Optional gallery-dl engine for image galleries (Wikimedia Commons, Flickr, Imgur…), engine badge per download, interrupted recovery + partial retry |
 | 🎞️ Formats         | Compatible MP4 (H.264 + AAC), 480p–4K caps, top-quality audio (MP3 / M4A / Opus / FLAC), manual + auto subtitles, SponsorBlock removal, chapter splitting, audio tag editor    |
 | 📡 Live & upcoming | Stream status detection, record-from-start, wait-for-scheduled-start                                                                                                           |
 | 🪟 Mini window     | Always-on-top compact view with overall progress, per-download pause / resume / cancel, failed retry-all — toggle from the titlebar, `Ctrl+Shift+M`, palette, or tray          |

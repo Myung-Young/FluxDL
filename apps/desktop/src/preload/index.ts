@@ -11,6 +11,7 @@ import type {
 import type {
   AggregateProgressState,
   DeepLinkCallback,
+  DoctorReport,
   EngineProgress,
   EngineVersions,
   GetInfoInit,
@@ -40,6 +41,9 @@ export interface GrabberApi {
   getEngineVersion(): Promise<EngineVersions>;
   updateEngine(): Promise<EngineVersions>;
   repairEngine(): Promise<RepairReport>;
+  rollbackTool(toolId: string): Promise<boolean>;
+  reinstallTool(toolId: string): Promise<EngineVersions>;
+  runDoctor(): Promise<DoctorReport>;
   setAggregateProgress(state: AggregateProgressState): Promise<void>;
   applyWindowChrome(state: WindowChromeState): Promise<void>;
   onWindowChrome(cb: WindowChromeListener): Unsubscribe;
@@ -105,6 +109,11 @@ const api: GrabberApi = {
     ipcRenderer.invoke(IPC_CHANNELS.getEngineVersion) as Promise<EngineVersions>,
   updateEngine: () => ipcRenderer.invoke(IPC_CHANNELS.updateEngine) as Promise<EngineVersions>,
   repairEngine: () => ipcRenderer.invoke(IPC_CHANNELS.repairEngine) as Promise<RepairReport>,
+  rollbackTool: (toolId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.rollbackTool, toolId) as Promise<boolean>,
+  reinstallTool: (toolId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.reinstallTool, toolId) as Promise<EngineVersions>,
+  runDoctor: () => ipcRenderer.invoke(IPC_CHANNELS.runDoctor) as Promise<DoctorReport>,
   setAggregateProgress: (state: AggregateProgressState) =>
     ipcRenderer.invoke(IPC_CHANNELS.setAggregateProgress, state) as Promise<void>,
   applyWindowChrome: (state: WindowChromeState) =>

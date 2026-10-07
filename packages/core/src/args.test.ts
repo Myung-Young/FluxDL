@@ -5,6 +5,7 @@ import {
   buildDownloadArgs,
   buildInfoArgs,
   buildUpdateArgs,
+  buildUpdateToArgs,
   buildVersionArgs,
   mergeContainerOf,
   pacingArgs,
@@ -571,5 +572,74 @@ describe("polite pacing", () => {
       "10",
       base().url,
     ]);
+  });
+});
+
+describe("phase 2 hardening knobs", () => {
+  it("emits nothing new by default (default argv is unchanged)", () => {
+    const args = buildDownloadArgs(base());
+    for (const flag of [
+      "--js-runtimes",
+      "--downloader",
+      "-N",
+      "-R",
+      "--fragment-retries",
+      "--socket-timeout",
+      "--download-sections",
+      "--force-keyframes-at-cuts",
+      "--impersonate",
+    ]) {
+      expect(args).not.toContain(flag);
+    }
+    expect(args[args.length - 1]).toBe(base().url);
+  });
+
+  it("wires js-runtime, aria2c, fragments, retries, timeout", () => {
+    const args = buildDownloadArgs(
+      base({
+        jsRuntime: "deno",
+        useAria2c: true,
+        concurrentFragments: 4,
+        downloadRetries: 5,
+        socketTimeoutSec: 30,
+      }),
+    );
+    expect(args).toContain("--js-runtimes");
+    expect(args).toContain("deno");
+    expect(args).toEqual(expect.arrayContaining(["--downloader", "aria2c"]));
+    expect(args).toEqual(expect.arrayContaining(["-N", "4"]));
+    expect(args).toEqual(expect.arrayContaining(["-R", "5"]));
+    expect(args).toEqual(expect.arrayContaining(["--fragment-retries", "5"]));
+    expect(args).toEqual(expect.arrayContaining(["--socket-timeout", "30"]));
+  });
+
+  it("clamps numeric knobs into range", () => {
+    const args = buildDownloadArgs(
+      base({ concurrentFragments: 99, downloadRetries: -3, socketTimeoutSec: 9999 }),
+    );
+    expect(args).toEqual(expect.arrayContaining(["-N", "16"]));
+    expect(args).not.toContain("-R");
+    expect(args).toEqual(expect.arrayContaining(["--socket-timeout", "300"]));
+  });
+
+  it("emits trim sections with keyframes cut", () => {
+    const args = buildDownloadArgs(base({ trimStart: "10:00", trimEnd: "11:00" }));
+    expect(args).toEqual(expect.arrayContaining(["--download-sections", "*10:00-11:00"]));
+    expect(args).toContain("--force-keyframes-at-cuts");
+    expect(buildDownloadArgs(base())).not.toContain("--download-sections");
+  });
+
+  it("honours custom sponsorblock categories and impersonate", () => {
+    const args = buildDownloadArgs(
+      base({ sponsorBlock: true, sponsorBlockCategories: "sponsor,intro", impersonateClient: "chrome" }),
+    );
+    expect(args).toEqual(expect.arrayContaining(["--sponsorblock-remove", "sponsor,intro"]));
+    expect(args).toEqual(expect.arrayContaining(["--impersonate", "chrome"]));
+  });
+
+  it("builds channel-aware update args", () => {
+    expect(buildUpdateArgs()).toEqual(["--update"]);
+    expect(buildUpdateToArgs("stable")).toEqual(["--update"]);
+    expect(buildUpdateToArgs("nightly")).toEqual(["--update-to", "nightly@latest"]);
   });
 });

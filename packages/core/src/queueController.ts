@@ -23,6 +23,7 @@ export type QueueEngine = Pick<
   | "saveQueue"
   | "appendHistory"
   | "removeHistory"
+  | "updateEngine"
 >;
 
 export interface QueueClock {
@@ -96,15 +97,18 @@ export class QueueController {
     );
   }
 
-  /** Restore a snapshot (e.g. from loadQueue); in-flight jobs re-queue. */
+  /** Restore a snapshot (e.g. from loadQueue); in-flight jobs come back interrupted. */
   hydrate(snapshot: readonly DownloadJob[]): void {
     this.jobs.clear();
     this.engineIds.clear();
     this.revEngineIds.clear();
     for (const j of snapshot) {
       const back =
-        j.status === "downloading" || j.status === "processing" || j.status === "analyzing"
-          ? { ...j, status: "queued" as const, speed: null, eta: null, stage: null }
+        j.status === "downloading" ||
+        j.status === "processing" ||
+        j.status === "analyzing" ||
+        j.status === "probing"
+          ? { ...j, status: "interrupted" as const, speed: null, eta: null, stage: null }
           : j;
       this.jobs.set(back.id, back);
     }
@@ -139,10 +143,19 @@ export class QueueController {
 
   async resume(queueId: string): Promise<void> {
     const job = this.require(queueId);
-    if (job.status !== "paused") return;
+    if (job.status !== "paused" && job.status !== "interrupted") return;
     const engineId = this.engineIds.get(queueId);
     if (engineId !== undefined) {
       await this.engine.resume(engineId);
+      return;
+    }
+    // Interrupted jobs have no engine process (boot recovery never auto-starts).
+    // Re-queue so pump() hands them to the engine fresh on explicit resume.
+    if (job.status === "interrupted") {
+      this.jobs.set(queueId, transition(job, "retry"));
+      this.emit();
+      await this.persist();
+      await this.pump();
       return;
     }
     this.jobs.set(queueId, transition(job, "resume"));
@@ -309,10 +322,13 @@ export class QueueController {
     return swept.length;
   }
 
-  /** Sweep error, done, or cancelled jobs into history (abandon their retries). */
+  /** Sweep error, done, partial, or cancelled jobs into history (abandon their retries). */
   async clearFinished(): Promise<number> {
     const ids = [...this.jobs.values()]
-      .filter((j) => j.status === "error" || j.status === "done" || j.status === "cancelled")
+      .filter(
+        (j) =>
+          j.status === "error" || j.status === "done" || j.status === "partial" || j.status === "cancelled",
+      )
       .map((j) => j.id);
     const swept: DownloadJob[] = [];
     for (const id of ids) {
@@ -342,11 +358,12 @@ export class QueueController {
   /** Manual retry for every failed job (M3.2): fresh attempts, FIFO order. */
   async retryAll(): Promise<void> {
     const ids = [...this.jobs.values()]
-      .filter((j) => j.status === "error")
+      .filter((j) => j.status === "error" || j.status === "partial")
       .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1))
       .map((j) => j.id);
     for (const id of ids) {
-      if (this.jobs.get(id)?.status !== "error") continue;
+      const st = this.jobs.get(id)?.status;
+      if (st !== "error" && st !== "partial") continue;
       await this.retry(id);
     }
   }
@@ -428,22 +445,76 @@ export class QueueController {
       });
       const categorized: DownloadJob =
         p.errorCategory !== undefined ? { ...failed, errorCategory: p.errorCategory } : failed;
-      if (categorized.attempts > this.maxRetries) {
-        await this.finish(categorized);
-      } else {
-        this.jobs.set(queueId, categorized);
+      // Phase 2: one automatic outdated-engine retry (never a loop). Only when
+      // this is the sole unfinished job (updateEngine refuses while active),
+      // the failure smells stale (extractor-failed), and the flag is unset.
+      if (
+        categorized.errorCategory === "extractor-failed" &&
+        categorized.outdatedRetried !== true &&
+        categorized.attempts <= this.maxRetries &&
+        this.unfinishedCount() === 1
+      ) {
+        const marked: DownloadJob = { ...categorized, outdatedRetried: true };
+        this.jobs.set(queueId, marked);
         this.emit();
         await this.persist();
+        let updated = false;
+        try {
+          await this.engine.updateEngine();
+          updated = true;
+        } catch {
+          updated = false;
+        }
+        // Re-read: a manual retry may have moved the job while the update
+        // was in flight. Stale objects must never overwrite it.
+        const current = this.jobs.get(queueId);
+        if (current === undefined || current.status !== "error") return;
+        if (!updated) return this.finishOrKeep(queueId, current);
+        const reset: DownloadJob = {
+          ...transition(current, "retry"),
+          attempts: 0,
+          nextRetryAt: null,
+        };
+        this.jobs.set(queueId, reset);
+        this.emit();
+        await this.persist();
+        await this.pump();
+        return;
       }
-      return;
+      return this.finishOrKeep(queueId, categorized);
     }
     const updated = applyEngineProgress(job, p);
-    if (updated.status === "done" || updated.status === "cancelled") {
+    if (updated.status === "done" || updated.status === "partial" || updated.status === "cancelled") {
       await this.finish(updated);
       return;
     }
     this.jobs.set(queueId, updated);
     this.emit();
+  }
+
+  private unfinishedCount(): number {
+    let n = 0;
+    for (const j of this.jobs.values()) {
+      if (
+        j.status !== "done" &&
+        j.status !== "partial" &&
+        j.status !== "error" &&
+        j.status !== "cancelled"
+      ) {
+        n += 1;
+      }
+    }
+    return n;
+  }
+
+  private async finishOrKeep(queueId: string, job: DownloadJob): Promise<void> {
+    if (job.attempts > this.maxRetries) {
+      await this.finish(job);
+    } else {
+      this.jobs.set(queueId, job);
+      this.emit();
+      await this.persist();
+    }
   }
 
   private async finish(job: DownloadJob): Promise<void> {

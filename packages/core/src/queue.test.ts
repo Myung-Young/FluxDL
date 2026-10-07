@@ -344,6 +344,7 @@ describe("toStartInput", () => {
     liveFromStart: true,
     waitForVideo: true,
     splitChapters: true,
+    engineId: "gallery-dl",
   };
 
   it("carries every optional flag back out of a queued job (R1)", () => {
@@ -353,13 +354,14 @@ describe("toStartInput", () => {
 
   it("keeps makeJob and toStartInput on one allow-list (R1)", () => {
     // Anything makeJob accepts must survive the projection, and vice versa.
+    // Minimal inputs default to the yt-dlp engine (Phase 1 back-compat).
     expect(toStartInput(makeJob("j1", full, 1))).toEqual(full);
-    expect(toStartInput(makeJob("j2", input, 1))).toEqual(input);
+    expect(toStartInput(makeJob("j2", input, 1))).toEqual({ ...input, engineId: "yt-dlp" });
   });
 
   it("drops unknown keys from the untrusted renderer payload (R1)", () => {
     const smuggled = { ...input, evil: "rm -rf" } as unknown as DownloadJobInput;
-    expect(toStartInput(makeJob("j3", smuggled, 1))).toEqual(input);
+    expect(toStartInput(makeJob("j3", smuggled, 1))).toEqual({ ...input, engineId: "yt-dlp" });
   });
 
   it("omits flags that were never set (older snapshots stay clean)", () => {
@@ -386,7 +388,7 @@ describe("toStartInput", () => {
       },
       1,
     );
-    expect(toStartInput(job)).toEqual(input);
+    expect(toStartInput(job)).toEqual({ ...input, engineId: "yt-dlp" });
   });
 });
 

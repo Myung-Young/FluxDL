@@ -165,6 +165,9 @@ function Card({
         />
         <h2 className="dl-title">
           {job.pinned === true && <span className="badge">{strings.downloads.pinned}</span>}{" "}
+          <span className="badge" title={job.engineId ?? "yt-dlp"}>
+            {job.engineId === "gallery-dl" ? strings.engine.images : strings.engine.video}
+          </span>{" "}
           {job.title}
         </h2>
       </div>
@@ -214,7 +217,7 @@ function Card({
             {job.stage === "recording" ? strings.downloads.stopRecording : strings.downloads.pause}
           </button>
         )}
-        {job.status === "paused" && (
+        {(job.status === "paused" || job.status === "interrupted") && (
           <button
             type="button"
             className="btn btn-small"
@@ -229,7 +232,7 @@ function Card({
             {strings.downloads.resume}
           </button>
         )}
-        {job.status === "error" && (
+        {(job.status === "error" || job.status === "partial") && (
           <button
             type="button"
             className="btn btn-small"
@@ -445,9 +448,26 @@ export function Downloads({
   // Search (fuzzy + typo-tolerant) + status filter, best matches first.
   const visible = jobs
     .map((j) => {
-      if (statusFilter === "active" && !(j.status === "queued" || j.status === "analyzing" || j.status === "downloading" || j.status === "processing")) return null;
-      if (statusFilter === "error" && j.status !== "error") return null;
-      if (statusFilter === "done" && !(j.status === "done" || j.status === "cancelled")) return null;
+      if (
+        statusFilter === "active" &&
+        !(
+          j.status === "queued" ||
+          j.status === "analyzing" ||
+          j.status === "probing" ||
+          j.status === "downloading" ||
+          j.status === "processing" ||
+          j.status === "paused" ||
+          j.status === "interrupted"
+        )
+      )
+        return null;
+      if (statusFilter === "error" && !(j.status === "error" || j.status === "partial"))
+        return null;
+      if (
+        statusFilter === "done" &&
+        !(j.status === "done" || j.status === "partial" || j.status === "cancelled")
+      )
+        return null;
       const q = query.trim();
       if (q.length === 0) return { j, s: 0 };
       const s = fuzzyRank(`${j.title} ${j.url}`, q);
@@ -752,6 +772,9 @@ export function Downloads({
                     title: h.title,
                     preset: h.preset,
                     outputDir: settings.getState().settings.downloadDir,
+                    // Retry stays on the original engine (gallery jobs
+                    // must not silently become yt-dlp jobs).
+                    ...(h.engineId === "gallery-dl" ? { engineId: "gallery-dl" as const } : {}),
                   })
                   .catch(() => undefined);
               },
@@ -763,13 +786,22 @@ export function Downloads({
   }, [jobs, engine, queue, settings, toast, S]);
 
   const canPause = jobs.some(
-    (j) => j.status === "queued" || j.status === "analyzing" || j.status === "downloading" || j.status === "processing",
+    (j) =>
+      j.status === "queued" ||
+      j.status === "analyzing" ||
+      j.status === "probing" ||
+      j.status === "downloading" ||
+      j.status === "processing",
   );
-  const canResume = jobs.some((j) => j.status === "paused");
+  const canResume = jobs.some((j) => j.status === "paused" || j.status === "interrupted");
   const hasQueued = queuedIds.length > 0;
-  const hasErrors = jobs.some((j) => j.status === "error");
+  const hasErrors = jobs.some((j) => j.status === "error" || j.status === "partial");
   const hasClearable = jobs.some(
-    (j) => j.status === "error" || j.status === "done" || j.status === "cancelled",
+    (j) =>
+      j.status === "error" ||
+      j.status === "partial" ||
+      j.status === "done" ||
+      j.status === "cancelled",
   );
 
   return (

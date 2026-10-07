@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { readClipboardText } from "./clipboard.js";
 import { autoSortSubdir } from "./destination.js";
+import { resolveEngine } from "./engines.js";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
@@ -343,6 +344,14 @@ function withContainer(preset: DownloadPreset, container: Container | null): Dow
             outputDir,
             extractor: t.extractor,
             videoId: t.videoId,
+            // Same Phase 1 router as Home: image hosts become gallery jobs.
+            ...(resolveEngine({
+              url: t.url,
+              mode: settingsState.routerMode,
+              userRules: settingsState.domainRules,
+            }).engine === "gallery-dl"
+              ? { engineId: "gallery-dl" as const }
+              : {}),
             ...(g.fromPlaylist && settingsState.skipArchived && !g.forceFresh
               ? { useArchive: true as const }
               : {}),

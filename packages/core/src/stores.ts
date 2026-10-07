@@ -16,6 +16,7 @@ export type QueueStoreEngine = Pick<
   | "appendHistory"
   | "removeHistory"
   | "loadQueue"
+  | "updateEngine"
 >;
 
 export interface QueueStoreState {

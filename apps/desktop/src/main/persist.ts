@@ -32,10 +32,13 @@ const WATCHLIST_TMP = "watchlist.json.tmp";
 const STATUSES: readonly JobStatus[] = [
   "queued",
   "analyzing",
+  "probing",
   "downloading",
   "processing",
   "paused",
   "done",
+  "partial",
+  "interrupted",
   "error",
   "cancelled",
 ];

@@ -25,6 +25,7 @@ import { formatStr, localeTag, resolveLanguage, useStrings } from "./locale.js";
 import { pressScale, tweenAccentVar } from "./motion.js";
 import { BatchPanel } from "./BatchPanel.js";
 import { parseBatchText } from "./batch.js";
+import { resolveEngine } from "./engines.js";
 import { autoSortSubdir } from "./destination.js";
 import { useDuplicateGuard } from "./DuplicatePrompt.js";
 import type { GuardInput } from "./identity.js";
@@ -667,6 +668,16 @@ export function Home({
           outputDir,
           extractor: t.extractor,
           videoId: t.videoId,
+          // Phase 1 router: images mode (or an image-host/user rule in
+          // auto) produces gallery-dl jobs; everything else omits engineId
+          // and reads as yt-dlp (try-yt-dlp-first for unknown hosts).
+          ...(resolveEngine({
+            url: t.url,
+            mode: settingsState.routerMode,
+            userRules: settingsState.domainRules,
+          }).engine === "gallery-dl"
+            ? { engineId: "gallery-dl" as const }
+            : {}),
           ...(t.fromPlaylist && settingsState.skipArchived && !t.forceFresh
             ? { useArchive: true as const }
             : {}),

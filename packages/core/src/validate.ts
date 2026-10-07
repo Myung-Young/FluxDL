@@ -32,3 +32,15 @@ export function previewFilename(template: string): string {
     return value === undefined ? match : value;
   });
 }
+
+/**
+ * Trim time for --download-sections: empty (off), plain seconds, or
+ * [HH:]MM:SS with optional fraction. Hints only — args sanitizes again.
+ */
+export function validateTrimTime(value: string | null): boolean {
+  if (value === null) return true;
+  const t = value.trim();
+  if (t.length === 0) return true;
+  if (/^\d+(\.\d+)?$/.test(t)) return true;
+  return /^(?:\d+:)?[0-5]?\d:[0-5]\d(?:\.\d+)?$/.test(t);
+}

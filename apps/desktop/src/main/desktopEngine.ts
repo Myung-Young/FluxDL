@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, statfsSync, statSync } from "node:fs";
-import { open, readFile, readdir, rm, stat, unlink } from "node:fs/promises";
+import { existsSync, mkdirSync, renameSync, statfsSync, statSync, writeFileSync } from "node:fs";
+import { open, access, copyFile, readFile, readdir, rm, stat, unlink } from "node:fs/promises";
 import { platform as osPlatform, release as osRelease } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { clipboard, dialog, shell, app } from "electron";
@@ -46,9 +46,12 @@ import { STRINGS, STRINGS_MS } from "@grabber/core/strings.js";
 import {
   buildFfmpegVersionArgs,
   buildInfoArgs,
-  buildUpdateArgs,
+  buildUpdateToArgs,
   buildVersionArgs,
 } from "@grabber/core/args.js";
+import { buildDoctorReport, isCheckDue, versionCheck } from "@grabber/core/doctor.js";
+import type { DoctorCheck, DoctorReport } from "@grabber/core/doctor.js";
+import { MIN_TOOL_VERSIONS } from "@grabber/core/tools.js";
 import { toStartInput } from "@grabber/core/queue.js";
 import { cancelledMapped, mapDownloadError, timeoutMapped } from "@grabber/core/errors.js";
 import { hasMojibake, isExecutablePath, mediaGroup, pickFallbackFile } from "@grabber/core/destination.js";
@@ -58,6 +61,7 @@ import { parseMediaInfo } from "@grabber/core/media.js";
 import { parseProgressLine } from "@grabber/core/progress.js";
 import {
   ensureUserDataBinary,
+  readPinnedVersions,
   repairBinaries,
   resolveFfmpegDir,
   resolveFfmpegPath,
@@ -81,7 +85,21 @@ import {
 import { thumbnailColor } from "./thumbnail.js";
 import { outputBytes } from "./outputSize.js";
 import { contentRange, parseByteRange } from "./mediaRange.js";
-import { buildStartArgs } from "./jobArgs.js";
+import { buildGalleryDlArgs, buildStartArgs } from "./jobArgs.js";
+import {
+  GALLERYDL_EXE,
+  detectTool,
+  reinstallBundledTool,
+  resolveToolPath,
+  rollbackTool,
+} from "./binaryManager.js";
+import { buildGalleryDlConfig } from "@grabber/core/galleryConfig.js";
+import {
+  applyGalleryFileEvent,
+  emptyGalleryProgress,
+  parseGalleryDlLine,
+  splitGalleryChunk,
+} from "@grabber/core/galleryProgress.js";
 
 /**
  * One `media://` answer. `start`/`end` are inclusive byte offsets into the
@@ -143,6 +161,10 @@ interface ActiveJob {
   lastPercent: number | null;
   rawLog: string;
   state: JobState;
+  /** Last stdout/stderr activity (ms epoch) for the stall watchdog. */
+  lastActivityAt: number;
+  /** True once a stall was emitted for the current quiet spell. */
+  stalledFired: boolean;
 }
 
 const DESTINATION_RE = /\[download\] Destination: (.+)/;
@@ -307,6 +329,13 @@ const MEDIA_EXTENSIONS = [
 ] as const;
 
 /**
+ * yt-dlp archive-skip marker (`--download-archive` hit). Exit code is 0 but
+ * no file is written, so the output-integrity check must not fire: the skip
+ * is the success. Mirrors the test's `/already been (downloaded|recorded)/`.
+ */
+export const ARCHIVE_SKIP_RE = /already been (downloaded|recorded)/;
+
+/**
  * True for `github.com` / `githubusercontent.com` and their real subdomains.
  * A plain `endsWith` also accepted `evil-github.com`, which is exactly the
  * class of host this allowlist exists to reject (v1.7.2).
@@ -391,6 +420,40 @@ async function fetchLatestTag(apiUrl: string): Promise<string | null> {
   return payload === null ? null : payload.tag;
 }
 
+/** 24 h update-check throttle (Phase 2: at most one check per day). */
+export const UPDATE_CHECK_INTERVAL_MS = 86_400_000;
+
+/**
+ * Best-effort newest non-draft yt-dlp tag for the nightly channel (null on
+ * any failure). Stable keeps using /latest; nightly scans the recent list
+ * (prereleases included).
+ */
+export async function fetchNightlyTag(listUrl: string): Promise<string | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => {
+    ctrl.abort();
+  }, 8000);
+  try {
+    const res = await fetch(listUrl, { signal: ctrl.signal });
+    if (!res.ok) return null;
+    const raw: unknown = await res.json();
+    if (!Array.isArray(raw)) return null;
+    for (const entry of raw.slice(0, 10)) {
+      if (typeof entry !== "object" || entry === null) continue;
+      const rec = entry as Record<string, unknown>;
+      if (rec["draft"] === true) continue;
+      if (typeof rec["tag_name"] === "string" && rec["tag_name"].length > 0) {
+        return rec["tag_name"];
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Best-effort GitHub latest-release payload (null on any failure:
  * offline, rate-limited, malformed). Update checks must never throw
@@ -418,26 +481,47 @@ async function fetchReleasePayload(apiUrl: string): Promise<ParsedRelease | null
 function runBinary(
   binary: string,
   args: readonly string[],
+  timeoutMs = 30_000,
 ): Promise<{ stdout: string; stderr: string; code: number | null }> {
   return new Promise((resolve, reject) => {
     // NEVER shell:true — always an args array.
-    const proc = spawn(binary, [...args], {
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-      shell: false,
-    });
+    let proc: ChildProcess;
+    try {
+      proc = spawn(binary, [...args], {
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+        shell: false,
+      });
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error(String(err)));
+      return;
+    }
     let stdout = "";
     let stderr = "";
-    proc.stdout.on("data", (chunk: Buffer) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      killProcessTree(proc);
+      reject(new Error(`Timed out running ${binary}.`));
+    }, timeoutMs);
+    if (typeof timer.unref === "function") timer.unref();
+    proc.stdout?.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
     });
-    proc.stderr.on("data", (chunk: Buffer) => {
+    proc.stderr?.on("data", (chunk: Buffer) => {
       stderr += chunk.toString("utf8");
     });
     proc.on("error", (err: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       reject(err);
     });
     proc.on("close", (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       resolve({ stdout, stderr, code });
     });
   });
@@ -472,6 +556,59 @@ export class DesktopEngine implements DownloadEngine {
 
   private ytDlp(): string {
     return resolveYtDlpPath(this.deps.userDataDir, this.deps.bundledBinDir);
+  }
+
+  /**
+   * Optional-tool detection cache (deno/node/aria2c). Refreshed at most
+   * every 10 min; probes are short-timeout spawns that never throw, so a
+   * missing tool simply reads absent.
+   */
+  private runtimeCache: {
+    at: number;
+    js: { name: string; binary: string; version: string } | null;
+    aria2c: { binary: string; version: string } | null;
+  } | null = null;
+
+  private async detectRuntimes(): Promise<{
+    js: { name: string; binary: string; version: string } | null;
+    aria2c: { binary: string; version: string } | null;
+  }> {
+    const now = Date.now();
+    if (this.runtimeCache !== null && now - this.runtimeCache.at < 600_000) {
+      return { js: this.runtimeCache.js, aria2c: this.runtimeCache.aria2c };
+    }
+    const [deno, node, aria2c] = await Promise.all([
+      detectTool(this.deps.userDataDir, "deno.exe"),
+      detectTool(this.deps.userDataDir, "node.exe"),
+      detectTool(this.deps.userDataDir, "aria2c.exe"),
+    ]);
+    const js =
+      deno.binary !== null && deno.version !== null
+        ? { name: "deno", binary: deno.binary, version: deno.version }
+        : node.binary !== null && node.version !== null
+          ? { name: "node", binary: node.binary, version: node.version }
+          : null;
+    const out = {
+      js,
+      aria2c:
+        aria2c.binary !== null && aria2c.version !== null
+          ? { binary: aria2c.binary, version: aria2c.version }
+          : null,
+    };
+    this.runtimeCache = { at: now, ...out };
+    return out;
+  }
+
+  /** --js-runtimes value (name or name:path) or null when no runtime found. */
+  private jsRuntimeFlag(
+    detected: { name: string; binary: string } | null,
+  ): string | null {
+    if (detected === null) return null;
+    // Drop-in binaries outside PATH need an explicit path; PATH names do not.
+    if (detected.binary !== "deno.exe" && detected.binary !== "node.exe") {
+      return `${detected.name}:${detected.binary}`;
+    }
+    return detected.name;
   }
 
   /** Active error locale: explicit setting, else system locale. */
@@ -744,20 +881,27 @@ export class DesktopEngine implements DownloadEngine {
 
   /**
    * One best-effort round trip for app + yt-dlp freshness (GitHub Releases
-   * API, 8 s timeout each, hourly cache). Offline/malformed responses
+   * API, 8 s timeout each, 24 h cache). Offline/malformed responses
    * resolve update=false — they must never break launch. force=true
    * bypasses the cache (the Logs button; launch uses the cache).
    */
   async checkForUpdates(force = false): Promise<UpdateStatus> {
     const now = Date.now();
-    if (!force && this.lastUpdate !== null && now - this.lastUpdate.at < 3_600_000) {
+    if (
+      !force &&
+      this.lastUpdate !== null &&
+      !isCheckDue(this.lastUpdate.at, now, UPDATE_CHECK_INTERVAL_MS)
+    ) {
       return this.lastUpdate.status;
     }
+    const channel = loadSettingsFromDisk(this.deps.userDataDir).ytdlpChannel;
     const versions = await this.getEngineVersion().catch(() => null);
     const ytdlpCurrent = versions?.ytdlp ?? "unknown";
     const [appRelease, ytdlpLatest] = await Promise.all([
       fetchReleasePayload(APP_API_URL),
-      fetchLatestTag(YTDLP_API_URL),
+      channel === "nightly"
+        ? fetchNightlyTag("https://api.github.com/repos/yt-dlp/yt-dlp/releases?per_page=10")
+        : fetchLatestTag(YTDLP_API_URL),
     ]);
     const appLatest = appRelease?.tag ?? null;
     const appUpdate = isNewerVersion(this.deps.appVersion, appLatest);
@@ -788,6 +932,11 @@ export class DesktopEngine implements DownloadEngine {
       checkedAt: now,
     };
     this.lastUpdate = { at: now, status };
+    try {
+      saveSettingsToDisk(this.deps.userDataDir, { lastToolCheckAt: now });
+    } catch {
+      // Best effort: the check result matters, not the timestamp.
+    }
     return status;
   }
 
@@ -1158,11 +1307,13 @@ export class DesktopEngine implements DownloadEngine {
     return Promise.resolve();
   }
 
-  start(job: DownloadJobInput): Promise<string> {
+  async start(job: DownloadJobInput): Promise<string> {
     const normalizedUrl = normalizeUrl(job.url);
     if (job.title.trim().length === 0) {
       throw new EngineError(mapDownloadError("Unsupported URL: missing title.", this.errorLang()));
     }
+    // Phase 1: gallery-dl jobs take a separate spawn path; yt-dlp below is untouched.
+    if (job.engineId === "gallery-dl") return this.startGalleryDl(job, normalizedUrl);
     const outputDir = job.outputDir.trim().length > 0 ? job.outputDir : this.deps.defaultOutputDir;
     const input: DownloadJobInput = { ...toStartInput(job), url: normalizedUrl, outputDir };
     const id = randomUUID();
@@ -1178,6 +1329,11 @@ export class DesktopEngine implements DownloadEngine {
       s.cookiesFile !== null && s.cookiesFile.trim().length > 0 && existsSync(s.cookiesFile)
         ? s.cookiesFile
         : null;
+    // Optional runtimes: detected (cached), never blocking when absent.
+    const runtimes = await this.detectRuntimes().catch(() => ({
+      js: null,
+      aria2c: null,
+    }));
     const args = buildStartArgs(input, {
       settings: s,
       ffmpegDir: resolveFfmpegDir(this.deps.bundledBinDir),
@@ -1186,6 +1342,8 @@ export class DesktopEngine implements DownloadEngine {
         s.skipArchived && input.useArchive === true
           ? archivePathFor(this.deps.userDataDir)
           : null,
+      jsRuntime: this.jsRuntimeFlag(runtimes.js),
+      aria2cAvailable: runtimes.aria2c !== null,
     });
     this.jobs.set(id, {
       proc: null,
@@ -1195,9 +1353,12 @@ export class DesktopEngine implements DownloadEngine {
       lastPercent: null,
       rawLog: "",
       state: "running",
+      lastActivityAt: Date.now(),
+      stalledFired: false,
     });
     this.launch(id);
-    return Promise.resolve(id);
+    this.ensureWatchdog();
+    return id;
   }
 
   private launch(id: string): void {
@@ -1246,6 +1407,8 @@ export class DesktopEngine implements DownloadEngine {
     proc.stdout.on("data", (chunk: Buffer) => {
       const text = chunk.toString("utf8");
       job.rawLog = appendLog(job.rawLog, text);
+      job.lastActivityAt = Date.now();
+      job.stalledFired = false;
       stdoutTail += text;
       const lines = stdoutTail.split(/\r?\n/);
       stdoutTail = lines.pop() ?? "";
@@ -1254,6 +1417,8 @@ export class DesktopEngine implements DownloadEngine {
     proc.stderr.on("data", (chunk: Buffer) => {
       const text = chunk.toString("utf8");
       job.rawLog = appendLog(job.rawLog, text);
+      job.lastActivityAt = Date.now();
+      job.stalledFired = false;
       for (const line of text.split(/\r?\n/)) handleLine(line);
     });
     proc.on("error", (err: Error) => {
@@ -1301,13 +1466,44 @@ export class DesktopEngine implements DownloadEngine {
       if (code === 0) {
         void (async (): Promise<void> => {
           await this.repairDestination(current).catch(() => undefined);
+          if (ARCHIVE_SKIP_RE.test(current.rawLog)) {
+            // Archive skip: yt-dlp wrote nothing because the entry was
+            // already recorded. No integrity check possible — the skip is
+            // the success (pre-Phase-2 behavior: done, destination as-is).
+            this.rememberFinished(id, current.rawLog, current.downloadArgs);
+            this.jobs.delete(id);
+            this.emit({
+              id,
+              percent: 100,
+              speed: null,
+              eta: null,
+              downloadedBytes: null,
+              totalBytes: null,
+              stage: "done",
+              destination: current.destination,
+            });
+            return;
+          }
+          // Phase 2 integrity: a zero exit with no output (killed ffmpeg
+          // merge, AV interference, full disk) must not read as success.
+          const bytes = outputBytes(current.destination);
+          if (bytes === null) {
+            this.finishWithError(
+              id,
+              mapDownloadError(
+                `Finished but the output file is missing or empty: ${current.destination ?? "(unknown)"}`,
+                this.errorLang(),
+              ),
+            );
+            return;
+          }
+          await this.cleanupLeftoverSiblings(current.destination);
           this.rememberFinished(id, current.rawLog, current.downloadArgs);
           this.jobs.delete(id);
           // v1.7.2: report the REAL size of the finished output. The download
           // phase only knows the pre-merge/pre-extract byte count and often
           // reports no total at all, which is why the Stats "total size" tile
           // read "Unknown" for most libraries.
-          const bytes = outputBytes(current.destination);
           this.emit({
             id,
             percent: 100,
@@ -1319,6 +1515,211 @@ export class DesktopEngine implements DownloadEngine {
             destination: current.destination,
           });
         })();
+        return;
+      }
+      this.finishWithError(id, mapDownloadError(current.rawLog, this.errorLang()));
+    });
+  }
+
+  /** gallery-dl config path owned by the app (never the user's global config). */
+  private galleryConfigPath(): string {
+    return join(this.deps.userDataDir, "gallery-dl.conf.json");
+  }
+
+  private writeGalleryConfigAtomic(settings: AppSettings, downloadRoot: string): string {
+    const path = this.galleryConfigPath();
+    mkdirSync(this.deps.userDataDir, { recursive: true });
+    const { text } = buildGalleryDlConfig({
+      images: settings.images,
+      cookiesFile:
+        settings.cookiesFile !== null && existsSync(settings.cookiesFile)
+          ? settings.cookiesFile
+          : null,
+      downloadRoot,
+    });
+    const tmp = `${path}.tmp`;
+    writeFileSync(tmp, text, "utf8");
+    renameSync(tmp, path);
+    return path;
+  }
+
+  private galleryBinary(): string {
+    return resolveToolPath(this.deps.userDataDir, this.deps.bundledBinDir, GALLERYDL_EXE);
+  }
+
+  private startGalleryDl(job: DownloadJobInput, normalizedUrl: string): Promise<string> {
+    mkdirSync(this.deps.userDataDir, { recursive: true });
+    const s = loadSettingsFromDisk(this.deps.userDataDir);
+    const downloadDir =
+      job.outputDir.trim().length > 0
+        ? job.outputDir
+        : s.images.downloadDir.trim().length > 0
+          ? s.images.downloadDir
+          : join(this.deps.defaultOutputDir, "Images");
+    mkdirSync(downloadDir, { recursive: true });
+    const binary = this.galleryBinary();
+    const id = randomUUID();
+    if (binary === GALLERYDL_EXE) {
+      this.jobs.set(id, {
+        proc: null,
+        input: { ...toStartInput(job), url: normalizedUrl, outputDir: downloadDir },
+        downloadArgs: [],
+        destination: null,
+        lastPercent: null,
+        rawLog: "",
+        state: "running",
+        lastActivityAt: Date.now(),
+        stalledFired: false,
+      });
+      this.finishWithError(
+        id,
+        mapDownloadError(this.errorStrings().engine.galleryNeedsBinary, this.errorLang()),
+      );
+      return Promise.resolve(id);
+    }
+    const configPath = this.writeGalleryConfigAtomic(s, downloadDir);
+    const cookiesFile =
+      s.cookiesFile !== null && s.cookiesFile.trim().length > 0 && existsSync(s.cookiesFile)
+        ? s.cookiesFile
+        : null;
+    const input: DownloadJobInput = { ...toStartInput(job), url: normalizedUrl, outputDir: downloadDir };
+    const args = buildGalleryDlArgs(input, { settings: s, configPath, downloadDir, cookiesFile });
+    this.jobs.set(id, {
+      proc: null,
+      input,
+      downloadArgs: args,
+      destination: downloadDir,
+      lastPercent: null,
+      rawLog: "",
+      state: "running",
+      lastActivityAt: Date.now(),
+      stalledFired: false,
+    });
+    this.launchGallery(id, binary);
+    this.ensureWatchdog();
+    return Promise.resolve(id);
+  }
+
+  private launchGallery(id: string, binary: string): void {
+    const job = this.jobs.get(id);
+    if (job === undefined) return;
+    // NEVER shell:true — always an args array; URL travels after `--`.
+    const proc = spawn(binary, [...job.downloadArgs], {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+      shell: false,
+    });
+    job.proc = proc;
+    job.state = "running";
+    let progress = emptyGalleryProgress();
+    let rest = "";
+    let stdoutTail = "";
+
+    const handleLine = (line: string): void => {
+      const event = parseGalleryDlLine(line);
+      if (event === null) return;
+      progress = applyGalleryFileEvent(progress, event);
+      if (event.path !== null) job.destination = event.path;
+      const total = progress.downloaded + progress.skipped + progress.failed;
+      this.emit({
+        id,
+        percent: null,
+        speed: null,
+        eta: null,
+        downloadedBytes: progress.downloaded,
+        totalBytes: progress.total,
+        stage: total > 0 ? "downloading" : "downloading",
+        destination: job.destination,
+      });
+    };
+
+    proc.stdout.on("data", (chunk: Buffer) => {
+      const text = chunk.toString("utf8");
+      job.rawLog = appendLog(job.rawLog, text);
+      job.lastActivityAt = Date.now();
+      job.stalledFired = false;
+      stdoutTail += text;
+      const split = splitGalleryChunk(text, rest);
+      rest = split.rest;
+      for (const line of split.lines) handleLine(line);
+    });
+    proc.stderr.on("data", (chunk: Buffer) => {
+      const text = chunk.toString("utf8");
+      job.rawLog = appendLog(job.rawLog, text);
+      job.lastActivityAt = Date.now();
+      job.stalledFired = false;
+      const split = splitGalleryChunk(text, "");
+      for (const line of split.lines) handleLine(line);
+    });
+    proc.on("error", (err: Error) => {
+      const current = this.jobs.get(id);
+      if (current === undefined) return;
+      if (current.state === "pausing" || current.state === "cancelling") return;
+      this.finishWithError(id, mapDownloadError(err.message, this.errorLang()));
+    });
+    proc.on("close", (code: number | null) => {
+      const current = this.jobs.get(id);
+      if (current === undefined) return;
+      if (rest.trim().length > 0) handleLine(rest);
+      if (stdoutTail.trim().length > 0 && rest.trim().length === 0) {
+        const last = stdoutTail.split(/\r?\n/).pop() ?? "";
+        if (last.trim().length > 0) handleLine(last);
+      }
+      if (current.state === "pausing") {
+        current.state = "paused";
+        current.proc = null;
+        this.emit({
+          id,
+          percent: null,
+          speed: null,
+          eta: null,
+          downloadedBytes: progress.downloaded,
+          totalBytes: progress.total,
+          stage: "paused",
+          destination: current.destination,
+        });
+        return;
+      }
+      if (current.state === "cancelling") {
+        this.jobs.delete(id);
+        this.emit({
+          id,
+          percent: null,
+          speed: null,
+          eta: null,
+          downloadedBytes: progress.downloaded,
+          totalBytes: progress.total,
+          stage: "cancelled",
+          destination: current.destination,
+        });
+        return;
+      }
+      if (code === 0) {
+        this.rememberFinished(id, current.rawLog, current.downloadArgs);
+        this.jobs.delete(id);
+        if (progress.failed > 0) {
+          this.emit({
+            id,
+            percent: null,
+            speed: null,
+            eta: null,
+            downloadedBytes: progress.downloaded,
+            totalBytes: progress.total,
+            stage: "partial",
+            destination: current.destination,
+          });
+          return;
+        }
+        this.emit({
+          id,
+          percent: 100,
+          speed: null,
+          eta: null,
+          downloadedBytes: progress.downloaded,
+          totalBytes: progress.total,
+          stage: "done",
+          destination: current.destination,
+        });
         return;
       }
       this.finishWithError(id, mapDownloadError(current.rawLog, this.errorLang()));
@@ -1396,6 +1797,57 @@ export class DesktopEngine implements DownloadEngine {
     }
   }
 
+  /** Best-effort removal of leftover siblings after a verified success. */
+  private async cleanupLeftoverSiblings(destination: string | null): Promise<void> {
+    if (destination === null || destination.length === 0) return;
+    for (const candidate of [`${destination}.part`, `${destination}.ytdl`]) {
+      try {
+        await unlink(candidate);
+      } catch {
+        // Best effort: missing files are fine.
+      }
+    }
+  }
+
+  /**
+   * Stall watchdog (Phase 2): one unref'd 10 s tick for all jobs. A running
+   * job quieter than stalledTimeoutSec gets a single "stalled" emit (the
+   * queue keeps it downloading; the card offers Restart). 0 disables.
+   */
+  private watchdog: NodeJS.Timeout | null = null;
+
+  private ensureWatchdog(): void {
+    if (this.watchdog !== null) return;
+    const timer = setInterval(() => {
+      let timeoutSec = 120;
+      try {
+        timeoutSec = loadSettingsFromDisk(this.deps.userDataDir).stalledTimeoutSec;
+      } catch {
+        timeoutSec = 120;
+      }
+      if (timeoutSec <= 0) return;
+      const now = Date.now();
+      for (const [id, job] of this.jobs) {
+        if (job.state !== "running" || job.stalledFired) continue;
+        if (!Number.isFinite(job.lastActivityAt)) continue;
+        if (now - job.lastActivityAt < timeoutSec * 1000) continue;
+        job.stalledFired = true;
+        this.emit({
+          id,
+          percent: job.lastPercent,
+          speed: null,
+          eta: null,
+          downloadedBytes: null,
+          totalBytes: null,
+          stage: "stalled",
+          destination: job.destination,
+        });
+      }
+    }, 10_000);
+    if (typeof timer.unref === "function") timer.unref();
+    this.watchdog = timer;
+  }
+
   pause(id: string): Promise<void> {
     const job = this.jobs.get(id);
     if (job === undefined) throw new Error(`Unknown download: ${id}`);
@@ -1410,6 +1862,10 @@ export class DesktopEngine implements DownloadEngine {
     if (job === undefined) throw new Error(`Unknown download: ${id}`);
     if (job.state === "running") return Promise.resolve();
     job.state = "running";
+    if (job.input.engineId === "gallery-dl") {
+      this.launchGallery(id, this.galleryBinary());
+      return Promise.resolve();
+    }
     this.launch(id);
     return Promise.resolve();
   }
@@ -1452,9 +1908,10 @@ export class DesktopEngine implements DownloadEngine {
       ytdlp = "unknown";
     }
     let ffmpeg: string | null = null;
+    const ffmpegPath = resolveFfmpegPath(this.deps.bundledBinDir);
     try {
       const out = await runBinary(
-        resolveFfmpegPath(this.deps.bundledBinDir),
+        ffmpegPath,
         buildFfmpegVersionArgs(),
       );
       const first = out.stdout.trim().split(/\r?\n/)[0] ?? "";
@@ -1465,10 +1922,32 @@ export class DesktopEngine implements DownloadEngine {
     }
     // process.versions is typed string-only; Electron-only keys are absent in plain node.
     const runtime = process.versions as Record<string, string | undefined>;
+    let galleryDl: string | null = null;
+    const galleryPath = resolveToolPath(this.deps.userDataDir, this.deps.bundledBinDir, GALLERYDL_EXE);
+    try {
+      const out = await runBinary(
+        galleryPath,
+        ["--version"],
+      );
+      if (out.code === 0) galleryDl = out.stdout.trim().split(/\r?\n/)[0] ?? null;
+    } catch {
+      galleryDl = null;
+    }
+    const runtimes = await this.detectRuntimes().catch(() => ({ js: null, aria2c: null }));
     return {
       ytdlp,
       ffmpeg,
       app: this.deps.appVersion,
+      galleryDl,
+      jsRuntime: runtimes.js?.version ?? null,
+      aria2c: runtimes.aria2c?.version ?? null,
+      toolPaths: {
+        ytDlp: this.ytDlp(),
+        ffmpeg: ffmpegPath,
+        galleryDl: galleryPath === GALLERYDL_EXE ? null : galleryPath,
+        deno: runtimes.js?.name === "deno" ? runtimes.js.binary : null,
+        aria2c: runtimes.aria2c?.binary ?? null,
+      },
       os: `${osPlatform()} ${osRelease()}`,
       arch: process.arch,
       electron: runtime["electron"] ?? "unknown",
@@ -1481,10 +1960,17 @@ export class DesktopEngine implements DownloadEngine {
     if (this.jobs.size > 0) {
       throw new Error(this.errorStrings().errors.updateBlockedBusy);
     }
+    const channel = loadSettingsFromDisk(this.deps.userDataDir).ytdlpChannel;
     const target = await ensureUserDataBinary(this.deps.userDataDir, this.deps.bundledBinDir);
+    // Keep the previous copy so rollbackTool() can restore it.
+    try {
+      await copyFile(target, `${target}.bak`);
+    } catch {
+      // Best effort: no backup, no rollback — the update still proceeds.
+    }
     let out: { stdout: string; stderr: string; code: number | null };
     try {
-      out = await runBinary(target, buildUpdateArgs());
+      out = await runBinary(target, buildUpdateToArgs(channel), 600_000);
     } catch (err) {
       throw new EngineError(mapDownloadError(err instanceof Error ? err.message : String(err), this.errorLang()));
     }
@@ -1508,6 +1994,150 @@ export class DesktopEngine implements DownloadEngine {
       versions.ytdlp !== "unknown" &&
       versions.ffmpeg !== null;
     return { ok, repaired, failed, versions };
+  }
+
+  /**
+   * Restore a previous tool copy (Phase 2). yt-dlp keeps its .bak next to
+   * the userData copy (written by updateEngine); userData/bin tools use
+   * binaryManager rollback. False when there is nothing to restore.
+   */
+  async rollbackTool(toolId: string): Promise<boolean> {
+    if (toolId === "yt-dlp") {
+      const target = join(this.deps.userDataDir, "yt-dlp.exe");
+      const backup = `${target}.bak`;
+      if (!existsSync(backup)) return false;
+      await copyFile(backup, target);
+      return true;
+    }
+    if (toolId === "gallery-dl") {
+      return rollbackTool(this.deps.userDataDir, GALLERYDL_EXE);
+    }
+    return false;
+  }
+
+  /**
+   * Reinstall a bundled tool from packaged resources (Phase 2). External
+   * tools (deno/aria2c) reject with placement guidance — the app never
+   * downloads executables itself beyond the existing app-updater path.
+   */
+  async reinstallTool(toolId: string): Promise<EngineVersions> {
+    if (toolId === "yt-dlp" || toolId === "ffmpeg") {
+      const { failed } = await repairBinaries(this.deps.userDataDir, this.deps.bundledBinDir);
+      if (failed.length > 0) {
+        throw new Error(`Reinstall failed for ${failed.join(", ")}.`);
+      }
+      return this.getEngineVersion();
+    }
+    if (toolId === "gallery-dl") {
+      const versions = readPinnedVersions(this.deps.bundledBinDir);
+      await reinstallBundledTool(
+        join(this.deps.userDataDir, "bin"),
+        this.deps.bundledBinDir,
+        GALLERYDL_EXE,
+        versions.galleryDlSha256,
+      );
+      return this.getEngineVersion();
+    }
+    if (toolId === "deno" || toolId === "aria2c") {
+      throw new Error(
+        `Place ${toolId === "deno" ? "deno.exe" : "aria2c.exe"} in the app bin folder or on PATH; FluxDL detects it automatically.`,
+      );
+    }
+    throw new Error(`Unknown tool: ${toolId}.`);
+  }
+
+  /**
+   * Doctor health check (Phase 2). Best-effort and offline-safe: every
+   * probe is guarded, so the report always resolves (possibly all-fail).
+   */
+  async runDoctor(): Promise<DoctorReport> {
+    const now = Date.now();
+    const checks: DoctorCheck[] = [];
+    const versions = await this.getEngineVersion().catch(() => null);
+    const s = loadSettingsFromDisk(this.deps.userDataDir);
+    // Required tools.
+    const ytdlp = versions?.ytdlp ?? null;
+    checks.push({
+      ...versionCheck("yt-dlp", "yt-dlp", ytdlp === "unknown" ? null : ytdlp, MIN_TOOL_VERSIONS["yt-dlp"] ?? null),
+      fix: ytdlp === null || ytdlp === "unknown" ? "repair" : "update",
+    });
+    checks.push({
+      ...versionCheck("ffmpeg", "ffmpeg + ffprobe", versions?.ffmpeg ?? null, null),
+      fix: "reinstall",
+    });
+    // Optional tools.
+    const gallery = versions?.galleryDl ?? null;
+    checks.push({
+      ...versionCheck("gallery-dl", "gallery-dl (images)", gallery, MIN_TOOL_VERSIONS["gallery-dl"] ?? null),
+      fix: "reinstall",
+    });
+    const js = versions?.jsRuntime ?? null;
+    checks.push({
+      id: "js-runtime",
+      label: "JS runtime (deno/node)",
+      status: js !== null ? "ok" : "warn",
+      detail: js ?? "none found — YouTube JS challenges may fail",
+      fix: "install-guide",
+    });
+    const aria = versions?.aria2c ?? null;
+    if (s.useAria2c && aria === null) {
+      checks.push({
+        id: "aria2c",
+        label: "aria2c",
+        status: "fail",
+        detail: "enabled but no binary found",
+        fix: "install-guide",
+      });
+    } else {
+      checks.push({
+        id: "aria2c",
+        label: "aria2c",
+        status: "ok",
+        detail: aria ?? "not needed (toggle off)",
+      });
+    }
+    // Download folder writable.
+    const dir = s.downloadDir.trim().length > 0 ? s.downloadDir : this.deps.defaultOutputDir;
+    try {
+      mkdirSync(dir, { recursive: true });
+      await access(dir);
+      checks.push({ id: "download-dir", label: "Download folder", status: "ok", detail: dir });
+    } catch {
+      checks.push({
+        id: "download-dir",
+        label: "Download folder",
+        status: "fail",
+        detail: `${dir} is not writable`,
+        fix: "open-settings",
+      });
+    }
+    // Free disk (warn under 1 GiB).
+    try {
+      const fs = statfsSync(dir);
+      const free = fs.bfree * fs.bsize;
+      const low = free < 1_073_741_824;
+      checks.push({
+        id: "disk",
+        label: "Free disk",
+        status: low ? "warn" : "ok",
+        detail: `${(free / 1_073_741_824).toFixed(1)} GiB free`,
+        ...(low ? { fix: "open-settings" as const } : {}),
+      });
+    } catch {
+      checks.push({ id: "disk", label: "Free disk", status: "warn", detail: "unknown" });
+    }
+    // GitHub reachable.
+    const reachable = await fetchLatestTag(YTDLP_API_URL).then(
+      () => true,
+      () => false,
+    );
+    checks.push({
+      id: "github",
+      label: "Update server reachable",
+      status: reachable ? "ok" : "warn",
+      detail: reachable ? "github.com reachable" : "offline — checks report update=false",
+    });
+    return buildDoctorReport(checks, now);
   }
 
   setAggregateProgress(state: AggregateProgressState): Promise<void> {

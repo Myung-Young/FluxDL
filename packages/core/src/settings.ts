@@ -5,10 +5,14 @@ import type {
   Container,
   Density,
   DownloadPreset,
+  EngineId,
+  ImagesSettings,
   Language,
+  RouterMode,
   VideoPreset,
+  YtDlpChannel,
 } from "./types.js";
-import { AUDIO_PRESETS, CLOSE_BEHAVIORS, CONTAINERS, VIDEO_PRESETS } from "./types.js";
+import { AUDIO_PRESETS, CLOSE_BEHAVIORS, CONTAINERS, ENGINE_IDS, ROUTER_MODES, VIDEO_PRESETS, YTDLP_CHANNELS } from "./types.js";
 import { THEME_NAMES } from "./themes.js";
 import { clampConcurrency } from "./queue.js";
 
@@ -68,6 +72,30 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // and trap users who expected a real quit.)
   closeBehavior: "quit",
   minimizeToTray: false,
+  ytdlpChannel: "stable",
+  autoUpdateTools: false,
+  useAria2c: false,
+  concurrentFragments: null,
+  downloadRetries: null,
+  socketTimeoutSec: null,
+  stalledTimeoutSec: 120,
+  sponsorBlockCategories: "all,-filler",
+  impersonateClient: null,
+  lastToolCheckAt: null,
+  routerMode: "auto",
+  domainRules: {},
+  images: {
+    downloadDir: "",
+    folderTemplate: "{site}/{gallery}",
+    filenameTemplate: "{filename}.{extension}",
+    sleepRequestsSec: null,
+    maxSleepIntervalSec: null,
+    retries: 3,
+    proxy: null,
+    archive: true,
+    metadataSidecar: false,
+  },
+  lastFolderByMedia: {},
 };
 
 const DENSITIES: readonly Density[] = ["comfortable", "compact"];
@@ -210,6 +238,116 @@ function cleanSearchList(value: unknown, cap: number): string[] {
   return out;
 }
 
+function cleanRouterMode(value: unknown, fallback: RouterMode): RouterMode {
+  return typeof value === "string" && (ROUTER_MODES as readonly string[]).includes(value)
+    ? (value as RouterMode)
+    : fallback;
+}
+
+function cleanDomainRules(value: unknown): Record<string, EngineId> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const out: Record<string, EngineId> = {};
+  for (const [rawKey, rawVal] of Object.entries(value)) {
+    const key = rawKey.trim().toLowerCase().slice(0, 64);
+    if (key.length === 0) continue;
+    if (typeof rawVal !== "string") continue;
+    const v = rawVal.trim().toLowerCase();
+    if ((ENGINE_IDS as readonly string[]).includes(v)) out[key] = v as EngineId;
+    if (Object.keys(out).length >= 200) break;
+  }
+  return out;
+}
+
+function cleanRetries(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const n = Math.floor(value);
+  if (n < 0) return null;
+  return Math.min(20, n);
+}
+
+function cleanChannel(value: unknown, fallback: YtDlpChannel): YtDlpChannel {
+  return typeof value === "string" && (YTDLP_CHANNELS as readonly string[]).includes(value)
+    ? (value as YtDlpChannel)
+    : fallback;
+}
+
+/** Optional small-int knob (fragments/retries/timeout); null = tool default. */
+function cleanOptionalInt(value: unknown, min: number, max: number): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const n = Math.floor(value);
+  if (n < min) return null;
+  return Math.min(max, n);
+}
+
+function cleanStalledTimeout(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 120;
+  return Math.min(600, Math.max(0, Math.floor(value)));
+}
+
+/** SponsorBlock remove list: comma/space separated known-ish tokens. */
+function cleanSponsorCats(value: unknown, fallback: string): string {
+  if (typeof value !== "string") return fallback;
+  const parts = value
+    .split(",")
+    .map((p) => p.trim().toLowerCase().replace(/[^a-z_-]/g, "").slice(0, 32))
+    .filter((p) => p.length > 0);
+  if (parts.length === 0) return fallback;
+  return [...new Set(parts)].slice(0, 16).join(",");
+}
+
+/** Impersonate client id (free-form, validated main-side against --help set). */
+function cleanImpersonate(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const t = value.trim().slice(0, 64);
+  return t.length > 0 ? t : null;
+}
+
+function cleanEpochOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+  return Math.floor(value);
+}
+
+function cleanImages(
+  value: unknown,
+  base: ImagesSettings,
+): ImagesSettings {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return base;
+  const rec = value as Record<string, unknown>;
+  const folderRaw = typeof rec["folderTemplate"] === "string" && rec["folderTemplate"].trim().length > 0
+    ? rec["folderTemplate"].trim().slice(0, 200)
+    : base.folderTemplate;
+  const fileRaw = typeof rec["filenameTemplate"] === "string" && rec["filenameTemplate"].trim().length > 0
+    ? rec["filenameTemplate"].trim().slice(0, 200)
+    : base.filenameTemplate;
+  return {
+    downloadDir: typeof rec["downloadDir"] === "string" ? rec["downloadDir"].slice(0, 1024) : base.downloadDir,
+    folderTemplate: folderRaw,
+    filenameTemplate: fileRaw,
+    sleepRequestsSec: cleanDelay(rec["sleepRequestsSec"], 60),
+    maxSleepIntervalSec: cleanDelay(rec["maxSleepIntervalSec"], 3600),
+    retries: rec["retries"] === undefined ? base.retries : cleanRetries(rec["retries"]) ?? base.retries,
+    proxy: rec["proxy"] === undefined ? base.proxy : cleanNullableString(rec["proxy"]),
+    archive: typeof rec["archive"] === "boolean" ? rec["archive"] : base.archive,
+    metadataSidecar: typeof rec["metadataSidecar"] === "boolean" ? rec["metadataSidecar"] : base.metadataSidecar,
+  };
+}
+
+function cleanFolderMap(value: unknown): Record<string, string> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const out: Record<string, string> = {};
+  for (const [rawKey, rawVal] of Object.entries(value)) {
+    const key = rawKey.trim().toLowerCase().slice(0, 32);
+    if ((key !== "video" && key !== "images" && key !== "audio") || typeof rawVal !== "string") continue;
+    const v = rawVal.trim().slice(0, 1024);
+    if (v.length > 0) out[key] = v;
+    if (Object.keys(out).length >= 8) break;
+  }
+  return out;
+}
+
 function cleanPreset(
   value: unknown,
   fallback: AppSettings["defaultPreset"],
@@ -331,5 +469,44 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
     closeBehavior: CLOSE_BEHAVIORS.includes(closeRaw) ? closeRaw : base.closeBehavior,
     minimizeToTray: cleanBool(patch.minimizeToTray, base.minimizeToTray),
     notifyFinished: cleanBool(patch.notifyFinished, base.notifyFinished),
+    ytdlpChannel: cleanChannel(patch.ytdlpChannel ?? base.ytdlpChannel, base.ytdlpChannel),
+    autoUpdateTools: cleanBool(patch.autoUpdateTools, base.autoUpdateTools),
+    useAria2c: cleanBool(patch.useAria2c, base.useAria2c),
+    concurrentFragments:
+      patch.concurrentFragments === undefined
+        ? base.concurrentFragments
+        : cleanOptionalInt(patch.concurrentFragments, 1, 16),
+    downloadRetries:
+      patch.downloadRetries === undefined
+        ? base.downloadRetries
+        : cleanOptionalInt(patch.downloadRetries, 0, 30),
+    socketTimeoutSec:
+      patch.socketTimeoutSec === undefined
+        ? base.socketTimeoutSec
+        : cleanOptionalInt(patch.socketTimeoutSec, 5, 300),
+    stalledTimeoutSec:
+      patch.stalledTimeoutSec === undefined
+        ? base.stalledTimeoutSec
+        : cleanStalledTimeout(patch.stalledTimeoutSec),
+    sponsorBlockCategories: cleanSponsorCats(
+      patch.sponsorBlockCategories ?? base.sponsorBlockCategories,
+      base.sponsorBlockCategories,
+    ),
+    impersonateClient:
+      patch.impersonateClient === undefined
+        ? base.impersonateClient
+        : cleanImpersonate(patch.impersonateClient),
+    lastToolCheckAt:
+      patch.lastToolCheckAt === undefined
+        ? base.lastToolCheckAt
+        : cleanEpochOrNull(patch.lastToolCheckAt),
+    routerMode: cleanRouterMode(patch.routerMode ?? base.routerMode, base.routerMode),
+    domainRules:
+      patch.domainRules === undefined ? base.domainRules : cleanDomainRules(patch.domainRules),
+    images: cleanImages(patch.images ?? base.images, base.images),
+    lastFolderByMedia:
+      patch.lastFolderByMedia === undefined
+        ? base.lastFolderByMedia
+        : cleanFolderMap(patch.lastFolderByMedia),
   };
 }
