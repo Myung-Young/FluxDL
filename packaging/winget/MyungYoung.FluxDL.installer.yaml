@@ -1,0 +1,17 @@
+PackageIdentifier: MyungYoung.FluxDL
+PackageVersion: 1.8.0
+InstallerType: nsis
+Scope: user
+InstallModes:
+- interactive
+- silent
+- silentWithProgress
+UpgradeBehavior: install
+ReleaseDate: 2026-10-09
+Installers:
+- Architecture: x64
+  InstallerUrl: https://github.com/Myung-Young/FluxDL/releases/download/v1.8.0/FluxDL-Setup-1.8.0.exe
+  InstallerSha256: 11265A8F17E6A8C0B89D353164576CCE488D2EFE5B76A60162EB1B93CCBAAF75
+  ProductCode: FluxDL
+ManifestType: installer
+ManifestVersion: 1.6.0

@@ -1,0 +1,17 @@
+PackageIdentifier: MyungYoung.FluxDL
+PackageVersion: 1.8.0
+PackageLocale: en-US
+Publisher: Myung-Young
+PackageName: FluxDL
+License: MIT
+LicenseUrl: https://github.com/Myung-Young/FluxDL/blob/main/LICENSE
+ShortDescription: Fast, private desktop downloader for video, audio and image galleries (Windows).
+Description: FluxDL is a local-first Windows GUI for yt-dlp and gallery-dl — queueing, playlists, batch paste, live streams, post-processing, optional tool packs and remote access. No accounts, no telemetry.
+Tags:
+- downloader
+- yt-dlp
+- gallery-dl
+- video
+- audio
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

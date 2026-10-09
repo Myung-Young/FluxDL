@@ -1,0 +1,8 @@
+# winget manifests for FluxDL (Phase 7 E). Submitted to winget-pkgs as a PR;
+# these copies pin the v1.8.0 URLs + SHA-256 so the submission is mechanical.
+# Publisher: Myung-Young. Scope: machine installer (per-user NSIS build).
+PackageIdentifier: MyungYoung.FluxDL
+PackageVersion: 1.8.0
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.6.0

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>fluxdl</id>
+    <version>1.8.0</version>
+    <title>FluxDL</title>
+    <authors>Myung-Young</authors>
+    <projectUrl>https://github.com/Myung-Young/FluxDL</projectUrl>
+    <licenseUrl>https://github.com/Myung-Young/FluxDL/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>Fast, private desktop downloader for video, audio and image galleries (Windows).</description>
+    <summary>Local-first GUI for yt-dlp and gallery-dl. No accounts, no telemetry.</summary>
+    <tags>downloader yt-dlp gallery-dl video audio</tags>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
