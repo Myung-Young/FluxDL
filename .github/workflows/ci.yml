@@ -46,7 +46,10 @@ jobs:
         run: pnpm --filter @grabber/desktop test:e2e
 
       - name: Dependency audit (advisory — see DECISIONS audit posture)
-        run: pnpm audit --audit-level high || echo "audit findings are triaged per DECISIONS.md, not gated"
+        continue-on-error: true
+        run: |
+          pnpm audit --audit-level high || Write-Host "audit findings are triaged per DECISIONS.md, not gated"
+          $LASTEXITCODE = 0
 
       - name: License inventory (review on change)
         run: pnpm licenses list
