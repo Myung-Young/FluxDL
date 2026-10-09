@@ -18,6 +18,30 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
+    version: "1.8.0",
+    date: "2026-10-09",
+    summaryEn:
+      "Images, managed tools, subscriptions, post-processing, tool packs, remote access — one big stable release.",
+    summaryMs:
+      "Imej, alatan terurus, langganan, pasca-proses, pek alatan, akses jauh — satu keluaran besar yang stabil.",
+    full: [
+      "Added — images & engines",
+      "- yt-dlp / gallery-dl router (Auto / Video / Images, per-link and per-batch override), engine badges, interrupted recovery, partial retry.",
+      "- Gallery preview: image links probe into count + thumbnails + select, Download all or selected; Try-other-engine on failures; live file counters.",
+      "- Images settings: folders, templates, sleeps, retries, proxy, archive, sidecar, raw config override + reset.",
+      "",
+      "Added — tools, queue, library",
+      "- Tools & Engines: versions, Update / Reinstall / Rollback, yt-dlp channel, Update-all, Doctor with one-click fixes; outdated banner; stalled Restart; Smallest preset; custom -f selector.",
+      "- Queue v2 (priorities, time window, per-download proxy), subscriptions (auto/notify, backoff + auto-disable), Library filters/sorts/views, corrupt-store recovery.",
+      "",
+      "Added — post-processing, packs, remote",
+      "- Pipeline (convert, auto-tag, compress, CBZ/ugoira, transcription, rclone upload); Tool Packs (Streamlink, N_m3u8DL-RE, whisper, rclone); Remote access (loopback API, opt-in LAN, PWA, extension, CLI, Discord/Telegram pings).",
+      "",
+      "Trust",
+      "- Unsigned build with SHA-256 checksums + SBOM; opt-in local crash reports; Report-a-bug; SECURITY.md and CI.",
+    ].join("\n"),
+  },
+  {
     version: "1.7.2",
     date: "2026-10-05",
     summaryEn:

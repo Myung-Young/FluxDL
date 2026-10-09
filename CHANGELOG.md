@@ -3,6 +3,99 @@
 All notable changes to FluxDL are documented here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.8.0] — 2026-10-09
+
+"Everything, one release": multi-engine downloads, managed tools, a live-in
+queue with subscriptions and library, post-processing, optional tool packs,
+remote access, and release-grade hardening — with the yt-dlp flow untouched.
+
+### Added — images & engines
+
+- Engine foundation: `yt-dlp` / `gallery-dl` router (Auto / Video / Images,
+  per-link and per-batch override), engine badge on cards, `interrupted`
+  recovery (in-flight jobs come back as interrupted, never auto-start),
+  `partial` terminal state with retry, and `probing` status.
+- gallery-dl 1.32.15 bundled (Codeberg, SHA256-verified — GitHub releases
+  carry no binaries), app-owned config in userData, repairable
+  engine-broken guidance when the binary is absent. See
+  `THIRD_PARTY_NOTICES.md` (GPL-2.0).
+- Gallery preview in Home: image links probe (`-j` metadata, never a
+  download) into count + lazy thumbnails + select, Download all or
+  Download selected (selected items ride `--range`); "Check image gallery"
+  on analyze failures the router can't answer.
+- "Try other engine" + "Download both" on failed cards (yt-dlp ↔
+  gallery-dl); live file counters on gallery cards; gallery Retry reads
+  "Re-run (skips finished)" (the archive makes it failed-only).
+- Images settings section: folders, filename templates, sleeps, retries,
+  proxy, archive, metadata sidecar, raw config override with validation +
+  reset. Last-used folder remembered per media type.
+
+### Added — tools
+
+- Tools & Engines section: versions/paths, Update / Reinstall / Rollback
+  per bundled tool, yt-dlp channel (stable/nightly), Update-all,
+  last-checked time, and the Doctor health check with one-click fixes.
+- Tool hardening under the hood: JS-runtime (deno/node) + aria2c
+  detection, optional `--downloader aria2c`, fragment concurrency,
+  retry/timeout knobs, SponsorBlock categories, trim sections, client
+  impersonation, run timeouts, stall watchdog with card Restart, outdated
+  banner with update-and-retry, idle auto-update opt-in, output-integrity
+  check, atomic install + rollback, 24 h update throttle.
+- Toggles and inputs to match: network knobs, aria2c switch, SponsorBlock
+  categories, custom global `-f` selector, Smallest preset, trim inputs,
+  playlist reverse, preset summary chip.
+
+### Added — queue, library, subscriptions
+
+- Queue v2: high/normal/low priorities, separate gallery-dl concurrency
+  cap, download time window, per-download proxy override, pump-on-tick so
+  boot hydration and backoff retries actually start.
+- Subscriptions: channels auto-download or notify-only, per-channel
+  folder/preset/engine, 30+ min intervals, backoff + auto-disable, 50-item
+  cap confirmation — all while the app is open, never a background service.
+- Library: type/engine/site filters, sorts, list/grid views, count badges,
+  missing-file health with relocate, in-app preview.
+- Stability: corrupt stores quarantined with notice; backups strip secrets;
+  tray folder shortcut; exactly-once completion notifications.
+
+### Added — post-processing
+
+- Pipeline: image convert, audio auto-tag (MusicBrainz + cover art),
+  video compress (HW auto-pick + CPU fallback), gallery ZIP/CBZ + ugoira,
+  whisper transcription sidecars, rclone auto-upload. Failures become
+  `postfailed` (reprocessable), never failed downloads.
+- Manual runs, reprocess, savings toasts, ffprobe media details.
+
+### Added — tool packs & remote
+
+- Optional Tool Packs (never bundled): Streamlink, N_m3u8DL-RE, whisper.cpp
+  (+tiny/base/small models), rclone — pinned, verified-or-consent,
+  atomic updates, revoke list.
+- Remote access (off by default): loopback API + opt-in LAN (allowlist,
+  auto-disable, rotated token), same-machine PWA, unpacked browser
+  extension, `fluxdl.mjs` CLI, Discord/Telegram finish/fail pings,
+  redacted audit log with export.
+- CLI + ShareX-friendly: `POST /api/add` with a Bearer token.
+
+### Added — trust & project
+
+- Health, docs and hygiene: SECURITY.md, CONTRIBUTING.md, issue/PR
+  templates, Dependabot, CI (typecheck/lint/test/build/e2e/audit-advisory/
+  licenses), SHA256SUMS.txt + SBOM + provenance on every release,
+  opt-in local-only crash reports in diagnostics, Report-a-bug with
+  prefilled form, in-app third-party notices, README screenshots.
+- Unsigned build (no certificate obtainable) with SmartScreen guidance;
+  uninstall keeps settings.
+
+### Fixed
+
+- yt-dlp regression green across the release: video, audio-only,
+  playlist, cancel, retry, archive-skip, kill/resume byte-identical.
+- Gallery progress rewritten against the real 1.32.15 output (the shipped
+  parser matched nothing); counts are file counts, never fake bytes.
+- Missing-binary failures surface the repairable message instead of a
+  generic error; unfocus-window notifications fire exactly once.
+
 ## [1.7.2] — 2026-10-05
 
 "Trust the numbers, trust the buttons, trust the formats": the six reported
