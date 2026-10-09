@@ -45,8 +45,9 @@ if (token.length === 0) {
 if (token.length === 0) fail("set GH_TOKEN (or GITHUB_TOKEN) with contents:write, or login with git.");
 
 const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
-const version = typeof pkg.version === "string" ? pkg.version : "";
-if (!/^\d+\.\d+\.\d+$/.test(version)) fail(`bad version in package.json: ${version}`);
+const cliVersion = process.argv[2]?.replace(/^v/, "");
+const version = cliVersion ?? (typeof pkg.version === "string" ? pkg.version : "");
+if (!/^\d+\.\d+\.\d+$/.test(version)) fail(`bad version: ${version}`);
 const tag = `v${version}`;
 
 let remote = "";

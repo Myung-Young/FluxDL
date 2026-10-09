@@ -6,15 +6,17 @@
 [![pnpm](https://img.shields.io/badge/pnpm-workspaces-F69220?logo=pnpm&logoColor=white)](https://pnpm.io)
 [![No telemetry](https://img.shields.io/badge/telemetry-none-success)](https://github.com/Myung-Young/FluxDL)
 
-**FluxDL** is a fast, private desktop downloader for video and audio on
-Windows — a friendly face over the battle-tested
-[yt-dlp](https://github.com/yt-dlp/yt-dlp) CLI, with queueing, playlists,
-batch paste, live streams, and a compact always-on-top mini window.
+**FluxDL** is a fast, private desktop downloader for video, audio and
+image galleries on Windows — a friendly face over the battle-tested
+[yt-dlp](https://github.com/yt-dlp/yt-dlp) and
+[gallery-dl](https://codeberg.org/mikf/gallery-dl) CLIs, with queueing,
+playlists, batch paste, live streams, post-processing, and a compact
+always-on-top mini window.
 
 - 🔒 **Local-first** — no accounts, no telemetry, no remote content. Your
   links never leave your PC except to fetch the media itself.
-- 📦 **Zero setup** — yt-dlp + ffmpeg ship inside, SHA-256 verified.
-  No admin rights needed.
+- 📦 **Zero setup** — yt-dlp + ffmpeg + gallery-dl ship inside, SHA-256
+  verified. No admin rights needed.
 - 🌍 **English + Bahasa Melayu** — full UI in both languages.
 
 > You are responsible for respecting copyright and each site's terms.
@@ -29,6 +31,9 @@ Get the latest release for **Windows 10/11 x64** from the
 | --------------------------- | ----------------------------------------------------------------- |
 | **`FluxDL-Setup-*.exe`**    | Most users — per-user installer wizard, changeable install folder |
 | **`FluxDL-Portable-*.exe`** | USB sticks & no-install use — single file, runs from any folder   |
+
+Every release also ships **`SHA256SUMS.txt`** (verify before running)
+and **`bom.json`** (software bill of materials).
 
 > **"Windows protected your PC"?** These builds are not code-signed, so
 > SmartScreen shows a warning on first run. That is an identity check,
@@ -46,6 +51,27 @@ Get the latest release for **Windows 10/11 x64** from the
 Pasting **multiple links**? They route to the **Batch** tab automatically
 (up to 500 links, playlists expandable per video).
 
+## What's new in v1.8.x
+
+- **Image galleries** — gallery-dl engine with preview (count, thumbnails,
+  select), per-link Auto/Video/Images override, Try-other-engine on
+  failures, live file counters.
+- **Managed tools** — Tools & Engines page (versions, Update / Reinstall /
+  Rollback, yt-dlp channel, health check with one-click fixes), outdated
+  banner, Smallest preset, custom `-f` selector, trim sections.
+- **Queue that lives** — priorities, subscriptions (auto-download or
+  notify), download windows, Library filters and health, tray and
+  notifications.
+- **Post-processing** — convert, auto-tag, compress, gallery ZIP/CBZ,
+  transcription sidecars, rclone upload.
+- **Tool packs & remote** — Streamlink, N_m3u8DL-RE, whisper, rclone
+  (on-demand); loopback API + opt-in LAN, PWA, browser extension, CLI,
+  Discord/Telegram pings.
+- **Trust** — SHA-256 checksums + SBOM on every release, opt-in local-only
+  crash reports, Report-a-bug with prefilled form.
+
+Full notes: [`CHANGELOG.md`](CHANGELOG.md) (also in-app under Changelog).
+
 ## Screenshots
 
 | Home | Downloads | Settings |
@@ -55,15 +81,20 @@ Pasting **multiple links**? They route to the **Batch** tab automatically
 ## Features
 | Area               | What you get                                                                                                                                                                   |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 📥 Downloading     | Single links, playlists with entry picker, batch paste, duplicate guard + download archive, pause / resume / cancel / retry, concurrency 1–5, speed limiter with quick presets |
+| 📥 Downloading     | Single links, playlists with entry picker, batch paste, duplicate guard + download archive, pause / resume / cancel / retry, priorities, concurrency 1–5, speed limiter, trim sections |
 | 🖼️ Images | gallery-dl engine for image galleries (Wikimedia Commons, Flickr, Imgur…): gallery preview with select, per-link Auto/Video/Images override, Try-other-engine on failures, live file counters, Images settings section |
-| 🎞️ Formats         | Compatible MP4 (H.264 + AAC), 480p–4K caps, top-quality audio (MP3 / M4A / Opus / FLAC), manual + auto subtitles, SponsorBlock removal, chapter splitting, audio tag editor    |
-| 📡 Live & upcoming | Stream status detection, record-from-start, wait-for-scheduled-start                                                                                                           |
+| 🎞️ Formats         | Compatible MP4 (H.264 + AAC), 480p–4K caps, Smallest preset, custom `-f` selector, top-quality audio (MP3 / M4A / Opus / FLAC), manual + auto subtitles, SponsorBlock removal, chapter splitting, audio tag editor    |
+| 📡 Live & upcoming | Stream status detection, record-from-start, wait-for-scheduled-start, Streamlink capture suggestion                                                                            |
+| 📬 Subscriptions   | Watch channels/playlists: auto-download or notify-only, per-channel folder/preset/engine, backoff + auto-disable, runaway cap                                                  |
+| 🛠️ Post-processing | Convert, auto-tag (MusicBrainz), compress (HW auto-pick), gallery ZIP/CBZ, transcription `.srt`, rclone upload — failures stay reprocessable, originals kept                     |
+| 🧰 Tool packs      | Streamlink, N_m3u8DL-RE, whisper.cpp (+models), rclone — on-demand, verified-or-consent, atomic updates, revoke list                                                           |
+| 🔧 Tools & Doctor  | Tool versions/paths, Update / Reinstall / Rollback, yt-dlp channel, Update-all, health check with one-click fixes                                                              |
+| 📲 Remote & automation | Loopback API + opt-in LAN (allowlist, auto-disable), PWA, browser extension, `fluxdl.mjs` CLI, Discord/Telegram finish/fail pings                                           |
 | 🪟 Mini window     | Always-on-top compact view with overall progress, per-download pause / resume / cancel, failed retry-all — toggle from the titlebar, `Ctrl+Shift+M`, palette, or tray          |
 | 🖥️ Desktop         | Tray with live tooltip, taskbar progress, single-instance, `fluxdl://` links + CLI URLs, quit-confirmation when downloads run, graceful shutdown (`.part` files resume)        |
 | 🍪 Logins & blocks | Browser-cookie import (Chrome / Edge / Firefox / …) or `cookies.txt`, clear bot-verification guidance, actionable error cards (retry, update engine, repair)                   |
-| 📚 Library         | Search, missing-file health check with relocate, in-app audio/video preview, re-download, Recycle-Bin delete                                                                   |
-| 📊 Insight         | Bandwidth sparkline, whole-queue ETA, history stats, raw engine logs with search, one-click diagnostics report                                                                 |
+| 📚 Library         | Search, filters/sorts/views, missing-file health check with relocate, in-app audio/video preview, re-download, Recycle-Bin delete                                              |
+| 📊 Insight         | Bandwidth sparkline, whole-queue ETA, history stats, raw engine logs with search, one-click diagnostics report, opt-in local crash reports                                      |
 | ⌨️ Speed           | Command palette (`Ctrl+K`), view jumps, drag-and-drop links, clipboard watcher                                                                                                 |
 | 🎨 Feel            | Four themes (dark + light + High Contrast), accent picker, comfortable/compact density                                                                                         |
 
@@ -74,7 +105,7 @@ Pasting **multiple links**? They route to the **Batch** tab automatically
 | `Ctrl+V`       | Paste link & analyze (multi-link → Batch) |
 | `Ctrl+K`       | Command palette                           |
 | `Ctrl+,`       | Settings                                  |
-| `Ctrl+1…6`     | Jump between views                        |
+| `Ctrl+1…7`       | Jump between views                        |
 | `Ctrl+Shift+M` | Mini mode                                 |
 | `?`            | Shortcut list                             |
 
@@ -89,8 +120,10 @@ the running app picks the video up, even from a second launch.
 Settings → Remote access starts a loopback-only server (`127.0.0.1`, token
 auth): paste a link from your browser or the unpacked extension in
 `extension/` and the app picks it up; the served page doubles as a tiny
-remote (queue, pause/cancel). Off by default; LAN access is not offered —
-see `docs/phases/PHASE_6_PLAN.md` §6.
+remote (queue, pause/cancel). Off by default. LAN mode is an explicit
+opt-in on the same screen (big warning first): binds all interfaces with
+an optional IP allowlist and auto-disable timer, and rotates the token on
+enable. Plain HTTP — token guards every call, prefer loopback when you can.
 
 ### Automation: CLI, LAN, notifiers
 
@@ -148,7 +181,7 @@ Desktop extras:
 
 ```sh
 pnpm --filter @grabber/desktop test:e2e   # Playwright smoke (needs pnpm build first)
-pnpm fetch:binaries  # yt-dlp + ffmpeg win64-gpl into apps/desktop/resources/bin
+pnpm fetch:binaries  # yt-dlp + ffmpeg win64-gpl + gallery-dl into apps/desktop/resources/bin
 pnpm make:icon       # regenerate tray PNG + app ICO (deterministic, no deps)
 ```
 
@@ -171,6 +204,8 @@ toast `appUserModelId`.
 flowchart LR
     UI["packages/core\nReact UI + state"] -->|"DownloadEngine\n(typed IPC)"| MAIN["apps/desktop\nElectron main"]
     MAIN -->|"spawns (args array, never shell)"| YT["yt-dlp.exe\nffmpeg / ffprobe"]
+    MAIN -->|"spawns (args array, never shell)"| GDL["gallery-dl.exe\n+ on-demand packs"]
+    MAIN -->|"serves (opt-in)"| API["loopback API · PWA"]
     MAIN -->|"atomic JSON / JSONL"| DISK[("userData\nsettings · queue · history")]
 ```
 
@@ -179,7 +214,8 @@ flowchart LR
 - `packages/core/src/engine.ts` — `DownloadEngine` interface + `IPC_CHANNELS` single channel map
 - `apps/desktop/src/main/` — window, CSP, tray/taskbar, single-instance, protocol, `media://` previews, IPC handlers
 - `apps/desktop/src/preload/` — typed `window.grabber` bridge only
-- `scripts/fetch-binaries.mjs` — SHA-256-verified yt-dlp + ffmpeg at build time (never committed)
+- `extension/` — unpacked MV3 browser extension (context menu + popup → local API)
+- `scripts/fetch-binaries.mjs` — SHA-256-verified yt-dlp + ffmpeg + gallery-dl at build time (never committed)
 
 Rules that keep this codebase healthy: TypeScript strict with no `any`,
 zero Electron/Node imports in core (eslint-enforced), every URL validated
@@ -193,7 +229,8 @@ Further reading: `CHANGELOG.md` (release notes),
 
 Issues and pull requests are welcome. Conventional commits (`feat:`,
 `fix:`, `chore:`, `docs:`, `test:` …), surgical diffs, and please keep the
-four gates green before pushing.
+four gates green before pushing. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md);
+security reports go through [`SECURITY.md`](SECURITY.md), never a public issue.
 
 ## Legal & responsible use
 
@@ -210,11 +247,14 @@ or derived from any platform.
   defeating Widevine, FairPlay, PlayReady or any other encryption, and never
   will. That keeps it firmly in the dual-use category rather than the
   circumvention category.
-- **Zero telemetry** — no URLs, titles or history ever leave your machine.
-  The only outbound request the app ever makes is the GitHub Releases check for
-  app updates (`api.github.com`), plus thumbnail fetches for the media you
-  yourself asked to preview. There is no analytics, no crash reporting and no
-  server-side log.
+- **Zero telemetry** — no URLs, titles or history ever leave your machine
+  for analytics: there is none. The app itself only ever talks to the
+  network for the GitHub Releases update check (`api.github.com`), the
+  thumbnail fetches for media you asked to preview, engine/tool downloads
+  you trigger, and — only if you switch them on — the notifiers you
+  configure (Discord/Telegram) and the loopback/LAN API you enable.
+  Crash reports are opt-in and never leave your disk except inside a
+  diagnostics export *you* copy-paste into a bug report.
 - **You are responsible** — you are responsible for respecting copyright and
   each site's terms of service, and for having the right to keep whatever you
   download. Only download content you own or are allowed to keep. The in-app

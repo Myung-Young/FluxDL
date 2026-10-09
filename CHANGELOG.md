@@ -14,6 +14,8 @@ Fast follow: the release smoke caught a dead gallery archive.
   so the archive never engaged. It now writes the absolute path — a second
   run skips all finished files. Verified by a live double-run.
 
+## [1.8.0] — 2026-10-09
+
 "Everything, one release": multi-engine downloads, managed tools, a live-in
 queue with subscriptions and library, post-processing, optional tool packs,
 remote access, and release-grade hardening — with the yt-dlp flow untouched.
