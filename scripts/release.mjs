@@ -153,7 +153,7 @@ const bomPath = join(ROOT, "release", "bom.json");
 if (existsSync(bomPath)) {
   assets.push(bomPath);
 } else {
-  console.log("no release/bom.json (run pnpm bom first) — skipping SBOM upload");
+  console.log("no release/bom.json (SBOM skipped; generate with: pnpm exec cyclonedx-npm --ignore-npm-errors --output-file release/bom.json --output-format JSON)");
 }
 for (const file of assets) {
   const name = file.split(/[\\/]/).pop();

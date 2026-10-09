@@ -41,7 +41,7 @@ jobs:
         run: pnpm dist
 
       - name: SBOM (CycloneDX, committed tool, pnpm workspace)
-        run: pnpm bom
+        run: pnpm exec cyclonedx-npm --ignore-npm-errors --output-file release/bom.json --output-format JSON
 
       - name: Attest build provenance (sigstore, GitHub-hosted)
         uses: actions/attest-build-provenance@v2
