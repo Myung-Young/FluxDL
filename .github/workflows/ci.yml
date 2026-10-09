@@ -52,4 +52,4 @@ jobs:
           $LASTEXITCODE = 0
 
       - name: License inventory (review on change)
-        run: pnpm licenses list
+        run: pnpm licenses list --no-optional
