@@ -49,6 +49,10 @@ pnpm-debug.log*
 *.pfx
 *.cert
 *.key
+# FluxDL secret stores (OS-encrypted at runtime, never source)
+api-token.dat
+notifier-secrets.dat
+*.token
 
 # Operating System Files
 .DS_Store
@@ -62,6 +66,10 @@ desktop.ini
 .vscode/*
 !.vscode/extensions.json
 .idea/
+.cursor/
+.opencode/
+.history/
+*.code-workspace
 *.swp
 *.swo
 *~
@@ -69,10 +77,16 @@ desktop.ini
 *.ntvs*
 *.njsproj
 *.sln
+*.orig
+*.rej
 
 # Temporary & Cache
 tmp/
 temp/
+*.local
+
+# NOTE: docs/screenshots/*.png are intentional README assets (see README.md
+# Screenshots) and must stay tracked — do not add them here.
 
 # Internal contributor notes (kept locally, not for the public repo)
 AGENTS.md

@@ -249,6 +249,7 @@ const copyReport = async (): Promise<void> => {
               {" · "}aria2c: {versions.aria2c ?? "—"}
             </p>
           )}
+        <p className="muted">{S.logs.poweredBy}</p>
         <div className="chip-row">
           <button
             type="button"

@@ -5,6 +5,8 @@
 [![yt-dlp](https://img.shields.io/badge/engine-yt--dlp-ff7f50)](https://github.com/yt-dlp/yt-dlp)
 [![pnpm](https://img.shields.io/badge/pnpm-workspaces-F69220?logo=pnpm&logoColor=white)](https://pnpm.io)
 [![No telemetry](https://img.shields.io/badge/telemetry-none-success)](https://github.com/Myung-Young/FluxDL)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/Myung-Young/FluxDL/blob/main/LICENSE)
+[![Download latest](https://img.shields.io/badge/Download-latest-brightgreen?logo=windows&logoColor=white)](https://github.com/Myung-Young/FluxDL/releases/latest)
 
 **FluxDL** is a fast, private desktop downloader for video, audio and
 image galleries on Windows — a friendly face over the battle-tested
@@ -74,29 +76,32 @@ Full notes: [`CHANGELOG.md`](CHANGELOG.md) (also in-app under Changelog).
 
 ## Screenshots
 
-| Home | Downloads | Settings |
-| ---- | --------- | -------- |
+| Home                               | Downloads                                    | Settings                                   |
+| ---------------------------------- | -------------------------------------------- | ------------------------------------------ |
 | ![Home](docs/screenshots/home.png) | ![Downloads](docs/screenshots/downloads.png) | ![Settings](docs/screenshots/settings.png) |
 
+![FluxDL feature overview](docs/features.svg)
+
 ## Features
-| Area               | What you get                                                                                                                                                                   |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 📥 Downloading     | Single links, playlists with entry picker, batch paste, duplicate guard + download archive, pause / resume / cancel / retry, priorities, concurrency 1–5, speed limiter, trim sections |
-| 🖼️ Images | gallery-dl engine for image galleries (Wikimedia Commons, Flickr, Imgur…): gallery preview with select, per-link Auto/Video/Images override, Try-other-engine on failures, live file counters, Images settings section |
-| 🎞️ Formats         | Compatible MP4 (H.264 + AAC), 480p–4K caps, Smallest preset, custom `-f` selector, top-quality audio (MP3 / M4A / Opus / FLAC), manual + auto subtitles, SponsorBlock removal, chapter splitting, audio tag editor    |
-| 📡 Live & upcoming | Stream status detection, record-from-start, wait-for-scheduled-start, Streamlink capture suggestion                                                                            |
-| 📬 Subscriptions   | Watch channels/playlists: auto-download or notify-only, per-channel folder/preset/engine, backoff + auto-disable, runaway cap                                                  |
-| 🛠️ Post-processing | Convert, auto-tag (MusicBrainz), compress (HW auto-pick), gallery ZIP/CBZ, transcription `.srt`, rclone upload — failures stay reprocessable, originals kept                     |
-| 🧰 Tool packs      | Streamlink, N_m3u8DL-RE, whisper.cpp (+models), rclone — on-demand, verified-or-consent, atomic updates, revoke list                                                           |
-| 🔧 Tools & Doctor  | Tool versions/paths, Update / Reinstall / Rollback, yt-dlp channel, Update-all, health check with one-click fixes                                                              |
-| 📲 Remote & automation | Loopback API + opt-in LAN (allowlist, auto-disable), PWA, browser extension, `fluxdl.mjs` CLI, Discord/Telegram finish/fail pings                                           |
-| 🪟 Mini window     | Always-on-top compact view with overall progress, per-download pause / resume / cancel, failed retry-all — toggle from the titlebar, `Ctrl+Shift+M`, palette, or tray          |
-| 🖥️ Desktop         | Tray with live tooltip, taskbar progress, single-instance, `fluxdl://` links + CLI URLs, quit-confirmation when downloads run, graceful shutdown (`.part` files resume)        |
-| 🍪 Logins & blocks | Browser-cookie import (Chrome / Edge / Firefox / …) or `cookies.txt`, clear bot-verification guidance, actionable error cards (retry, update engine, repair)                   |
-| 📚 Library         | Search, filters/sorts/views, missing-file health check with relocate, in-app audio/video preview, re-download, Recycle-Bin delete                                              |
-| 📊 Insight         | Bandwidth sparkline, whole-queue ETA, history stats, raw engine logs with search, one-click diagnostics report, opt-in local crash reports                                      |
-| ⌨️ Speed           | Command palette (`Ctrl+K`), view jumps, drag-and-drop links, clipboard watcher                                                                                                 |
-| 🎨 Feel            | Four themes (dark + light + High Contrast), accent picker, comfortable/compact density                                                                                         |
+
+| Area                   | What you get                                                                                                                                                                                                           |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 📥 Downloading         | Single links, playlists with entry picker, batch paste, duplicate guard + download archive, pause / resume / cancel / retry, priorities, concurrency 1–5, speed limiter, trim sections                                 |
+| 🖼️ Images              | gallery-dl engine for image galleries (Wikimedia Commons, Flickr, Imgur…): gallery preview with select, per-link Auto/Video/Images override, Try-other-engine on failures, live file counters, Images settings section |
+| 🎞️ Formats             | Compatible MP4 (H.264 + AAC), 480p–4K caps, Smallest preset, custom `-f` selector, top-quality audio (MP3 / M4A / Opus / FLAC), manual + auto subtitles, SponsorBlock removal, chapter splitting, audio tag editor     |
+| 📡 Live & upcoming     | Stream status detection, record-from-start, wait-for-scheduled-start, Streamlink capture suggestion                                                                                                                    |
+| 📬 Subscriptions       | Watch channels/playlists: auto-download or notify-only, per-channel folder/preset/engine, backoff + auto-disable, runaway cap                                                                                          |
+| 🛠️ Post-processing     | Convert, auto-tag (MusicBrainz), compress (HW auto-pick), gallery ZIP/CBZ, transcription `.srt`, rclone upload — failures stay reprocessable, originals kept                                                           |
+| 🧰 Tool packs          | Streamlink, N_m3u8DL-RE, whisper.cpp (+models), rclone — on-demand, verified-or-consent, atomic updates, revoke list                                                                                                   |
+| 🔧 Tools & Doctor      | Tool versions/paths, Update / Reinstall / Rollback, yt-dlp channel, Update-all, health check with one-click fixes                                                                                                      |
+| 📲 Remote & automation | Loopback API + opt-in LAN (allowlist, auto-disable), PWA, browser extension, `fluxdl.mjs` CLI, Discord/Telegram finish/fail pings                                                                                      |
+| 🪟 Mini window         | Always-on-top compact view with overall progress, per-download pause / resume / cancel, failed retry-all — toggle from the titlebar, `Ctrl+Shift+M`, palette, or tray                                                  |
+| 🖥️ Desktop             | Tray with live tooltip, taskbar progress, single-instance, `fluxdl://` links + CLI URLs, quit-confirmation when downloads run, graceful shutdown (`.part` files resume)                                                |
+| 🍪 Logins & blocks     | Browser-cookie import (Chrome / Edge / Firefox / …) or `cookies.txt`, clear bot-verification guidance, actionable error cards (retry, update engine, repair)                                                           |
+| 📚 Library             | Search, filters/sorts/views, missing-file health check with relocate, in-app audio/video preview, re-download, Recycle-Bin delete                                                                                      |
+| 📊 Insight             | Bandwidth sparkline, whole-queue ETA, history stats, raw engine logs with search, one-click diagnostics report, opt-in local crash reports                                                                             |
+| ⌨️ Speed               | Command palette (`Ctrl+K`), view jumps, drag-and-drop links, clipboard watcher                                                                                                                                         |
+| 🎨 Feel                | Four themes (dark + light + High Contrast), accent picker, comfortable/compact density                                                                                                                                 |
 
 ### Keyboard shortcuts
 
@@ -105,7 +110,7 @@ Full notes: [`CHANGELOG.md`](CHANGELOG.md) (also in-app under Changelog).
 | `Ctrl+V`       | Paste link & analyze (multi-link → Batch) |
 | `Ctrl+K`       | Command palette                           |
 | `Ctrl+,`       | Settings                                  |
-| `Ctrl+1…7`       | Jump between views                        |
+| `Ctrl+1…7`     | Jump between views                        |
 | `Ctrl+Shift+M` | Mini mode                                 |
 | `?`            | Shortcut list                             |
 
@@ -254,7 +259,7 @@ or derived from any platform.
   you trigger, and — only if you switch them on — the notifiers you
   configure (Discord/Telegram) and the loopback/LAN API you enable.
   Crash reports are opt-in and never leave your disk except inside a
-  diagnostics export *you* copy-paste into a bug report.
+  diagnostics export _you_ copy-paste into a bug report.
 - **You are responsible** — you are responsible for respecting copyright and
   each site's terms of service, and for having the right to keep whatever you
   download. Only download content you own or are allowed to keep. The in-app

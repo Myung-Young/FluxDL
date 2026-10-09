@@ -72,6 +72,31 @@ for (const f of [setup, portable]) {
   if (!existsSync(f)) fail(`missing artifact (run pnpm dist first): ${f}`);
 }
 
+// Stale-bundle guard (v1.8.1): the 1.8.0 portable shipped a renderer that
+// predated its own changelog entry, so the Changelog tab stopped at 1.7.2.
+// The built renderer is plain text — the release version string must occur
+// in it (changelog entry + version displays), or the bundle is stale.
+{
+  const { readdirSync } = await import("node:fs");
+  const assetsDir = join(ROOT, "apps", "desktop", "out", "renderer", "assets");
+  let hits = 0;
+  try {
+    for (const name of readdirSync(assetsDir)) {
+      if (!name.endsWith(".js")) continue;
+      const text = readFileSync(join(assetsDir, name), "utf8");
+      if (text.includes(version)) hits += 1;
+    }
+  } catch {
+    fail("cannot read built renderer (run pnpm build first).");
+  }
+  if (hits === 0) {
+    fail(
+      `built renderer has no "${version}" string — stale bundle? Delete apps/desktop/out and rebuild.`,
+    );
+  }
+  console.log(`renderer bundle check: "${version}" found in ${hits} chunk(s)`);
+}
+
 // SHA-256 checksums (Phase 7): users verify SmartScreen-flagged binaries
 // against these before running. Written next to the artifacts, uploaded too.
 const sumsPath = join(ROOT, "release", "SHA256SUMS.txt");
