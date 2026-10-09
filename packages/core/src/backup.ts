@@ -1,12 +1,21 @@
 import { DEFAULT_SETTINGS, mergeSettings } from "./settings.js";
-import type { AppSettings, DownloadJob } from "./types.js";
+import type { AppSettings, DownloadJob, WatchChannel } from "./types.js";
 import { AUDIO_PRESETS, VIDEO_PRESETS } from "./types.js";
+import { normalizeWatchlist } from "./watchlist.js";
 
 /**
- * Settings + queue + history backup (D9): one JSON file, portable across
- * PCs. Export is total; import sanitizes everything (settings through the
- * normal merge, jobs through a shape check) and reports what was dropped.
+ * Settings + queue + history + watchlist backup (D9): one JSON file,
+ * portable across PCs. Export is total except secrets; import sanitizes
+ * everything (settings through the normal merge, jobs through a shape
+ * check) and reports what was dropped.
  */
+
+/** Settings keys stripped on export (secrets stay on the machine). */
+export const BACKUP_REDACTED_KEYS: readonly string[] = [
+  "proxy",
+  "cookiesFile",
+  "cookiesFromBrowser",
+];
 
 export interface BackupPayload {
   readonly app: "FluxDL";
@@ -14,14 +23,31 @@ export interface BackupPayload {
   readonly settings: AppSettings;
   readonly queue: readonly DownloadJob[];
   readonly history: readonly DownloadJob[];
+  readonly watchlist: readonly WatchChannel[];
+  readonly redacted: readonly string[];
 }
 
 export function exportBackup(
   settings: AppSettings,
   queue: readonly DownloadJob[],
   history: readonly DownloadJob[],
+  watchlist: readonly WatchChannel[] = [],
 ): string {
-  return JSON.stringify({ app: "FluxDL", version: 1, settings, queue, history });
+  const scrubbed: AppSettings = {
+    ...settings,
+    proxy: null,
+    cookiesFile: null,
+    cookiesFromBrowser: null,
+  };
+  return JSON.stringify({
+    app: "FluxDL",
+    version: 1,
+    settings: scrubbed,
+    queue,
+    history,
+    watchlist,
+    redacted: [...BACKUP_REDACTED_KEYS],
+  });
 }
 
 function isPresetLike(value: unknown): boolean {
@@ -51,6 +77,7 @@ const STATUSES: readonly string[] = [
   "paused",
   "done",
   "error",
+  "postfailed",
   "cancelled",
 ];
 
@@ -82,6 +109,7 @@ export interface ParsedBackup {
   readonly settings: AppSettings;
   readonly queue: DownloadJob[];
   readonly history: DownloadJob[];
+  readonly watchlist: WatchChannel[];
   readonly dropped: number;
 }
 
@@ -111,6 +139,7 @@ export function parseBackup(text: string): ParsedBackup {
     settings: mergeSettings(DEFAULT_SETTINGS, rec["settings"] ?? {}),
     queue: q.kept,
     history: h.kept,
+    watchlist: normalizeWatchlist(rec["watchlist"] ?? []),
     dropped: q.dropped + h.dropped,
   };
 }

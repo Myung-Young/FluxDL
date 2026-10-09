@@ -269,3 +269,19 @@ export function timeoutMapped(seconds: number, lang: ErrorLocale = "en"): Mapped
     actions: [RETRY, LOGS],
   };
 }
+
+/**
+ * Synthetic mapping for a missing/damaged bundled binary (v1.8.5). Used
+ * directly — never through mapDownloadError, which would flatten the reason
+ * into generic "unknown" (the guidance text matches no stderr rule). The
+ * repair action reinstalls bundled tools, which is exactly the fix.
+ */
+export function engineBrokenMapped(lang: ErrorLocale = "en"): MappedError {
+  return {
+    category: "engine-broken",
+    message: MESSAGES["engine-broken"][lang],
+    raw: "",
+    suggestCookies: false,
+    actions: [REPAIR, LOGS],
+  };
+}

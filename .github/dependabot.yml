@@ -1,0 +1,11 @@
+# Keep dependencies current without surprise major bumps.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    # Electron + build chain move carefully; security patches take priority.
+    allow:
+      - dependency-type: "all"

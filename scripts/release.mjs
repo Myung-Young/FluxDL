@@ -8,7 +8,8 @@
  * Uses GH_TOKEN/GITHUB_TOKEN if set, otherwise falls back to local git credentials.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -68,6 +69,19 @@ const setup = join(ROOT, "release", `FluxDL-Setup-${version}.exe`);
 const portable = join(ROOT, "release", `FluxDL-Portable-${version}.exe`);
 for (const f of [setup, portable]) {
   if (!existsSync(f)) fail(`missing artifact (run pnpm dist first): ${f}`);
+}
+
+// SHA-256 checksums (Phase 7): users verify SmartScreen-flagged binaries
+// against these before running. Written next to the artifacts, uploaded too.
+const sumsPath = join(ROOT, "release", "SHA256SUMS.txt");
+{
+  const lines = [];
+  for (const f of [setup, portable]) {
+    const hash = createHash("sha256").update(readFileSync(f)).digest("hex");
+    lines.push(`${hash}  ${f.split(/[\\/]/).pop()}`);
+  }
+  writeFileSync(sumsPath, `${lines.join("\n")}\n`, "utf8");
+  console.log(`wrote ${sumsPath}`);
 }
 
 const api = async (path, init = {}) => {
@@ -134,7 +148,14 @@ if (uploadUrl === null) {
   });
 }
 
-for (const file of [setup, portable]) {
+const assets = [setup, portable, sumsPath];
+const bomPath = join(ROOT, "release", "bom.json");
+if (existsSync(bomPath)) {
+  assets.push(bomPath);
+} else {
+  console.log("no release/bom.json (run pnpm bom first) — skipping SBOM upload");
+}
+for (const file of assets) {
   const name = file.split(/[\\/]/).pop();
   const size = statSync(file).size;
 

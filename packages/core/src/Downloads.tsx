@@ -9,14 +9,16 @@ import { formatStr, localeTag, resolveLanguage } from "./locale.js";
 import { formatSize } from "./media.js";
 import { aggregateStatus, formatEta, queueEta } from "./aggregate.js";
 import { fuzzyRank } from "./fuzzy.js";
-import { retryInSeconds } from "./queue.js";
+import { priorityOf, retryInSeconds, unfinishedCount } from "./queue.js";
+import { engineLabel } from "./engines.js";
 import { sendNotification } from "./notify.js";
 import { flipShift, pressScale, tweenProgress } from "./motion.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 import type { ToastStoreState } from "./toast.js";
 import { ErrorActionButtons, type ErrorNavigate } from "./ErrorActions.js";
 import { ContextMenu, type MenuItemDef } from "./ContextMenu.js";
-import { buildJobMenu } from "./JobMenu.js";
+import { buildJobMenu, postStepsForJob } from "./JobMenu.js";
+import type { PostStep } from "./postprocess.js";
 import { writeClipboardText } from "./clipboard.js";
 
 /** Downloads navigates home (empty state) plus the error-action targets. */
@@ -75,6 +77,17 @@ function statusLine(job: DownloadJob, strings: Strings, locale: string): string 
     return bits.join(" · ");
   }
   const bits: string[] = [job.status];
+  // Gallery (multi-file) jobs count files, not bytes (v1.8.5): the byte
+  // fields stay null on that path, so render the counters instead.
+  if (job.downloadedCount !== undefined && job.downloadedCount !== null) {
+    bits.push(formatStr(strings.downloads.galleryFiles, { count: job.downloadedCount }));
+  }
+  if (job.skippedCount !== undefined && job.skippedCount !== null && job.skippedCount > 0) {
+    bits.push(formatStr(strings.downloads.gallerySkipped, { count: job.skippedCount }));
+  }
+  if (job.failedCount !== undefined && job.failedCount !== null && job.failedCount > 0) {
+    bits.push(formatStr(strings.downloads.galleryFailed, { count: job.failedCount }));
+  }
   if (job.status === "queued" && job.startAfter !== undefined && job.startAfter !== null) {
     bits.push(
       formatStr(strings.downloads.startsAt, {
@@ -84,7 +97,9 @@ function statusLine(job: DownloadJob, strings: Strings, locale: string): string 
   }
   if (job.speed !== null) bits.push(job.speed);
   if (job.eta !== null) bits.push(job.eta);
-  if (job.stage !== null && job.stage !== job.status) bits.push(job.stage);
+  if (job.stage !== null && job.stage !== job.status) {
+    bits.push(job.stage === "stalled" ? strings.downloads.stalled : job.stage);
+  }
   return bits.join(" · ");
 }
 
@@ -96,6 +111,7 @@ function Card({
   toast,
   navigate,
   onMenu,
+  onPost,
   queuePos,
   onMove,
   strings,
@@ -111,6 +127,8 @@ function Card({
   toast: StoreApi<ToastStoreState>;
   navigate: ErrorNavigate;
   onMenu: (job: DownloadJob, x: number, y: number) => void;
+  /** Manual pipeline run (Phase 4). */
+  onPost: (job: DownloadJob, steps: readonly PostStep[]) => void;
   /** Position within the queued subsequence (null when not queued). */
   queuePos: { index: number; total: number } | null;
   onMove: (id: string, toIndex: number) => void;
@@ -165,6 +183,9 @@ function Card({
         />
         <h2 className="dl-title">
           {job.pinned === true && <span className="badge">{strings.downloads.pinned}</span>}{" "}
+          <span className="badge" title={job.engineId ?? "yt-dlp"}>
+            {engineLabel(job.engineId)}
+          </span>{" "}
           {job.title}
         </h2>
       </div>
@@ -214,7 +235,7 @@ function Card({
             {job.stage === "recording" ? strings.downloads.stopRecording : strings.downloads.pause}
           </button>
         )}
-        {job.status === "paused" && (
+        {(job.status === "paused" || job.status === "interrupted") && (
           <button
             type="button"
             className="btn btn-small"
@@ -229,11 +250,34 @@ function Card({
             {strings.downloads.resume}
           </button>
         )}
-        {job.status === "error" && (
+        {/* Stalled watchdog (Phase 2): the engine saw no output for a while.
+            Restart = pause + resume through the normal path (relaunch). */}
+        {job.stage === "stalled" &&
+          (job.status === "downloading" || job.status === "processing") && (
+            <button
+              type="button"
+              className="btn btn-small"
+              aria-label={strings.downloads.restart}
+              onPointerDown={(e) => {
+                pressScale(e.currentTarget);
+              }}
+              onClick={() => {
+                run(async () => {
+                  await actions.pause(job.id);
+                  await actions.resume(job.id);
+                });
+              }}
+            >
+              {strings.downloads.restart}
+            </button>
+          )}
+        {(job.status === "error" || job.status === "partial") && (
           <button
             type="button"
             className="btn btn-small"
-            aria-label={strings.downloads.retry}
+            aria-label={
+              job.engineId === "gallery-dl" ? strings.downloads.rerunGallery : strings.downloads.retry
+            }
             onPointerDown={(e) => {
               pressScale(e.currentTarget);
             }}
@@ -241,7 +285,26 @@ function Card({
               run(() => actions.retry(job.id));
             }}
           >
-            {strings.downloads.retry}
+            {job.engineId === "gallery-dl"
+              ? // Gallery re-runs skip finished files through the archive,
+                // so retry already means "failed items only" (v1.8.5).
+                strings.downloads.rerunGallery
+              : strings.downloads.retry}
+          </button>
+        )}
+        {job.status === "postfailed" && (
+          <button
+            type="button"
+            className="btn btn-small"
+            aria-label={strings.downloads.reprocess}
+            onPointerDown={(e) => {
+              pressScale(e.currentTarget);
+            }}
+            onClick={() => {
+              onPost(job, postStepsForJob(job));
+            }}
+          >
+            {strings.downloads.reprocess}
           </button>
         )}
         {job.status !== "done" && (
@@ -270,6 +333,30 @@ function Card({
         >
           {job.pinned === true ? strings.downloads.unpin : strings.downloads.pin}
         </button>
+        {job.status === "queued" &&
+          (() => {
+            const current = priorityOf(job);
+            const label =
+              current === 2
+                ? strings.downloads.priorityHigh
+                : current === 0
+                  ? strings.downloads.priorityLow
+                  : strings.downloads.priorityNormal;
+            return (
+              <button
+                type="button"
+                className="btn btn-small"
+                aria-label={formatStr(strings.downloads.priorityCycle, { label })}
+                onClick={() => {
+                  run(() =>
+                    actions.setPriority(job.id, current === 1 ? 2 : current === 2 ? 0 : 1),
+                  );
+                }}
+              >
+                {label}
+              </button>
+            );
+          })()}
         {job.status === "queued" && (
           <button
             type="button"
@@ -389,9 +476,67 @@ export function Downloads({
   const S = useStrings(settings);
   const settingsState = useStore(settings, (s) => s.settings);
   const locale = localeTag(resolveLanguage(settingsState.language));
+  // Manual pipeline run (Phase 4): report toasts with real savings;
+  // low-confidence tags offer one-click force-apply.
+  const runPost = (target: DownloadJob, steps: readonly PostStep[]): void => {
+    const dest = target.destination;
+    if (dest === null) return;
+    void engine
+      .postProcess({ action: "run", files: [dest], steps })
+      .then((res) => {
+        if (res.kind !== "report") return;
+        const report = res.report;
+        if (!report.ok) {
+          const first = report.results.find((r) => !r.ok);
+          const detail = first?.note;
+          toast.getState().push(
+            `${S.downloads.postFailed}${typeof detail === "string" && detail.length > 0 ? ` — ${detail}` : ""}`,
+            "error",
+          );
+          return;
+        }
+        const saved = report.results.reduce((n, r) => n + (r.savedBytes ?? 0), 0);
+        toast.getState().push(
+          saved > 0
+            ? `${S.downloads.postDone} ${formatStr(S.downloads.postSaved, { size: formatSize(saved, locale) })}`
+            : S.downloads.postDone,
+          "success",
+        );
+        const best = report.candidates[0];
+        if (best === undefined) return;
+        toast.getState().push(
+          formatStr(S.downloads.postTagLow, { title: best.title, score: best.score }),
+          "info",
+          {
+            label: S.downloads.postTagApply,
+            run: () => {
+              void engine
+                .postProcess({ action: "apply-tag", path: dest, mbid: best.mbid })
+                .then((applied) => {
+                  toast.getState().push(
+                    applied.kind === "report" && applied.report.ok
+                      ? S.downloads.postDone
+                      : S.downloads.postFailed,
+                    applied.kind === "report" && applied.report.ok ? "success" : "error",
+                  );
+                })
+                .catch(() => {
+                  toast.getState().push(S.downloads.postFailed, "error");
+                });
+            },
+          },
+        );
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : "";
+        toast.getState().push(
+          msg.includes("already running") ? S.downloads.postRunning : S.downloads.postFailed,
+          "error",
+        );
+      });
+  };
   const jobs = useStore(queue, (s) => s.jobs);
-  const ready = useStore(settings, (s) => s.ready);
-  const speedLimit = useStore(settings, (s) => s.settings.speedLimit);
+  const ready = useStore(settings, (s) => s.ready);  const speedLimit = useStore(settings, (s) => s.settings.speedLimit);
   const savedSearches = useStore(settings, (s) => s.settings.savedSearches);
   const recentSearches = useStore(settings, (s) => s.settings.recentSearches);
   const [query, setQuery] = useState<string>("");
@@ -445,9 +590,26 @@ export function Downloads({
   // Search (fuzzy + typo-tolerant) + status filter, best matches first.
   const visible = jobs
     .map((j) => {
-      if (statusFilter === "active" && !(j.status === "queued" || j.status === "analyzing" || j.status === "downloading" || j.status === "processing")) return null;
-      if (statusFilter === "error" && j.status !== "error") return null;
-      if (statusFilter === "done" && !(j.status === "done" || j.status === "cancelled")) return null;
+      if (
+        statusFilter === "active" &&
+        !(
+          j.status === "queued" ||
+          j.status === "analyzing" ||
+          j.status === "probing" ||
+          j.status === "downloading" ||
+          j.status === "processing" ||
+          j.status === "paused" ||
+          j.status === "interrupted"
+        )
+      )
+        return null;
+      if (statusFilter === "error" && !(j.status === "error" || j.status === "partial" || j.status === "postfailed"))
+        return null;
+      if (
+        statusFilter === "done" &&
+        !(j.status === "done" || j.status === "partial" || j.status === "cancelled")
+      )
+        return null;
       const q = query.trim();
       if (q.length === 0) return { j, s: 0 };
       const s = fuzzyRank(`${j.title} ${j.url}`, q);
@@ -659,6 +821,12 @@ export function Downloads({
             })
             .catch(fail);
         },
+        postRun: (steps) => {
+          runPost(job, steps);
+        },
+        postReprocess: () => {
+          runPost(job, postStepsForJob(job));
+        },
       },
       {
         up: qIndex > 0,
@@ -676,13 +844,45 @@ export function Downloads({
     void (async () => {
       const hist = await engine.loadHistory().catch(() => []);
       const action = settings.getState().settings.postDownloadAction;
-      const notify = settings.getState().settings.notifyFinished;
+      // Exactly-once split with the main process (Phase 3): the renderer
+      // notifies while focused; the engine shows an actionable notification
+      // when unfocused. Without this both fire on every finished download.
+      const notify =
+        settings.getState().settings.notifyFinished &&
+        (typeof document === "undefined" || document.hasFocus());
       const done: DownloadJob[] = [];
       const failed: DownloadJob[] = [];
       for (const id of vanished) {
         const h = hist.find((x) => x.id === id);
         if (h?.status === "done") done.push(h);
         else if (h?.status === "error") failed.push(h);
+        else if (h?.status === "postfailed") {
+          // Phase 4: the download is intact, only the pipeline failed.
+          // Toast once with a Reprocess action (the history card has it too).
+          const detail = h.error !== null ? ` — ${h.error}` : "";
+          const dest = h.destination;
+          toast
+            .getState()
+            .push(`${S.downloads.postFailed}: ${h.title}${detail}`, "error", {
+              label: S.downloads.reprocess,
+              run: () => {
+                if (dest === null) return;
+                void engine
+                  .postProcess({ action: "run", files: [dest], steps: postStepsForJob(h) })
+                  .then((res) => {
+                    if (res.kind === "report" && res.report.ok) {
+                      toast.getState().push(S.downloads.postDone, "success");
+                    } else {
+                      toast.getState().push(S.downloads.postFailed, "error");
+                    }
+                  })
+                  .catch(() => {
+                    toast.getState().push(S.downloads.postFailed, "error");
+                  });
+              },
+            });
+          if (notify) sendNotification(S.downloads.postFailed, h.title);
+        }
       }
       // Digest (C8): one summary instead of N toasts + N OS notifications.
       if (done.length + failed.length > 1) {
@@ -752,6 +952,9 @@ export function Downloads({
                     title: h.title,
                     preset: h.preset,
                     outputDir: settings.getState().settings.downloadDir,
+                    // Retry stays on the original engine (gallery jobs
+                    // must not silently become yt-dlp jobs).
+                    ...(h.engineId === "gallery-dl" ? { engineId: "gallery-dl" as const } : {}),
                   })
                   .catch(() => undefined);
               },
@@ -763,18 +966,65 @@ export function Downloads({
   }, [jobs, engine, queue, settings, toast, S]);
 
   const canPause = jobs.some(
-    (j) => j.status === "queued" || j.status === "analyzing" || j.status === "downloading" || j.status === "processing",
+    (j) =>
+      j.status === "queued" ||
+      j.status === "analyzing" ||
+      j.status === "probing" ||
+      j.status === "downloading" ||
+      j.status === "processing",
   );
-  const canResume = jobs.some((j) => j.status === "paused");
+  const canResume = jobs.some((j) => j.status === "paused" || j.status === "interrupted");
   const hasQueued = queuedIds.length > 0;
-  const hasErrors = jobs.some((j) => j.status === "error");
+  const hasErrors = jobs.some((j) => j.status === "error" || j.status === "partial");
   const hasClearable = jobs.some(
-    (j) => j.status === "error" || j.status === "done" || j.status === "cancelled",
+    (j) =>
+      j.status === "error" ||
+      j.status === "partial" ||
+      j.status === "done" ||
+      j.status === "cancelled",
   );
 
   return (
     <section className="grabber-view" aria-label={S.downloads.title}>
       <h1>{S.downloads.title}</h1>
+      {/* Outdated-engine banner (Phase 2): extractor/signature failures mean
+          the engine, not the link, is the problem. One click updates and
+          retries everything failed. */}
+      {jobs.some((j) => j.status === "error" && j.errorCategory === "extractor-failed") && (
+        <div className="grabber-card" role="status">
+          <p className="muted">{S.downloads.outdatedBanner}</p>
+          <div className="chip-row">
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => {
+                void (async (): Promise<void> => {
+                  if (unfinishedCount(queue.getState().jobs) > 0) {
+                    toast.getState().push(S.errors.updateBlockedBusy, "error");
+                    return;
+                  }
+                  try {
+                    await engine.updateEngine();
+                    toast.getState().push(S.errors.engineUpdated, "success");
+                    await queue.getState().retryAll();
+                  } catch (err) {
+                    toast
+                      .getState()
+                      .push(
+                        err instanceof Error && err.message.length > 0
+                          ? err.message
+                          : S.logs.updateFailed,
+                        "error",
+                      );
+                  }
+                })();
+              }}
+            >
+              {S.downloads.outdatedUpdate}
+            </button>
+          </div>
+        </div>
+      )}
       {/* v1.7.2: the command bar is always mounted. It used to disappear with
           an empty queue, so on a fresh install the page had no search box at
           all — the search looked "missing" rather than empty. */}
@@ -1155,6 +1405,9 @@ export function Downloads({
                 onToggleSelect={toggleSelect}
                 onMenu={(target, x, y) => {
                   setMenu({ job: target, x, y });
+                }}
+                onPost={(target, steps) => {
+                  runPost(target, steps);
                 }}
                 queuePos={
                   qIndex >= 0 ? { index: qIndex, total: queuedIds.length } : null

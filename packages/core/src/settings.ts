@@ -2,21 +2,35 @@ import type {
   AppSettings,
   AudioPreset,
   CodecPreference,
+  CompressPreset,
   Container,
   Density,
   DownloadPreset,
+  EngineId,
+  GalleryPackage,
+  ImagesSettings,
   Language,
+  PostProcessSettings,
+  RouterMode,
+  UgoiraFormat,
   VideoPreset,
+  WhisperModelSize,
+  YtDlpChannel,
 } from "./types.js";
-import { AUDIO_PRESETS, CLOSE_BEHAVIORS, CONTAINERS, VIDEO_PRESETS } from "./types.js";
+import { AUDIO_PRESETS, CLOSE_BEHAVIORS, COMPRESS_PRESETS, CONTAINERS, ENGINE_IDS, GALLERY_PACKAGES, ROUTER_MODES, UGOIRA_FORMATS, VIDEO_PRESETS, WHISPER_MODEL_SIZES, YTDLP_CHANNELS } from "./types.js";
+import { REMOTE_API_DEFAULT_PORT, clampApiPort } from "./remoteApi.js";
 import { THEME_NAMES } from "./themes.js";
 import { clampConcurrency } from "./queue.js";
+import { validateWindowTime } from "./validate.js";
 
 /** Defaults when no persisted settings exist yet. */
 export const DEFAULT_SETTINGS: AppSettings = {
   downloadDir: "",
   filenameTemplate: "%(title)s [%(id)s].%(ext)s",
   concurrency: 2,
+  concurrencyGallery: 2,
+  downloadWindowStart: null,
+  downloadWindowEnd: null,
   speedLimit: null,
   proxy: null,
   cookiesFromBrowser: null,
@@ -28,6 +42,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   embedSubs: false,
   includeAutoSubs: true,
   mergeContainer: "mp4",
+  customFormat: null,
   // Polite pacing is OFF by default: a user who wants human-like delays opts
   // in, and the default argv stays byte-identical to earlier versions (v1.7.2).
   pacing: {
@@ -51,6 +66,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   playlistSubfolder: true,
   language: "auto",
   notifyFinished: true,
+  crashReports: false,
   followSystemTheme: false,
   launchAtLogin: false,
   autoSort: false,
@@ -68,6 +84,56 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // and trap users who expected a real quit.)
   closeBehavior: "quit",
   minimizeToTray: false,
+  ytdlpChannel: "stable",
+  autoUpdateTools: false,
+  useAria2c: false,
+  concurrentFragments: null,
+  downloadRetries: null,
+  socketTimeoutSec: null,
+  stalledTimeoutSec: 120,
+  sponsorBlockCategories: "all,-filler",
+  impersonateClient: null,
+  lastToolCheckAt: null,
+  routerMode: "auto",
+  domainRules: {},
+  images: {
+    downloadDir: "",
+    folderTemplate: "{site}/{gallery}",
+    filenameTemplate: "{filename}.{extension}",
+    sleepRequestsSec: null,
+    maxSleepIntervalSec: null,
+    retries: 3,
+    proxy: null,
+    archive: true,
+    metadataSidecar: false,
+    customConfig: null,
+  },
+  postProcess: {
+    convertImages: false,
+    imageFormat: "jpg",
+    imageQuality: 85,
+    imageMaxDim: 2048,
+    stripExif: true,
+    packageGallery: "off",
+    ugoiraFormat: "off",
+    autoTagAudio: false,
+    compressVideo: "off",
+    transcribeAudio: false,
+    whisperModel: "tiny",
+    rcloneRemote: null,
+    autoUpload: false,
+    keepOriginals: true,
+  },
+  dismissedPackHints: [],
+  lastFolderByMedia: {},
+  apiEnabled: false,
+  apiPort: 48127,
+  notifyDiscord: false,
+  notifyTelegram: false,
+  telegramChatId: null,
+  lanEnabled: false,
+  lanAllowlist: "",
+  lanAutoDisableHours: null,
 };
 
 const DENSITIES: readonly Density[] = ["comfortable", "compact"];
@@ -83,6 +149,18 @@ function cleanNullableString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const t = value.trim();
   return t.length > 0 ? t : null;
+}
+
+/**
+ * Raw gallery-dl config override: kept verbatim (whitespace included —
+ * JSON.parse tolerates it), capped at the validator's 200 KB, empty = null
+ * (generate from fields). Validity itself is checked at edit/save time by
+ * validateGalleryConfigJson, not here.
+ */
+function cleanRawConfig(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  if (value.trim().length === 0) return null;
+  return value.slice(0, 200_000);
 }
 
 function cleanBool(value: unknown, fallback: boolean): boolean {
@@ -184,6 +262,13 @@ const SHELL_VIEWS: readonly string[] = [
 ];
 const QUEUE_FILTERS: readonly string[] = ["all", "active", "error", "done"];
 
+/** Download-window bound: strict HH:MM or null (off). Garbage never closes it. */
+function cleanWindowTime(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const t = value.trim();
+  return validateWindowTime(t) && t.length > 0 ? t : null;
+}
+
 function cleanView(value: unknown): string {
   return typeof value === "string" && SHELL_VIEWS.includes(value) ? value : "home";
 }
@@ -206,6 +291,161 @@ function cleanSearchList(value: unknown, cap: number): string[] {
     if (t.length === 0 || out.includes(t)) continue;
     out.push(t);
     if (out.length >= cap) break;
+  }
+  return out;
+}
+
+function cleanRouterMode(value: unknown, fallback: RouterMode): RouterMode {
+  return typeof value === "string" && (ROUTER_MODES as readonly string[]).includes(value)
+    ? (value as RouterMode)
+    : fallback;
+}
+
+function cleanDomainRules(value: unknown): Record<string, EngineId> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const out: Record<string, EngineId> = {};
+  for (const [rawKey, rawVal] of Object.entries(value)) {
+    const key = rawKey.trim().toLowerCase().slice(0, 64);
+    if (key.length === 0) continue;
+    if (typeof rawVal !== "string") continue;
+    const v = rawVal.trim().toLowerCase();
+    if ((ENGINE_IDS as readonly string[]).includes(v)) out[key] = v as EngineId;
+    if (Object.keys(out).length >= 200) break;
+  }
+  return out;
+}
+
+function cleanRetries(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const n = Math.floor(value);
+  if (n < 0) return null;
+  return Math.min(20, n);
+}
+
+function cleanChannel(value: unknown, fallback: YtDlpChannel): YtDlpChannel {
+  return typeof value === "string" && (YTDLP_CHANNELS as readonly string[]).includes(value)
+    ? (value as YtDlpChannel)
+    : fallback;
+}
+
+/** Optional small-int knob (fragments/retries/timeout); null = tool default. */
+function cleanOptionalInt(value: unknown, min: number, max: number): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const n = Math.floor(value);
+  if (n < min) return null;
+  return Math.min(max, n);
+}
+
+function cleanStalledTimeout(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 120;
+  return Math.min(600, Math.max(0, Math.floor(value)));
+}
+
+/** SponsorBlock remove list: comma/space separated known-ish tokens. */
+function cleanSponsorCats(value: unknown, fallback: string): string {
+  if (typeof value !== "string") return fallback;
+  const parts = value
+    .split(",")
+    .map((p) => p.trim().toLowerCase().replace(/[^a-z_-]/g, "").slice(0, 32))
+    .filter((p) => p.length > 0);
+  if (parts.length === 0) return fallback;
+  return [...new Set(parts)].slice(0, 16).join(",");
+}
+
+/** Impersonate client id (free-form, validated main-side against --help set). */
+function cleanImpersonate(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const t = value.trim().slice(0, 64);
+  return t.length > 0 ? t : null;
+}
+
+function cleanEpochOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
+  return Math.floor(value);
+}
+
+function cleanImages(
+  value: unknown,
+  base: ImagesSettings,
+): ImagesSettings {  if (typeof value !== "object" || value === null || Array.isArray(value)) return base;
+  const rec = value as Record<string, unknown>;
+  const folderRaw = typeof rec["folderTemplate"] === "string" && rec["folderTemplate"].trim().length > 0
+    ? rec["folderTemplate"].trim().slice(0, 200)
+    : base.folderTemplate;
+  const fileRaw = typeof rec["filenameTemplate"] === "string" && rec["filenameTemplate"].trim().length > 0
+    ? rec["filenameTemplate"].trim().slice(0, 200)
+    : base.filenameTemplate;
+  return {
+    downloadDir: typeof rec["downloadDir"] === "string" ? rec["downloadDir"].slice(0, 1024) : base.downloadDir,
+    folderTemplate: folderRaw,
+    filenameTemplate: fileRaw,
+    sleepRequestsSec: cleanDelay(rec["sleepRequestsSec"], 60),
+    maxSleepIntervalSec: cleanDelay(rec["maxSleepIntervalSec"], 3600),
+    retries: rec["retries"] === undefined ? base.retries : cleanRetries(rec["retries"]) ?? base.retries,
+    proxy: rec["proxy"] === undefined ? base.proxy : cleanNullableString(rec["proxy"]),
+    archive: typeof rec["archive"] === "boolean" ? rec["archive"] : base.archive,
+    metadataSidecar: typeof rec["metadataSidecar"] === "boolean" ? rec["metadataSidecar"] : base.metadataSidecar,
+    customConfig: cleanRawConfig(rec["customConfig"]),
+  };
+}
+
+/** rclone remote target (`remote:path`): trimmed, capped, never a credential. */
+function cleanRemoteTarget(value: unknown, fallback: string | null): string | null {
+  if (value === undefined) return fallback;
+  if (typeof value !== "string") return null;
+  const t = value.trim().slice(0, 256);
+  return t.length > 0 ? t : null;
+}
+
+function cleanPostProcess(value: unknown, base: PostProcessSettings): PostProcessSettings {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return base;
+  const rec = value as Record<string, unknown>;
+  const quality =
+    typeof rec["imageQuality"] === "number" && Number.isFinite(rec["imageQuality"])
+      ? Math.min(100, Math.max(1, Math.floor(rec["imageQuality"])))
+      : base.imageQuality;
+  const maxDim =
+    typeof rec["imageMaxDim"] === "number" && Number.isFinite(rec["imageMaxDim"])
+      ? Math.min(8192, Math.max(64, Math.floor(rec["imageMaxDim"])))
+      : base.imageMaxDim;
+  return {
+    convertImages: typeof rec["convertImages"] === "boolean" ? rec["convertImages"] : base.convertImages,
+    imageFormat: rec["imageFormat"] === "png" ? "png" : "jpg",
+    imageQuality: quality,
+    imageMaxDim: maxDim,
+    stripExif: typeof rec["stripExif"] === "boolean" ? rec["stripExif"] : base.stripExif,
+    packageGallery: (GALLERY_PACKAGES as readonly string[]).includes(rec["packageGallery"] as string)
+      ? (rec["packageGallery"] as GalleryPackage)
+      : base.packageGallery,
+    ugoiraFormat: (UGOIRA_FORMATS as readonly string[]).includes(rec["ugoiraFormat"] as string)
+      ? (rec["ugoiraFormat"] as UgoiraFormat)
+      : base.ugoiraFormat,
+    autoTagAudio: typeof rec["autoTagAudio"] === "boolean" ? rec["autoTagAudio"] : base.autoTagAudio,
+    compressVideo: (COMPRESS_PRESETS as readonly string[]).includes(rec["compressVideo"] as string)
+      ? (rec["compressVideo"] as CompressPreset)
+      : base.compressVideo,
+    transcribeAudio: typeof rec["transcribeAudio"] === "boolean" ? rec["transcribeAudio"] : base.transcribeAudio,
+    whisperModel: (WHISPER_MODEL_SIZES as readonly string[]).includes(rec["whisperModel"] as string)
+      ? (rec["whisperModel"] as WhisperModelSize)
+      : base.whisperModel,
+    rcloneRemote: cleanRemoteTarget(rec["rcloneRemote"], base.rcloneRemote),
+    autoUpload: typeof rec["autoUpload"] === "boolean" ? rec["autoUpload"] : base.autoUpload,
+    keepOriginals: typeof rec["keepOriginals"] === "boolean" ? rec["keepOriginals"] : base.keepOriginals,
+  };
+}
+
+function cleanFolderMap(value: unknown): Record<string, string> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const out: Record<string, string> = {};
+  for (const [rawKey, rawVal] of Object.entries(value)) {
+    const key = rawKey.trim().toLowerCase().slice(0, 32);
+    if ((key !== "video" && key !== "images" && key !== "audio") || typeof rawVal !== "string") continue;
+    const v = rawVal.trim().slice(0, 1024);
+    if (v.length > 0) out[key] = v;
+    if (Object.keys(out).length >= 8) break;
   }
   return out;
 }
@@ -259,6 +499,13 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
     downloadDir: typeof patch.downloadDir === "string" ? patch.downloadDir : base.downloadDir,
     filenameTemplate: cleanString(patch.filenameTemplate, base.filenameTemplate),
     concurrency: clampConcurrency(concurrencyRaw),
+    concurrencyGallery: clampConcurrency(
+      typeof patch.concurrencyGallery === "number"
+        ? patch.concurrencyGallery
+        : base.concurrencyGallery,
+    ),
+    downloadWindowStart: cleanWindowTime(patch.downloadWindowStart),
+    downloadWindowEnd: cleanWindowTime(patch.downloadWindowEnd),
     speedLimit:
       patch.speedLimit === undefined ? base.speedLimit : cleanNullableString(patch.speedLimit),
     proxy: patch.proxy === undefined ? base.proxy : cleanNullableString(patch.proxy),
@@ -275,6 +522,12 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
     embedSubs: cleanBool(patch.embedSubs, base.embedSubs),
     includeAutoSubs: cleanBool(patch.includeAutoSubs, base.includeAutoSubs),
     mergeContainer: cleanContainer(patch.mergeContainer) ?? base.mergeContainer,
+    customFormat:
+      patch.customFormat === undefined
+        ? base.customFormat
+        : typeof patch.customFormat === "string" && patch.customFormat.trim().length > 0
+          ? patch.customFormat.trim().slice(0, 256)
+          : null,
     pacing: cleanPacing(patch.pacing ?? base.pacing, base.pacing),
     sponsorBlock: cleanBool(patch.sponsorBlock, base.sponsorBlock),
     codecPreference: CODECS.includes(codecRaw) ? codecRaw : base.codecPreference,
@@ -331,5 +584,68 @@ export function mergeSettings(base: AppSettings, patch: Partial<AppSettings>): A
     closeBehavior: CLOSE_BEHAVIORS.includes(closeRaw) ? closeRaw : base.closeBehavior,
     minimizeToTray: cleanBool(patch.minimizeToTray, base.minimizeToTray),
     notifyFinished: cleanBool(patch.notifyFinished, base.notifyFinished),
+    crashReports: cleanBool(patch.crashReports, base.crashReports),
+    ytdlpChannel: cleanChannel(patch.ytdlpChannel ?? base.ytdlpChannel, base.ytdlpChannel),
+    autoUpdateTools: cleanBool(patch.autoUpdateTools, base.autoUpdateTools),
+    useAria2c: cleanBool(patch.useAria2c, base.useAria2c),
+    concurrentFragments:
+      patch.concurrentFragments === undefined
+        ? base.concurrentFragments
+        : cleanOptionalInt(patch.concurrentFragments, 1, 16),
+    downloadRetries:
+      patch.downloadRetries === undefined
+        ? base.downloadRetries
+        : cleanOptionalInt(patch.downloadRetries, 0, 30),
+    socketTimeoutSec:
+      patch.socketTimeoutSec === undefined
+        ? base.socketTimeoutSec
+        : cleanOptionalInt(patch.socketTimeoutSec, 5, 300),
+    stalledTimeoutSec:
+      patch.stalledTimeoutSec === undefined
+        ? base.stalledTimeoutSec
+        : cleanStalledTimeout(patch.stalledTimeoutSec),
+    sponsorBlockCategories: cleanSponsorCats(
+      patch.sponsorBlockCategories ?? base.sponsorBlockCategories,
+      base.sponsorBlockCategories,
+    ),
+    impersonateClient:
+      patch.impersonateClient === undefined
+        ? base.impersonateClient
+        : cleanImpersonate(patch.impersonateClient),
+    lastToolCheckAt:
+      patch.lastToolCheckAt === undefined
+        ? base.lastToolCheckAt
+        : cleanEpochOrNull(patch.lastToolCheckAt),
+    routerMode: cleanRouterMode(patch.routerMode ?? base.routerMode, base.routerMode),
+    domainRules:
+      patch.domainRules === undefined ? base.domainRules : cleanDomainRules(patch.domainRules),
+    images: cleanImages(patch.images ?? base.images, base.images),
+    postProcess: cleanPostProcess(patch.postProcess ?? base.postProcess, base.postProcess),
+    dismissedPackHints:
+      patch.dismissedPackHints === undefined
+        ? base.dismissedPackHints
+        : cleanSearchList(patch.dismissedPackHints, 20),
+    lastFolderByMedia:
+      patch.lastFolderByMedia === undefined
+        ? base.lastFolderByMedia
+        : cleanFolderMap(patch.lastFolderByMedia),
+    apiEnabled: cleanBool(patch.apiEnabled, base.apiEnabled),
+    apiPort:
+      patch.apiPort === undefined
+        ? base.apiPort
+        : clampApiPort(patch.apiPort, REMOTE_API_DEFAULT_PORT),
+    notifyDiscord: cleanBool(patch.notifyDiscord, base.notifyDiscord),
+    notifyTelegram: cleanBool(patch.notifyTelegram, base.notifyTelegram),
+    telegramChatId:
+      patch.telegramChatId === undefined
+        ? base.telegramChatId
+        : cleanNullableString(patch.telegramChatId)?.slice(0, 64) ?? null,
+    lanEnabled: cleanBool(patch.lanEnabled, base.lanEnabled),
+    lanAllowlist:
+      typeof patch.lanAllowlist === "string" ? patch.lanAllowlist.slice(0, 512) : base.lanAllowlist,
+    lanAutoDisableHours:
+      patch.lanAutoDisableHours === undefined
+        ? base.lanAutoDisableHours
+        : cleanOptionalInt(patch.lanAutoDisableHours, 1, 168),
   };
 }

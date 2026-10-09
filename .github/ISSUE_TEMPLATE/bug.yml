@@ -1,0 +1,56 @@
+name: Bug report
+description: Something broken in the app (diagnostics required)
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Attach the **redacted diagnostics export** (Settings → Logs → Copy diagnostics).
+        Secrets are stripped automatically. Reports without it will ask for it first.
+  - type: input
+    id: version
+    attributes:
+      label: App version (Settings → Logs)
+      placeholder: 1.8.0
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: Windows 11 23H2
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Paste …
+        2. Click …
+        3. See …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics export (paste here)
+      render: text
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues first
+          required: true
+        - label: I attached the diagnostics export with secrets redacted
+          required: true

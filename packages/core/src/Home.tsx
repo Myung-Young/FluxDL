@@ -12,6 +12,7 @@ import type {
   MediaInfo,
   MediaKind,
   PlaylistEntry,
+  RouterMode,
   VideoPreset,
 } from "./types.js";
 import { AUDIO_PRESETS as CORE_AUDIO_PRESETS, CONTAINERS } from "./types.js";
@@ -25,6 +26,14 @@ import { formatStr, localeTag, resolveLanguage, useStrings } from "./locale.js";
 import { pressScale, tweenAccentVar } from "./motion.js";
 import { BatchPanel } from "./BatchPanel.js";
 import { parseBatchText } from "./batch.js";
+import { domainOf, resolveEngine } from "./engines.js";
+import type { ProbeResult } from "./engines.js";
+import type { GalleryProbe } from "./engine.js";
+import { createProbeCache, rangeForIndices } from "./galleryProbe.js";
+import type { GalleryProbeItem } from "./galleryProbe.js";
+import { GalleryPreview } from "./GalleryPreview.js";
+import { isManifestUrl } from "./packs.js";
+import { usePackInstalled } from "./usePackInstalled.js";
 import { autoSortSubdir } from "./destination.js";
 import { useDuplicateGuard } from "./DuplicatePrompt.js";
 import type { GuardInput } from "./identity.js";
@@ -38,6 +47,7 @@ import {
   type AudioMetadata,
 } from "./metadata.js";
 import { VirtualList } from "./VirtualList.js";
+import { validateTrimTime } from "./validate.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 
 export interface HomeProps {
@@ -59,6 +69,7 @@ const VIDEO_PRESETS: readonly VideoPreset[] = [
   "1080",
   "720",
   "480",
+  "Smallest",
 ];
 const AUDIO_PRESETS: readonly AudioPreset[] = [...CORE_AUDIO_PRESETS];
 
@@ -119,11 +130,20 @@ export function Home({
   const [rawFormat, setRawFormat] = useState<string | null>(null);
   // Per-job output container override (v1.7.2); null = global setting.
   const [container, setContainer] = useState<Container | null>(null);
+  // Per-job proxy override (Phase 3); empty = global setting.
+  const [proxyOverride, setProxyOverride] = useState<string>("");
   const [selected, setSelected] = useState<readonly string[]>([]);
   const [watchClipboard, setWatchClipboard] = useState<boolean>(false);
   const [queuedNote, setQueuedNote] = useState<string | null>(null);
   const [hideDownloaded, setHideDownloaded] = useState<boolean>(false);
   const [entryFilter, setEntryFilter] = useState<string>("");
+  // Playlist reverse (Phase 2): display order only — selection rides entry
+  // ids, so checks survive the flip.
+  const [reversed, setReversed] = useState<boolean>(false);
+  // Trim section (Phase 2, single videos only): validated as hints, the
+  // engine sanitizes again before argv.
+  const [trimStart, setTrimStart] = useState<string>("");
+  const [trimEnd, setTrimEnd] = useState<string>("");
   const [entryStates, setEntryStates] = useState<Map<string, EntryState> | null>(null);
   const [checkingEntries, setCheckingEntries] = useState<boolean>(false);
   const [entryPresets, setEntryPresets] = useState<Record<string, DownloadPreset>>({});
@@ -131,13 +151,51 @@ export function Home({
   const [waitForVideo, setWaitForVideo] = useState<boolean>(true);
   const [splitChapters, setSplitChapters] = useState<boolean>(false);
   const [metaEditor, setMetaEditor] = useState<AudioMetadata | null>(null);
+  // Per-link engine override (v1.8.5): auto follows the router, video/images
+  // pin one engine for this analyze + enqueue.
+  const [engineOverride, setEngineOverride] = useState<RouterMode>("auto");
+  // Gallery probe outcome (v1.8.5): `-j` items without downloading.
+  const [gallery, setGallery] = useState<GalleryProbe | null>(null);
+  // Router probe cache (host → outcome, 24 h TTL): a probed host never
+  // re-probes for routing within the session.
+  const probeCache = useRef(createProbeCache());
   const settingsState = useStore(settings, (s) => s.settings);
+  const packs = usePackInstalled(engine);
+  const packNm3u8dl = packs.nm3u8dl;
+  const showStreamlinkHint =
+    packs.streamlink &&
+    info !== null &&
+    !info.isPlaylist &&
+    (info.liveStatus === "is_live" || info.liveStatus === "is_upcoming") &&
+    !settingsState.dismissedPackHints.includes("streamlink-live");
+  // "Check image gallery" (v1.8.5): offered on analyze failure when the
+  // router has no table answer (needs-probe) — the probe may succeed where
+  // yt-dlp could not even start.
+  const showGalleryCheck =
+    error !== null &&
+    (() => {
+      let key: string;
+      try {
+        key = normalizeUrl(url);
+      } catch {
+        return false;
+      }
+      return (
+        resolveEngine({
+          url: key,
+          mode: settingsState.routerMode,
+          userRules: settingsState.domainRules,
+        }).reason === "needs-probe"
+      );
+    })();
   const S = useStrings(settings);
   const locale = localeTag(resolveLanguage(settingsState.language));
   const { guard, dialog: duplicateDialog } = useDuplicateGuard(S, locale);
   const analyzeCache = useRef(new LruCache<MediaInfo>(30, 10 * 60 * 1000));
   const analyzeReq = useRef<string | null>(null);
   const cancelledReqs = useRef<Set<string>>(new Set());
+  // Gallery URL behind the current probe result (for enqueue titles).
+  const galleryUrlRef = useRef<string>("");
   const previewRef = useRef<HTMLDivElement | null>(null);
   const lastAccent = useRef<string | null>(null);
   const [thumbAccent, setThumbAccent] = useState<string | null>(null);
@@ -273,7 +331,7 @@ export function Home({
   );
 
   const analyzeValue = useCallback(
-    async (value: string, opts: { force?: boolean } = {}): Promise<void> => {
+    async (value: string, opts: { force?: boolean; gallery?: boolean } = {}): Promise<void> => {
       setError(null);
       setQueuedNote(null);
       let key: string;
@@ -303,12 +361,43 @@ export function Home({
         analyzeCache.current.delete(key);
       }
       setInfo(null);
+      setGallery(null);
       lastAccent.current = null;
       setThumbAccent(null);
       setAnalyzing(true);
       const requestId = newRequestId();
       analyzeReq.current = requestId;
+      // Router (v1.8.5): the override pins one engine; auto consults the
+      // domain tables plus the session probe cache.
+      const routerMode = engineOverride === "auto" ? settingsState.routerMode : engineOverride;
+      const host = domainOf(key);
+      const cachedProbe: ProbeResult | undefined =
+        host === null ? undefined : probeCache.current.get(host);
+      const resolved = resolveEngine(
+        host === null || cachedProbe === undefined
+          ? { url: key, mode: routerMode, userRules: settingsState.domainRules }
+          : {
+              url: key,
+              mode: routerMode,
+              userRules: settingsState.domainRules,
+              probeCache: { [host]: cachedProbe },
+            },
+      );
+      const wantGallery = opts.gallery === true || resolved.engine === "gallery-dl";
       try {
+        if (wantGallery) {
+          const probe = await engine.probeGallery(value, { requestId });
+          if (analyzeReq.current !== requestId) return;
+          if (host !== null) {
+            probeCache.current.set(host, probe.supported ? "gallery-dl" : null);
+          }
+          if (probe.supported) {
+            galleryUrlRef.current = key;
+            setGallery(probe);
+            return;
+          }
+          // A builtin-gallery host nothing handles: fall through to yt-dlp.
+        }
         const media = await engine.getInfo(value, { requestId });
         if (analyzeReq.current !== requestId) return;
         analyzeCache.current.set(key, media);
@@ -340,7 +429,7 @@ export function Home({
         }
       }
     },
-    [engine, applyThumbAccent, refreshEntryStates, S],
+    [engine, engineOverride, settingsState, applyThumbAccent, refreshEntryStates, S],
   );
 
   const cancelAnalyze = useCallback((): void => {
@@ -406,7 +495,7 @@ export function Home({
   const visibleEntries = useMemo(() => {
     if (info === null || !info.isPlaylist) return [];
     const q = entryFilter.trim().toLowerCase();
-    return info.entries.filter((e) => {
+    const list = info.entries.filter((e) => {
       if (q.length > 0 && !e.title.toLowerCase().includes(q)) return false;
       if (hideDownloaded) {
         const st = entryStates?.get(e.id);
@@ -414,7 +503,8 @@ export function Home({
       }
       return true;
     });
-  }, [info, entryFilter, hideDownloaded, entryStates]);
+    return reversed ? [...list].reverse() : list;
+  }, [info, entryFilter, hideDownloaded, reversed, entryStates]);
 
   // Next-best action (A1): of a playlist, how many entries are NOT done yet.
   const remainingIds = useMemo<readonly string[]>(() => {
@@ -579,6 +669,23 @@ export function Home({
     );
   };
 
+  // Remember the last-used folder per media type (v1.8.5): the next
+  // enqueue prefills it. Guarded against save churn — identical values
+  // never rewrite settings (every save hits the disk main-side).
+  const rememberFolder = useCallback(
+    (media: MediaKind | "images", dir: string): void => {
+      const trimmed = dir.trim();
+      if (trimmed.length === 0) return;
+      const known = settings.getState().settings.lastFolderByMedia;
+      if (known[media] === trimmed) return;
+      void settings
+        .getState()
+        .save({ lastFolderByMedia: { ...known, [media]: trimmed } })
+        .catch(() => undefined);
+    },
+    [settings],
+  );
+
   const enqueueAll = async (): Promise<void> => {
     if (!info) return;
     setError(null);
@@ -594,7 +701,11 @@ export function Home({
         rawFormat,
         ...(container !== null ? { container } : {}),
       };
-      const outputDir = settingsState.downloadDir;
+      // Same override the analyze used: enqueue must agree with it, or a
+      // pinned-images analyze would queue a yt-dlp job.
+      const routerMode = engineOverride === "auto" ? settingsState.routerMode : engineOverride;
+      const outputDir =
+        settingsState.lastFolderByMedia[preset.kind] ?? settingsState.downloadDir;
       const needBytes = info.isPlaylist
         ? 0
         : (estimatePresetSize(info, preset, settingsState.codecPreference)?.bytes ?? 0);
@@ -619,6 +730,8 @@ export function Home({
           .save({ presetBySite: { ...known, [site]: preset } })
           .catch(() => undefined);
       }
+      // Remember the folder per media type (v1.8.5): next time it prefills.
+      rememberFolder(preset.kind, outputDir);
       const playlist = info.isPlaylist && info.entries.length > 0;
       const playlistDir =
         playlist && settingsState.playlistSubfolder
@@ -667,6 +780,20 @@ export function Home({
           outputDir,
           extractor: t.extractor,
           videoId: t.videoId,
+          // Phase 1 router: images mode (or an image-host/user rule in
+          // auto) produces gallery-dl jobs; everything else omits engineId
+          // and reads as yt-dlp (try-yt-dlp-first for unknown hosts).
+          // Phase 5: direct stream manifests go to N_m3u8DL-RE when its
+          // pack is installed (yt-dlp stays the fallback).
+          ...(isManifestUrl(t.url) && packNm3u8dl
+            ? { engineId: "n-m3u8dl-re" as const }
+            : resolveEngine({
+                url: t.url,
+                mode: routerMode,
+                userRules: settingsState.domainRules,
+              }).engine === "gallery-dl"
+              ? { engineId: "gallery-dl" as const }
+              : {}),
           ...(t.fromPlaylist && settingsState.skipArchived && !t.forceFresh
             ? { useArchive: true as const }
             : {}),
@@ -689,6 +816,16 @@ export function Home({
           // M4.5: uploader/duration ride along for the stats screen.
           ...(info.uploader !== null ? { uploader: info.uploader } : {}),
           ...(info.duration !== null ? { durationSec: info.duration } : {}),
+          // Phase 3: per-job proxy override (this download only).
+          ...(proxyOverride.trim().length > 0 ? { proxyOverride: proxyOverride.trim() } : {}),
+          // Phase 2: trim section (single videos only; validated as a hint,
+          // the engine sanitizes again before argv).
+          ...(!playlist && validateTrimTime(trimStart) && trimStart.trim().length > 0
+            ? { trimStart: trimStart.trim().slice(0, 32) }
+            : {}),
+          ...(!playlist && validateTrimTime(trimEnd) && trimEnd.trim().length > 0
+            ? { trimEnd: trimEnd.trim().slice(0, 32) }
+            : {}),
         });
         count += 1;
       }
@@ -698,6 +835,100 @@ export function Home({
     } finally {
       setQueueing(false);
     }
+  };
+
+  // Gallery enqueue (v1.8.5): null = whole gallery (one job, no range),
+  // otherwise one job with a `--range` selector over the probe positions
+  // (probe ran `--range 1-50`, so indices align 1:1 with gallery order).
+  // Re-runs skip finished files through the gallery archive — effectively
+  // "failed items only" without any extra plumbing.
+  const enqueueGallery = async (chosen: readonly GalleryProbeItem[] | null): Promise<void> => {
+    if (gallery === null) return;
+    setError(null);
+    setQueuedNote(null);
+    setQueueing(true);
+    try {
+      const galleryUrl = galleryUrlRef.current;
+      const range =
+        chosen === null
+          ? null
+          : rangeForIndices(
+              chosen.map((c) => gallery.items.findIndex((i) => i.url === c.url) + 1),
+            );
+      if (chosen !== null && (chosen.length === 0 || range === null)) return;
+      const needBytes =
+        chosen === null
+          ? 0
+          : chosen.reduce((n, i) => n + (i.sizeBytes ?? 0), 0);
+      const outputDir =
+        settingsState.lastFolderByMedia["images"] ?? settingsState.downloadDir;
+      const space = await engine.getDiskSpace(outputDir).catch(() => null);
+      if (
+        space !== null &&
+        space.freeBytes < Math.max(1_073_741_824, needBytes) &&
+        !window.confirm(formatStr(S.home.lowDiskConfirm, { free: formatSize(space.freeBytes, locale) }))
+      ) {
+        return;
+      }
+      rememberFolder("images", outputDir);
+      const host = domainOf(galleryUrl) ?? galleryUrl;
+      await queue.getState().enqueue({
+        url: galleryUrl,
+        title:
+          chosen === null ? `${host} gallery` : `${host} gallery (${String(chosen.length)})`,
+        preset: { kind: "video", videoPreset: "Best", audioPreset: "MP3", rawFormat: null },
+        outputDir,
+        engineId: "gallery-dl",
+        ...(range !== null ? { range } : {}),
+      });
+      setQueuedNote(formatStr(S.home.queuedToast, { count: 1 }));
+    } catch {
+      setError(S.home.analyzeFailed);
+    } finally {
+      setQueueing(false);
+    }
+  };
+
+  // Streamlink suggestion (Phase 5): single live capture with the pack
+  // engine. Dismissal is remembered in settings (never nags twice).
+  const enqueueStreamlink = async (): Promise<void> => {
+    if (info === null || info.isPlaylist) return;
+    setQueueing(true);
+    try {
+      const preset: DownloadPreset = {
+        kind,
+        videoPreset,
+        audioPreset,
+        rawFormat,
+        ...(container !== null ? { container } : {}),
+      };
+      await queue.getState().enqueue({
+        url: info.url,
+        title: info.title,
+        preset,
+        outputDir: settingsState.downloadDir,
+        extractor: info.extractor,
+        videoId: info.videoId,
+        engineId: "streamlink",
+        ...(info.liveStatus !== undefined && info.liveStatus !== null
+          ? { liveStatus: info.liveStatus }
+          : {}),
+      });
+      setQueuedNote(formatStr(S.home.queuedToast, { count: 1 }));
+    } catch {
+      setError(S.home.analyzeFailed);
+    } finally {
+      setQueueing(false);
+    }
+  };
+
+  const dismissStreamlinkHint = (): void => {
+    const cur = settings.getState().settings.dismissedPackHints;
+    if (cur.includes("streamlink-live")) return;
+    void settings
+      .getState()
+      .save({ dismissedPackHints: [...cur, "streamlink-live"] })
+      .catch(() => undefined);
   };
 
   // One-click quick download (D4): analyze, then queue with the current
@@ -710,6 +941,18 @@ export function Home({
     autoQueueRef.current = false;
     void enqueueRef.current();
   }, [info, analyzing]);
+
+  // Quick download for galleries (v1.8.5): probe, then queue the whole
+  // gallery through the same path as Download all.
+  const enqueueGalleryRef = useRef<(chosen: readonly GalleryProbeItem[] | null) => Promise<void>>(
+    () => Promise.resolve(),
+  );
+  enqueueGalleryRef.current = enqueueGallery;
+  useEffect(() => {
+    if (gallery === null || !gallery.supported || analyzing || !autoQueueRef.current) return;
+    autoQueueRef.current = false;
+    void enqueueGalleryRef.current(null);
+  }, [gallery, analyzing]);
 
   const onDrop = (e: React.DragEvent): void => {
     e.preventDefault();
@@ -824,6 +1067,16 @@ export function Home({
             </button>
           )}
         </div>
+        {/* Preset summary chip (Phase 2): what the next queue uses. */}
+        <p className="muted" role="status">
+          {formatStr(
+            S.home.presetSummary,
+            { preset: presetLabel(S, kind, kind === "video" ? videoPreset : audioPreset) },
+          )}
+          {settingsState.customFormat !== null && kind === "video" && rawFormat === null
+            ? ` · ${settingsState.customFormat}`
+            : ""}
+        </p>
         <label className="check-row">
           <input
             type="checkbox"
@@ -834,12 +1087,44 @@ export function Home({
           />
           {S.home.watchClipboard}
         </label>
+        <div className="segmented" role="group" aria-label={S.home.engineOverride}>
+          {(["auto", "video", "images"] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              className="chip"
+              aria-pressed={engineOverride === m}
+              onPointerDown={(e) => {
+                pressScale(e.currentTarget);
+              }}
+              onClick={() => {
+                setEngineOverride(m);
+              }}
+            >
+              {m === "auto" ? S.engine.auto : m === "video" ? S.engine.videoOnly : S.engine.imagesOnly}
+            </button>
+          ))}
+        </div>
         <p className="hint">{S.home.dropHint}</p>
         <p className="hint">{S.home.shortcutsHint}</p>
         {error !== null && (
           <p className="error-text" role="alert">
             {error}
           </p>
+        )}
+        {showGalleryCheck && (
+          <div className="chip-row">
+            <button
+              type="button"
+              className="btn btn-small"
+              disabled={analyzing}
+              onClick={() => {
+                void analyzeValue(url, { gallery: true });
+              }}
+            >
+              {S.home.galleryCheck}
+            </button>
+          </div>
         )}
       </div>
 
@@ -908,6 +1193,28 @@ export function Home({
               <p className="muted">
                 {S.home.previewDuration}: {formatDuration(S, info.duration)}
               </p>
+              {showStreamlinkHint && (
+                <p className="note" role="status">
+                  {S.home.streamlinkHint}{" "}
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    onClick={() => {
+                      void enqueueStreamlink();
+                    }}
+                  >
+                    {S.home.streamlinkCapture}
+                  </button>{" "}
+                  <button
+                    type="button"
+                    className="btn btn-small"
+                    aria-label={S.home.streamlinkDismiss}
+                    onClick={dismissStreamlinkHint}
+                  >
+                    {S.home.streamlinkDismiss}
+                  </button>
+                </p>
+              )}
             </div>
           </div>
 
@@ -1129,6 +1436,57 @@ export function Home({
             </details>
           )}
 
+          {/* Per-job proxy override (Phase 3): this download only. */}
+          <details className="advanced">
+            <summary>{S.home.perJobProxy}</summary>
+            <input
+              type="text"
+              className="input"
+              placeholder="http://127.0.0.1:8080"
+              aria-label={S.home.perJobProxy}
+              value={proxyOverride}
+              spellCheck={false}
+              onChange={(e) => {
+                setProxyOverride(e.target.value);
+              }}
+            />
+            <p className="hint">{S.home.perJobProxyHint}</p>
+          </details>
+
+          {/* Trim section (Phase 2, single videos only). */}
+          {!info.isPlaylist && (
+            <details className="advanced">
+              <summary>
+                {S.home.trimStart} – {S.home.trimEnd}
+              </summary>
+              <div className="url-row">
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="00:00"
+                  aria-label={S.home.trimStart}
+                  value={trimStart}
+                  spellCheck={false}
+                  onChange={(e) => {
+                    setTrimStart(e.target.value);
+                  }}
+                />
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="01:30"
+                  aria-label={S.home.trimEnd}
+                  value={trimEnd}
+                  spellCheck={false}
+                  onChange={(e) => {
+                    setTrimEnd(e.target.value);
+                  }}
+                />
+              </div>
+              <p className="hint">{S.home.trimHint}</p>
+            </details>
+          )}
+
           {info.isPlaylist && info.entries.length > 0 && (
             <div className="playlist">
               <div className="playlist-bar">
@@ -1187,6 +1545,16 @@ export function Home({
                   />
                   {S.playlist.hideDownloaded}
                 </label>
+                <button
+                  type="button"
+                  className="btn btn-small"
+                  aria-pressed={reversed}
+                  onClick={() => {
+                    setReversed((v) => !v);
+                  }}
+                >
+                  {S.home.reverseEntries}
+                </button>
                 {checkingEntries && <span className="muted">{S.playlist.checking}</span>}
               </div>
               {visibleEntries.length >= 200 ? (
@@ -1246,6 +1614,22 @@ export function Home({
               {queuedNote}
             </p>
           )}
+        </div>
+      )}
+      {gallery !== null && (
+        <div hidden={mode !== "single"}>
+          <GalleryPreview
+            settings={settings}
+            items={gallery.items}
+            errors={gallery.errors}
+            busy={queueing}
+            onDownloadAll={() => {
+              void enqueueGallery(null);
+            }}
+            onDownloadSelected={(chosen) => {
+              void enqueueGallery(chosen);
+            }}
+          />
         </div>
       )}
       {duplicateDialog}

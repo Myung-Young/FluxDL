@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import type { DownloadEngine } from "./engine.js";
-import type { SettingsStoreState } from "./stores.js";
 import type { StoreApi } from "zustand";
+import type { DownloadEngine } from "./engine.js";
+import type { MediaSummary } from "./postprocess.js";
+import type { SettingsStoreState } from "./stores.js";
 import { useStrings } from "./locale.js";
 
 export interface PreviewModalProps {
-  readonly engine: Pick<DownloadEngine, "getMediaUrl">;
+  readonly engine: Pick<DownloadEngine, "getMediaUrl" | "postProcess">;
   readonly settings: StoreApi<SettingsStoreState>;
   /** Absolute output path of the finished download. */
   readonly path: string;
@@ -46,6 +47,9 @@ export function PreviewModal({
   const [failed, setFailed] = useState<boolean>(false);
   /** Duration reported by the media element (null until metadata lands). */
   const [duration, setDuration] = useState<number | null>(null);
+  /** ffprobe summary for the Details section (Phase 4). */
+  const [info, setInfo] = useState<MediaSummary | null>(null);
+  const [detailsOpen, setDetailsOpen] = useState<boolean>(false);
   const boxRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -61,6 +65,22 @@ export function PreviewModal({
       })
       .catch(() => {
         if (live) setFailed(true);
+      });
+    return () => {
+      live = false;
+    };
+  }, [engine, path]);
+
+  useEffect(() => {
+    let live = true;
+    engine
+      .postProcess({ action: "media-info", path })
+      .then((res) => {
+        if (!live || res.kind !== "media") return;
+        setInfo(res.summary);
+      })
+      .catch(() => {
+        if (live) setInfo(null);
       });
     return () => {
       live = false;
@@ -152,6 +172,63 @@ export function PreviewModal({
             {S.home.previewDuration}: {clock(duration)}
           </p>
         )}
+        <details
+          className="advanced"
+          open={detailsOpen}
+          onToggle={(e) => {
+            setDetailsOpen(e.currentTarget.open);
+          }}
+        >
+          <summary>{S.library.mediaDetails}</summary>
+          {info === null ? (
+            <p className="muted">{S.library.mediaNoInfo}</p>
+          ) : (
+            <dl className="media-details">
+              {info.formatName !== null && (
+                <>
+                  <dt>{S.library.mediaFormat}</dt>
+                  <dd>{info.formatName}</dd>
+                </>
+              )}
+              {info.durationSec !== null && (
+                <>
+                  <dt>{S.library.mediaDuration}</dt>
+                  <dd>{clock(info.durationSec)}</dd>
+                </>
+              )}
+              {info.sizeBytes !== null && (
+                <>
+                  <dt>{S.library.mediaSize}</dt>
+                  <dd>{(info.sizeBytes / 1_048_576).toFixed(1)} MB</dd>
+                </>
+              )}
+              {info.video !== null && (
+                <>
+                  <dt>{S.library.mediaVideo}</dt>
+                  <dd>
+                    {info.video.codec}
+                    {info.video.width !== null && info.video.height !== null
+                      ? ` · ${String(info.video.width)}×${String(info.video.height)}`
+                      : ""}
+                    {info.video.fps !== null ? ` · ${info.video.fps} fps` : ""}
+                  </dd>
+                </>
+              )}
+              {info.audio !== null && (
+                <>
+                  <dt>{S.library.mediaAudio}</dt>
+                  <dd>
+                    {info.audio.codec}
+                    {info.audio.bitrate !== null
+                      ? ` · ${String(Math.round(info.audio.bitrate / 1000))} kbps`
+                      : ""}
+                    {info.audio.sampleRate !== null ? ` · ${String(info.audio.sampleRate)} Hz` : ""}
+                  </dd>
+                </>
+              )}
+            </dl>
+          )}
+        </details>
         <div className="chip-row">
           {isVideo(path) && url !== null && (
             <>

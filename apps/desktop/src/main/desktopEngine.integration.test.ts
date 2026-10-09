@@ -128,8 +128,40 @@ describe.skipIf(!HAS_YTDLP)("desktop engine live (real yt-dlp)", () => {
     }
   }, 180_000);
 
-  it("Compatible preset downloads H.264 + AAC in mp4 (ffprobe-verified)", async () => {
+  it("auto-runs the pipeline after download (compress small, Phase 4)", async () => {
     if (!HAS_FFPROBE) return;
+    const { DEFAULT_SETTINGS } = await import("@grabber/core/settings.js");
+    const { engine, events, outputDir, base } = makeEngine(true);
+    const unsub = engine.onProgress((e) => {
+      events.push(e);
+    });
+    try {
+      await engine.saveSettings({
+        postProcess: { ...DEFAULT_SETTINGS.postProcess, compressVideo: "small" },
+      });
+      const id = await engine.start({
+        url: "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4",
+        title: "M6 postprocess probe",
+        preset: { kind: "video", videoPreset: "480", audioPreset: "MP3", rawFormat: null },
+        outputDir,
+      });
+      const only = (e: EngineProgress): boolean => e.id === id;
+      const finished = await waitFor(events, (e) => only(e) && e.stage === "done", 180_000, "done");
+      expect(finished.destination?.endsWith(".mp4")).toBe(true);
+      // The pipeline ran inline: a processing event preceded done…
+      expect(events.some((e) => only(e) && e.stage === "processing")).toBe(true);
+      // …and the compressed sibling exists next to the original.
+      const files = readdirSync(outputDir).filter((f) => f.endsWith(".fluxdl-small.mp4"));
+      expect(files).toHaveLength(1);
+      const log = await engine.getRawLog(id);
+      expect(log ?? "").toMatch(/\[post\]/);
+    } finally {
+      unsub();
+      rmSync(base, { recursive: true, force: true });
+    }
+  }, 240_000);
+
+  it("Compatible preset downloads H.264 + AAC in mp4 (ffprobe-verified)", async () => {    if (!HAS_FFPROBE) return;
     // ASCII-spaces dir (D48: yt-dlp mangles non-ASCII in printed paths).
     const { engine, events, outputDir, base } = makeEngine(true);
     const unsub = engine.onProgress((e) => {

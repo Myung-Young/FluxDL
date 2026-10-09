@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -37,6 +39,14 @@ jobs:
 
       - name: Package Windows binaries
         run: pnpm dist
+
+      - name: SBOM (CycloneDX, committed tool, pnpm workspace)
+        run: pnpm bom
+
+      - name: Attest build provenance (sigstore, GitHub-hosted)
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "release/FluxDL-Setup-*.exe, release/FluxDL-Portable-*.exe"
 
       - name: Publish Release & Upload Assets
         env:

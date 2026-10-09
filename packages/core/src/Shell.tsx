@@ -8,6 +8,7 @@ import { THEMES } from "./themes.js";
 import { fadeSwap, pressScale, staggerIn } from "./motion.js";
 import { formatStr, localeTag, resolveLanguage, useStrings } from "./locale.js";
 import { parseBatchText } from "./batch.js";
+import { unfinishedCount } from "./queue.js";
 import { readClipboardText } from "./clipboard.js";
 import { NAV_VIEWS, comboFromEvent, isCommandPalette, isEditableTarget, isMiniMode, isOpenSettings, isPasteAnalyze, isShortcutHelp, navIndexFor } from "./shortcuts.js";
 import { ShortcutsDialog } from "./ShortcutsDialog.js";
@@ -16,9 +17,10 @@ import type { CommandContext } from "./commands.js";
 import { AppIcon } from "./icons.js";
 import type { Strings } from "./strings.js";
 import { ErrorBoundary } from "./ErrorBoundary.js";
+import { setCrashOptIn } from "./ErrorBoundary.js";
 import { UpdateModal } from "./UpdateModal.js";
 import type { UpdateStatus } from "./engine.js";
-import { diffWatch } from "./watchlist.js";
+import { useSubscriptions } from "./useSubscriptions.js";
 // Views load on demand (F4): the boot bundle stays lean, each screen is its
 // own chunk. Static imports would defeat the split, hence the wrappers.
 const Home = lazy(() => import("./Home.js").then((m) => ({ default: m.Home })));
@@ -127,7 +129,19 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   const lastAggSent = useRef<number | null>(null);
   const aggTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const jobs = useStore(queue, (s) => s.jobs);
-  const theme = useStore(settings, (s) => s.settings.theme);
+  // Library count badge (Phase 3): last-known history size, refreshed at
+  // boot and every time the library view opens. Stale elsewhere by design —
+  // no polling for a sidebar number.
+  const [historyCount, setHistoryCount] = useState<number>(0);
+  useEffect(() => {
+    if (!settingsReady) return;
+    void engine
+      .loadHistory()
+      .then((h) => {
+        setHistoryCount(h.length);
+      })
+      .catch(() => undefined);
+  }, [settingsReady, engine, view]);  const theme = useStore(settings, (s) => s.settings.theme);
   const followSystem = useStore(settings, (s) => s.settings.followSystemTheme);
   const [systemLight, setSystemLight] = useState<boolean>(() =>
     typeof window !== "undefined" && typeof window.matchMedia === "function"
@@ -211,7 +225,26 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
         );
       })
       .catch(() => undefined);
-  }, [queue, settings, toast]);
+    // Corrupt-store recovery (Phase 3): surface quarantined files once.
+    // Runs after the loads above so any quarantine they triggered is drained.
+    void engine
+      .consumeRecoveryNotices()
+      .then((notices) => {
+        const texts = stringsRef.current;
+        for (const n of notices) {
+          const what =
+            n.kind === "settings"
+              ? texts.status.recoverySettings
+              : n.kind === "queue"
+                ? texts.status.recoveryQueue
+                : texts.status.recoveryWatchlist;
+          const detail =
+            n.backup === null ? "" : ` ${formatStr(texts.status.recoveryKept, { backup: n.backup })}`;
+          toast.getState().push(`${what}${detail}`, "error");
+        }
+      })
+      .catch(() => undefined);
+  }, [queue, settings, toast, engine]);
 
   useEffect(() => {
     document.documentElement.dataset["theme"] = effectiveTheme;
@@ -365,6 +398,11 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
       if (!up && wasOnline.current) {
         toast.getState().push(S.status.offline, "info");
       }
+      // Sleep/hibernate resume (Phase 3): the network coming back is the
+      // signal to re-drive due starts + backoff retries. Cheap + idempotent.
+      if (up && !wasOnline.current) {
+        queue.getState().pump().catch(() => undefined);
+      }
       wasOnline.current = up;
     };
     window.addEventListener("online", flip);
@@ -373,52 +411,44 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
       window.removeEventListener("online", flip);
       window.removeEventListener("offline", flip);
     };
-  }, [toast, S]);
+  }, [toast, S, queue]);
 
-  // Experimental: check watched channels on launch (F6). Baselines are
-  // always saved; the toast only fires when something is actually new.
-  const [watchChecked, setWatchChecked] = useState<boolean>(false);
+  // Queue v2 (Phase 3): the controller is constructed with defaults, so
+  // live-apply the settings caps whenever they change (previously the
+  // settings concurrency never reached the pump at all).
+  const settingsConcurrency = useStore(settings, (s) => s.settings.concurrency);
+  const settingsGalleryCap = useStore(settings, (s) => s.settings.concurrencyGallery);
+  const windowStart = useStore(settings, (s) => s.settings.downloadWindowStart);
+  const windowEnd = useStore(settings, (s) => s.settings.downloadWindowEnd);
   useEffect(() => {
-    if (!settingsReady || watchChecked) return;
-    if (!settings.getState().settings.experimental) return;
-    setWatchChecked(true);
-    void (async (): Promise<void> => {
-      try {
-        const channels = await engine.loadWatchlist();
-        if (channels.length === 0) return;
-        let freshTotal = 0;
-        const updated = [...channels];
-        for (let i = 0; i < channels.length; i += 1) {
-          const c = channels[i];
-          if (c === undefined) continue;
-          try {
-            const info = await engine.getInfo(c.url);
-            const d = diffWatch(info, c.lastVideoId);
-            updated[i] = {
-              ...c,
-              title: info.title,
-              lastVideoId: d.baseline,
-              lastCheckedAt: Date.now(),
-            };
-            freshTotal += d.fresh.length;
-          } catch {
-            // One bad channel never blocks the rest.
-          }
-        }
-        await engine.saveWatchlist(updated).catch(() => undefined);
-        if (freshTotal > 0) {
-          toast.getState().push(formatStr(S.library.watchNew, { n: freshTotal }), "info", {
-            label: S.library.watchTitle,
-            run: () => {
-              switchView("library");
-            },
-          });
-        }
-      } catch {
-        // Silent: watchlist must never break launch.
-      }
-    })();
-  }, [settingsReady, watchChecked, engine, settings, toast, switchView, S]);
+    if (!settingsReady) return;
+    queue.getState().setConcurrency(settingsConcurrency);
+    queue.getState().setGalleryCap(settingsGalleryCap);
+    queue.getState().setWindow(
+      windowStart === null && windowEnd === null
+        ? null
+        : { start: windowStart, end: windowEnd },
+    );
+  }, [settingsReady, settingsConcurrency, settingsGalleryCap, windowStart, windowEnd, queue]);
+
+  // Subscriptions poller (Phase 3): replaces the experimental launch-only
+  // check — same job (baseline + fresh diff), always on, interval-gated.
+  useSubscriptions({
+    engine,
+    queue,
+    settings,
+    toast,
+    ready: settingsReady,
+    strings: S,
+    switchView,
+  });
+
+  // Crash-report opt-in mirror (Phase 7): settings is the source of
+  // truth; the class-based ErrorBoundary reads the localStorage flag.
+  const crashOptIn = useStore(settings, (s) => s.settings.crashReports);
+  useEffect(() => {
+    setCrashOptIn(crashOptIn);
+  }, [crashOptIn]);
 
   // Restore the last view once settings arrive (D2).
   const viewRestored = useRef<boolean>(false);
@@ -466,6 +496,24 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
       .catch(() => undefined);
   }, [engine, settings, settingsReady, updateNoted, toast, switchView, S]);
 
+  // Opt-in tool auto-update (Phase 2): when idle at boot, update yt-dlp
+  // once instead of only reminding. Never while jobs are unfinished (the
+  // engine refuses those anyway); failures toast once, offline stays quiet.
+  useEffect(() => {
+    if (!settingsReady) return;
+    if (!settings.getState().settings.autoUpdateTools) return;
+    if (unfinishedCount(queue.getState().jobs) > 0) return;
+    void engine
+      .updateEngine()
+      .then(() => {
+        toast.getState().push(S.errors.engineUpdated, "success");
+      })
+      .catch((err: unknown) => {
+        if (err instanceof Error && /busy|running|active/i.test(err.message)) return;
+        toast.getState().push(S.logs.updateFailed, "error");
+      });
+  }, [engine, settings, settingsReady, queue, toast, S]);
+
   const closeUpdateModal = useCallback((): void => {
     setUpdateModal(null);
   }, []);
@@ -473,17 +521,60 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
   // Keep the queue moving (M4.1): hydrated boot jobs and backoff retries
   // only start when something pumps. The 1 s tick is cheap and the
   // controller drops overlapping ticks via its reentrancy guard.
+  //
+  // The same tick drains loopback-API actions (Phase 6A): the HTTP server
+  // queues mutations main-side (it never touches the queue itself), and the
+  // renderer — the single queue owner — executes them here. Adds ride the
+  // existing deep-link/batch path (with its Home confirm semantics);
+  // job actions go through the queue store. One bad action never breaks
+  // the tick, and an empty drain is a single cheap IPC round trip.
+  const drainRemote = useCallback((): void => {
+    void (async () => {
+      let result: Awaited<ReturnType<typeof engine.remoteApi>>;
+      try {
+        result = await engine.remoteApi({ op: "drain" });
+      } catch {
+        return;
+      }
+      if (result.kind !== "actions" || result.actions.length === 0) return;
+      let added = false;
+      for (const action of result.actions) {
+        try {
+          if (action.kind === "add-urls") {
+            if (action.urls.length === 1) {
+              const first = action.urls[0];
+              if (first !== undefined) {
+                setPendingPaste(first);
+                added = true;
+              }
+            } else if (action.urls.length > 1) {
+              setPendingBatch(action.urls.join("\n"));
+              added = true;
+            }
+          } else {
+            if (action.action === "pause") await queue.getState().pause(action.id);
+            else if (action.action === "resume") await queue.getState().resume(action.id);
+            else await queue.getState().cancel(action.id);
+          }
+        } catch {
+          // Unknown/finished ids reject — the API already answered 202.
+        }
+      }
+      if (added) setView("home");
+    })();
+  }, [engine, queue]);
   useEffect(() => {
     const timer = setInterval(() => {
       void queue
         .getState()
         .pump()
         .catch(() => undefined);
+      drainRemote();
     }, 1000);
     return () => {
       clearInterval(timer);
     };
-  }, [queue]);
+  }, [queue, drainRemote]);
 
   // Error-action deep links (settings section anchors).
   useEffect(() => {
@@ -742,6 +833,11 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
                   {jobs.length}
                 </span>
               )}
+              {item.id === "library" && historyCount > 0 && (
+                <span className="grabber-nav-badge" data-testid="library-nav-badge">
+                  {historyCount}
+                </span>
+              )}
             </button>
           ))}
           <div className="grabber-nav-foot" data-testid="aggregate" role="status">
@@ -807,6 +903,7 @@ export function Shell({ engine, queue, settings, toast }: ShellProps): React.JSX
               engine={engine}
               settings={settings}
               queue={queue}
+              toast={toast}
               onReplay={() => {
                 setReplayOnboarding(true);
                 setOnboardingDismissed(false);

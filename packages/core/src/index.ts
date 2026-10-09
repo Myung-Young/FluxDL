@@ -8,17 +8,89 @@ export type {
   DownloadJob,
   DownloadJobInput,
   DownloadPreset,
+  EngineId,
+  FileResult,
   FormatOption,
+  ImagesSettings,
   JobStatus,
   MediaInfo,
   MediaKind,
   PlaylistEntry,
+  RouterMode,
   ThemeName,
   VideoPreset,
+  YtDlpChannel,
 } from "./types.js";
-export { CLOSE_BEHAVIORS } from "./types.js";
+export { CLOSE_BEHAVIORS, ENGINE_IDS, ROUTER_MODES, YTDLP_CHANNELS } from "./types.js";
 export type { WatchChannel } from "./types.js";
+export type { CompressPreset, ConvertFormat, GalleryPackage, JobPriority, PostProcessSettings, SubscriptionMode, UgoiraFormat } from "./types.js";
+export { COMPRESS_PRESETS, GALLERY_PACKAGES, JOB_PRIORITIES, SUBSCRIPTION_MODES, UGOIRA_FORMATS } from "./types.js";
 export { addWatchChannel, diffWatch, normalizeWatchlist, touchWatch } from "./watchlist.js";
+export {
+  MAX_NEW_PER_CHECK,
+  MAX_SUB_FAILURES,
+  MIN_SUB_INTERVAL_MIN,
+  cleanIntervalMin,
+  cleanSubMode,
+  cleanSubscription,
+  defaultSubFields,
+  dueSubs,
+  isSubDue,
+  recordSubResult,
+  subDelayMs,
+} from "./subscriptions.js";
+export {
+  POST_STEPS,
+  TAG_AUTO_SCORE,
+  buildCompressArgs,
+  buildConvertArgs,
+  buildRcloneArgs,
+  buildRecordingQuery,
+  buildWhisperArgs,
+  classifyPostFile,
+  convertOutputPath,
+  hasBasicTags,
+  hasEncoder,
+  hintFromFilename,
+  isAudioFile,
+  isImageFile,
+  isVideoFile,
+  parseHwaccels,
+  parseMediaSummary,
+  parseRecordingDetail,
+  parseRecordingResponse,
+  pickH264Encoder,
+  pickTagCandidate,
+  rcloneDest,
+  srtBasePath,
+  stepsFor,
+  wavTempPath,
+} from "./postprocess.js";
+export type { MediaSummary, PostFile, PostStep, StepsForInput, TagCandidate } from "./postprocess.js";
+export {
+  PACK_MANIFESTS,
+  WHISPER_MODELS,
+  discoverNm3u8dl,
+  discoverRclone,
+  discoverStreamlink,
+  discoverWhisper,
+  isAllowedPackUrl,
+  isManifestUrl,
+  isRevoked,
+  packManifest,
+  parseSha256sums,
+  sanitizeFileStem,
+  whisperModel,
+} from "./packs.js";
+export type {
+  DiscoveredAsset,
+  PackId,
+  PackKind,
+  PackManifest,
+  RcloneDiscovery,
+  RevokedPacks,
+  WhisperModel,
+} from "./packs.js";
 export { fuzzyMatch, fuzzyRank } from "./fuzzy.js";
 export { exportBackup, parseBackup } from "./backup.js";
 export type { BackupPayload, ParsedBackup } from "./backup.js";
@@ -32,8 +104,21 @@ export type {
   EngineProgress,
   EngineVersions,
   AggregateProgressState,
+  GalleryProbe,
+  GalleryProbeItem,
   GetInfoInit,
+  PackRequest,
+  PacksResult,
+  PostProcessRequest,
+  PostProcessResult,
   ProgressCallback,
+  NotifierOp,
+  NotifierRequest,
+  NotifierResult,
+  RemoteApiOp,
+  RemoteApiRequest,
+  RemoteApiResult,
+  RemoteApiStatus,
   RepairReport,
   StorageInsights,
   ThumbnailColor,
@@ -43,9 +128,46 @@ export type {
 } from "./engine.js";
 export { extractDeepLinkTarget, parseFluxDlUrl } from "./deeplink.js";
 export {
+  REMOTE_API_AUDIT_CAP,
+  REMOTE_API_DEFAULT_PORT,
+  REMOTE_API_MAX_BODY_BYTES,
+  REMOTE_API_MAX_URLS,
+  REMOTE_API_MAX_URL_CHARS,
+  REMOTE_API_RATE_LIMIT,
+  REMOTE_API_RATE_WINDOW_MS,
+  REMOTE_JOB_ACTIONS,
+  buildPairingLink,
+  buildLanPairingLink,
+  clampApiPort,
+  createRateLimiter,
+  isLoopbackHost,
+  originAllowed,
+  parseAddBody,
+  parseBearer,
+  parseJobBody,
+  parsePairingLink,
+  pushAudit,
+  toApiJobView,
+  tokensEqual,
+} from "./remoteApi.js";
+export type {
+  AddBodyError,
+  AddBodyResult,
+  ApiJobView,
+  AuditEntry,
+  JobBodyError,
+  JobBodyResult,
+  PairingInfo,
+  RateLimiter,
+  RemoteApiAction,
+  RemoteJobAction,
+} from "./remoteApi.js";
+export {
   APP_API_URL,
+  APP_ISSUES_URL,
   APP_RELEASES_URL,
   YTDLP_API_URL,
+  buildIssueUrl,
   isAllowedExternalUrl,
   isNewerVersion,
   latestTagFromRelease,
@@ -137,6 +259,16 @@ export { ErrorBoundary } from "./ErrorBoundary.js";
 export type { ErrorBoundaryProps } from "./ErrorBoundary.js";
 export { SettingsScreen } from "./SettingsScreen.js";
 export type { SettingsScreenProps } from "./SettingsScreen.js";
+export { PackStore } from "./PackStore.js";
+export type { PackStoreProps } from "./PackStore.js";
+export { ToolsSection } from "./ToolsSection.js";
+export type { ToolsSectionProps } from "./ToolsSection.js";
+export { GalleryPreview } from "./GalleryPreview.js";
+export type { GalleryPreviewProps } from "./GalleryPreview.js";
+export { RemoteSection } from "./RemoteSection.js";
+export type { RemoteSectionProps } from "./RemoteSection.js";
+export { usePackInstalled } from "./usePackInstalled.js";
+export type { PackInstalled } from "./usePackInstalled.js";
 export { Logs } from "./Logs.js";
 export type { LogsProps } from "./Logs.js";
 export { createToastStore } from "./toast.js";
@@ -219,6 +351,7 @@ export {
   buildFfmpegVersionArgs,
   buildInfoArgs,
   buildUpdateArgs,
+  buildUpdateToArgs,
   buildVersionArgs,
   codecSortOf,
   redactArgs,
@@ -226,7 +359,39 @@ export {
 export type { DownloadArgsInput } from "./args.js";
 export { parseProgressLine, PROGRESS_TEMPLATE, parseSpeedBps } from "./progress.js";
 export type { ParsedProgress } from "./progress.js";
-export { mapDownloadError, actionsFor, cancelledMapped, timeoutMapped } from "./errors.js";
+export { resolveEngine, domainOf, engineLabel, BUILTIN_ENGINE_RULES } from "./engines.js";
+export type { DomainRule, ResolveInput, ResolveOutput, ResolveReason, ProbeResult } from "./engines.js";
+export { buildGalleryDlConfig, resolveGalleryConfigText, validateGalleryConfigJson } from "./galleryConfig.js";
+export type { GalleryConfig, GalleryConfigInput } from "./galleryConfig.js";
+export {
+  parseGalleryDlLine,
+  applyGalleryFileEvent,
+  splitGalleryChunk,
+  emptyGalleryProgress,
+} from "./galleryProgress.js";
+export type { GalleryFileEvent, GalleryProgress } from "./galleryProgress.js";
+export {
+  GALLERY_PROBE_MAX_ITEMS,
+  GALLERY_PROBE_MAX_CHARS,
+  PROBE_CACHE_TTL_MS,
+  PROBE_CACHE_MAX_HOSTS,
+  buildProbeArgs,
+  createProbeCache,
+  galleryStderrErrors,
+  isUnsupportedUrlMessage,
+  parseGalleryProbeJson,
+} from "./galleryProbe.js";
+export type {
+  GalleryProbeParsed,
+  ProbeArgsInput,
+  ProbeCache,
+  ProbeCacheClock,
+} from "./galleryProbe.js";
+export { TOOL_MANIFESTS, toolManifest, compareVersions, MIN_TOOL_VERSIONS } from "./tools.js";
+export type { ToolInstallMode, ToolManifest } from "./tools.js";
+export { buildDoctorReport, isCheckDue, isStalled, versionCheck } from "./doctor.js";
+export type { DoctorCheck, DoctorReport, DoctorStatus } from "./doctor.js";
+export { mapDownloadError, actionsFor, cancelledMapped, engineBrokenMapped, timeoutMapped } from "./errors.js";
 export type { ErrorAction, ErrorActionId, ErrorCategory, MappedError } from "./errors.js";
 export { ErrorActionButtons } from "./ErrorActions.js";
 export type { ErrorActionButtonsProps, ErrorNavigate } from "./ErrorActions.js";
@@ -250,11 +415,19 @@ export {
   retryInSeconds,
   makeJob,
   isFinished,
+  engineOf,
+  priorityOf,
+  activeGalleryCount,
+  isInDownloadWindow,
+  filterHistory,
+  sortHistory,
+  DEFAULT_HISTORY_FILTER,
+  HISTORY_SORTS,
   searchHistory,
   pruneHistory,
   reorder,
   toStartInput,
-} from "./queue.js";export type { QueueEvent, TransitionOptions, EngineProgressLike } from "./queue.js";
+} from "./queue.js";export type { QueueEvent, TransitionOptions, EngineProgressLike, DownloadWindow, HistoryFilter, HistorySort } from "./queue.js";
 export {
   buildParseMetadataArg,
   buildParseMetadataArgs,

@@ -1,0 +1,124 @@
+[
+  [
+    2,
+    {
+      "category": "wikimediacommons",
+      "count": 1,
+      "imagerepository": "local",
+      "lang": "",
+      "ns": 6,
+      "page": "File:Albert_Einstein_Head.jpg",
+      "pageid": 925243,
+      "subcategory": "file",
+      "title": "File:Albert Einstein Head.jpg"
+    }
+  ],
+  [
+    3,
+    "https://upload.wikimedia.org/wikipedia/commons/d/d3/Albert_Einstein_Head.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+    {
+      "bitdepth": 8,
+      "canonicaltitle": "File:Albert Einstein Head.jpg",
+      "category": "wikimediacommons",
+      "comment": "higher resolution, quality",
+      "commonmetadata": {},
+      "count": 1,
+      "date": "2014-11-25 19:59:28",
+      "descriptionshorturl": "https://commons.wikimedia.org/w/index.php?curid=925243",
+      "descriptionurl": "https://commons.wikimedia.org/wiki/File:Albert_Einstein_Head.jpg",
+      "extension": "jpg",
+      "extmetadata": {
+        "Artist": {
+          "source": "commons-desc-page",
+          "value": "Photograph by <a href=\"//commons.wikimedia.org/w/index.php?title=Orren_Jack_Turner&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"Orren Jack Turner (page does not exist)\">Orren Jack Turner</a>, Princeton, N.J. <br>Modified with Photoshop by <a href=\"https://en.wikipedia.org/wiki/User:PM_Poon\" class=\"extiw\" title=\"en:User:PM Poon\">PM_Poon</a> and later by <a href=\"//commons.wikimedia.org/wiki/User:Dantadd\" title=\"User:Dantadd\">Dantadd</a>."
+        },
+        "Assessments": {
+          "hidden": "",
+          "source": "commons-categories",
+          "value": "valued"
+        },
+        "AttributionRequired": {
+          "hidden": "",
+          "source": "commons-desc-page",
+          "value": "false"
+        },
+        "Categories": {
+          "hidden": "",
+          "source": "commons-categories",
+          "value": "Images from the Library of Congress|Images with extracted images|Featured pictures on Wikipedia, Persian|PD-old-50-1964|Albert Einstein by Oren Jack Turner (1947)|Featured pictures on Wikipedia, Arabic|Copyrighted in Germany"
+        },
+        "CommonsMetadataExtension": {
+          "hidden": "",
+          "source": "extension",
+          "value": 1.2
+        },
+        "Copyrighted": {
+          "hidden": "",
+          "source": "commons-desc-page",
+          "value": "False"
+        },
+        "Credit": {
+          "source": "commons-desc-page",
+          "value": "This image  is available from the United States <a href=\"//commons.wikimedia.org/wiki/Library_of_Congress\" title=\"Library of Congress\">Library of Congress</a>'s <a rel=\"nofollow\" class=\"external text\" href=\"//www.loc.gov/rr/print/\">Prints and Photographs division</a><br> under the digital ID <a rel=\"nofollow\" class=\"external text\" href=\"https://hdl.loc.gov/loc.pnp/cph.3b46036\">cph.3b46036</a>.<br><small>This tag does not indicate the copyright status of the attached work. <span style=\"white-space:nowrap\">A normal <a href=\"//commons.wikimedia.org/wiki/Special:MyLanguage/Commons:Copyright_tags\" title=\"Special:MyLanguage/Commons:Copyright tags\">copyright tag</a> is still required.</span> <span style=\"white-space:nowrap\">See <a href=\"//commons.wikimedia.org/wiki/Special:MyLanguage/Commons:Licensing\" title=\"Special:MyLanguage/Commons:Licensing\">Commons:Licensing</a>.</span></small>"
+        },
+        "DateTime": {
+          "hidden": "",
+          "source": "mediawiki-metadata",
+          "value": "2014-11-25 19:59:28"
+        },
+        "DateTimeOriginal": {
+          "source": "commons-desc-page",
+          "value": "Copyrighted 1947, copyright not renewed. Einstein's estate may still claim copyright on this image, but any such claim would be considered illegitimate by the Library of Congress. No known restrictions.<a rel=\"nofollow\" class=\"external autonumber\" href=\"https://www.loc.gov/pictures/item/2004671908/\">[1]</a>"
+        },
+        "ImageDescription": {
+          "source": "commons-desc-page",
+          "value": "<a href=\"https://en.wikipedia.org/wiki/Albert_Einstein\" class=\"extiw\" title=\"en:Albert Einstein\">Albert Einstein</a>"
+        },
+        "License": {
+          "hidden": "",
+          "source": "commons-templates",
+          "value": "pd"
+        },
+        "LicenseShortName": {
+          "hidden": "",
+          "source": "commons-desc-page",
+          "value": "Public domain"
+        },
+        "ObjectName": {
+          "source": "mediawiki-metadata",
+          "value": "Albert Einstein Head"
+        },
+        "Restrictions": {
+          "hidden": "",
+          "source": "commons-desc-page",
+          "value": ""
+        },
+        "UsageTerms": {
+          "source": "commons-desc-page",
+          "value": "Public domain"
+        }
+      },
+      "filename": "Albert Einstein Head",
+      "height": 4333,
+      "imagerepository": "local",
+      "lang": "",
+      "metadata": {
+        "MEDIAWIKI_EXIF_VERSION": 1
+      },
+      "mime": "image/jpeg",
+      "ns": 6,
+      "num": 1,
+      "page": "File:Albert_Einstein_Head.jpg",
+      "pageid": 925243,
+      "sha1": "51f46ff9897d9125b0d0a513fb5099d2a9462282",
+      "size": 2309396,
+      "subcategory": "file",
+      "timestamp": "2014-11-25T19:59:28Z",
+      "title": "File:Albert Einstein Head.jpg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/d/d3/Albert_Einstein_Head.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=original",
+      "user": "Triggerhippie4",
+      "userid": 1821096,
+      "width": 3250
+    }
+  ]
+]

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { previewFilename, validateFilenameTemplate, validateSpeedLimit } from "./validate.js";
+import {
+  previewFilename,
+  validateFilenameTemplate,
+  validateSpeedLimit,
+  validateTrimTime,
+  validateWindowTime,
+} from "./validate.js";
 
 describe("field validation", () => {
   it("requires a non-empty template with an extension slot", () => {
@@ -22,5 +28,28 @@ describe("field validation", () => {
     expect(previewFilename("%(title)s [%(id)s].%(ext)s")).toBe("Sample Video [abc123].mp4");
     expect(previewFilename("%(upload_date)s - %(title)s")).toBe("20260101 - Sample Video");
     expect(previewFilename("%(unknown)s")).toBe("%(unknown)s");
+  });
+
+  it("accepts trim times (seconds or [HH:]MM:SS)", () => {
+    expect(validateTrimTime(null)).toBe(true);
+    expect(validateTrimTime("")).toBe(true);
+    expect(validateTrimTime("90")).toBe(true);
+    expect(validateTrimTime("10:00")).toBe(true);
+    expect(validateTrimTime("1:02:03")).toBe(true);
+    expect(validateTrimTime("1:02:03.5")).toBe(true);
+    expect(validateTrimTime("nope")).toBe(false);
+    expect(validateTrimTime("10:99")).toBe(false);
+  });
+
+  it("accepts empty (off) or strict 24-hour HH:MM window bounds", () => {
+    expect(validateWindowTime(null)).toBe(true);
+    expect(validateWindowTime("")).toBe(true);
+    expect(validateWindowTime("00:00")).toBe(true);
+    expect(validateWindowTime("22:00")).toBe(true);
+    expect(validateWindowTime("06:30")).toBe(true);
+    expect(validateWindowTime("24:00")).toBe(false);
+    expect(validateWindowTime("9:00")).toBe(false);
+    expect(validateWindowTime("22:60")).toBe(false);
+    expect(validateWindowTime("tonight")).toBe(false);
   });
 });

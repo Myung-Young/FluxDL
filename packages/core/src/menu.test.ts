@@ -14,6 +14,10 @@ describe("menuItemsFor", () => {
       "open",
       "reveal",
       "delete-file",
+      "post-run",
+      "post-transcribe",
+      "post-upload",
+      "media-info",
     ]);
   });
 
@@ -26,8 +30,15 @@ describe("menuItemsFor", () => {
       "retry-preset",
       "remove",
       "delete-file",
-    ]);
-    expect(menuItemsFor("cancelled", false)).toEqual(["copy-url", "retry-preset", "remove"]);
+      "media-info",
+    ]);    expect(menuItemsFor("cancelled", false)).toEqual(["copy-url", "retry-preset", "remove"]);
+  });
+
+  it("offers reprocess (not plain run) for pipeline failures", () => {
+    expect(menuItemsFor("postfailed", true)).toContain("post-reprocess");
+    expect(menuItemsFor("postfailed", true)).not.toContain("post-run");
+    expect(menuItemsFor("postfailed", true)).toContain("media-info");
+    expect(menuItemsFor("done", true)).not.toContain("post-reprocess");
   });
 
   it("never offers remove/delete while actively writing", () => {

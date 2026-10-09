@@ -21,7 +21,12 @@ export type CardMenuId =
   | "move-up"
   | "move-down"
   | "remove"
-  | "delete-file";
+  | "delete-file"
+  | "post-run"
+  | "post-reprocess"
+  | "post-transcribe"
+  | "post-upload"
+  | "media-info";
 
 export interface MenuMove {
   readonly up: boolean;
@@ -41,6 +46,7 @@ export const MENU_VIDEO_PRESETS: readonly VideoPreset[] = [
   "1080",
   "720",
   "480",
+  "Smallest",
 ];
 export const MENU_AUDIO_PRESETS: readonly AudioPreset[] = [...CORE_AUDIO_PRESETS];
 
@@ -75,6 +81,17 @@ export function menuItemsFor(
   }
   if (hasDestination && !WRITING.includes(status)) {
     items.push("delete-file");
+  }
+  // Post-processing (Phase 4): manual runs on finished outputs, reprocess
+  // on pipeline failures, media info wherever a file is known.
+  if (hasDestination && status === "done") {
+    items.push("post-run", "post-transcribe", "post-upload");
+  }
+  if (status === "postfailed") {
+    items.push("post-reprocess");
+  }
+  if (hasDestination && !WRITING.includes(status)) {
+    items.push("media-info");
   }
   return items;
 }

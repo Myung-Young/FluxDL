@@ -46,11 +46,17 @@ Get the latest release for **Windows 10/11 x64** from the
 Pasting **multiple links**? They route to the **Batch** tab automatically
 (up to 500 links, playlists expandable per video).
 
-## Features
+## Screenshots
 
+| Home | Downloads | Settings |
+| ---- | --------- | -------- |
+| ![Home](docs/screenshots/home.png) | ![Downloads](docs/screenshots/downloads.png) | ![Settings](docs/screenshots/settings.png) |
+
+## Features
 | Area               | What you get                                                                                                                                                                   |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 📥 Downloading     | Single links, playlists with entry picker, batch paste, duplicate guard + download archive, pause / resume / cancel / retry, concurrency 1–5, speed limiter with quick presets |
+| 🖼️ Images | gallery-dl engine for image galleries (Wikimedia Commons, Flickr, Imgur…): gallery preview with select, per-link Auto/Video/Images override, Try-other-engine on failures, live file counters, Images settings section |
 | 🎞️ Formats         | Compatible MP4 (H.264 + AAC), 480p–4K caps, top-quality audio (MP3 / M4A / Opus / FLAC), manual + auto subtitles, SponsorBlock removal, chapter splitting, audio tag editor    |
 | 📡 Live & upcoming | Stream status detection, record-from-start, wait-for-scheduled-start                                                                                                           |
 | 🪟 Mini window     | Always-on-top compact view with overall progress, per-download pause / resume / cancel, failed retry-all — toggle from the titlebar, `Ctrl+Shift+M`, palette, or tray          |
@@ -77,6 +83,28 @@ Pasting **multiple links**? They route to the **Batch** tab automatically
 Register once (automatic on install), then open links like
 `fluxdl://https%3A%2F%2Fyoutu.be%2F…` — or run `FluxDL.exe <url>` — and
 the running app picks the video up, even from a second launch.
+
+### Remote access (same machine)
+
+Settings → Remote access starts a loopback-only server (`127.0.0.1`, token
+auth): paste a link from your browser or the unpacked extension in
+`extension/` and the app picks it up; the served page doubles as a tiny
+remote (queue, pause/cancel). Off by default; LAN access is not offered —
+see `docs/phases/PHASE_6_PLAN.md` §6.
+
+### Automation: CLI, LAN, notifiers
+
+- CLI: `node scripts/fluxdl.mjs add <url>...` (or `status`, `pause` /
+  `resume` / `cancel <id>`) talks to a running app over the same API —
+  token via `--token` or `FLUXDL_TOKEN`. Same mechanism suits ShareX and
+  other automation (POST JSON to `/api/add` with a Bearer token).
+- LAN mode is an explicit opt-in in Settings → Remote access (big warning
+  shown first): binds all interfaces with an optional IP allowlist and
+  auto-disable timer, and rotates the token on enable. Plain HTTP: the
+  token guards every call, but prefer loopback when you can.
+- Discord webhooks and Telegram bot messages fire on finish/fail when
+  enabled (Settings → Remote access → Notifications). Webhook URL and bot
+  token are stored OS-encrypted, never in settings or logs.
 
 ## Troubleshooting
 

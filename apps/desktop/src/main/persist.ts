@@ -32,16 +32,53 @@ const WATCHLIST_TMP = "watchlist.json.tmp";
 const STATUSES: readonly JobStatus[] = [
   "queued",
   "analyzing",
+  "probing",
   "downloading",
   "processing",
   "paused",
   "done",
+  "partial",
+  "interrupted",
   "error",
+  "postfailed",
   "cancelled",
 ];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Corrupt-store recovery (Phase 3): a whole file that no longer parses is
+ * renamed to `<file>.corrupt-<ts>` (evidence preserved, never deleted) and
+ * the caller gets defaults. Callers report the quarantine via
+ * `consumeRecoveryNotices()` so the UI can say what happened.
+ */
+export function quarantineCorruptFile(file: string): string | null {
+  try {
+    const backup = `${file}.corrupt-${String(Date.now())}`;
+    renameSync(file, backup);
+    return backup;
+  } catch {
+    return null;
+  }
+}
+
+/** Human-readable recovery notices since the last consume (main-side). */
+interface PendingRecovery {
+  readonly kind: "settings" | "queue" | "watchlist";
+  readonly backup: string | null;
+}
+
+const recoveryNotices: PendingRecovery[] = [];
+
+function noteRecovery(kind: PendingRecovery["kind"], file: string): void {
+  recoveryNotices.push({ kind, backup: quarantineCorruptFile(file) });
+}
+
+/** Drain pending recovery notices (engine exposes this over IPC). */
+export function consumeRecoveryNotices(): PendingRecovery[] {
+  return recoveryNotices.splice(0, recoveryNotices.length);
 }
 
 export function isDownloadJob(value: unknown): value is DownloadJob {
@@ -63,14 +100,18 @@ export function isDownloadJob(value: unknown): value is DownloadJob {
  * no benefit. Writes are atomic (tmp + rename) like the queue snapshot.
  */
 export function loadSettingsFromDisk(userDataDir: string): AppSettings {
+  const file = join(userDataDir, SETTINGS_FILE);
+  if (!existsSync(file)) return DEFAULT_SETTINGS;
   try {
-    const file = join(userDataDir, SETTINGS_FILE);
-    if (!existsSync(file)) return DEFAULT_SETTINGS;
     const raw: unknown = JSON.parse(readFileSync(file, "utf8"));
-    if (!isRecord(raw)) return DEFAULT_SETTINGS;
+    if (!isRecord(raw)) {
+      noteRecovery("settings", file);
+      return DEFAULT_SETTINGS;
+    }
     return mergeSettings(DEFAULT_SETTINGS, raw);
   } catch {
     // Corrupt/unreadable settings must never block startup.
+    noteRecovery("settings", file);
     return DEFAULT_SETTINGS;
   }
 }
@@ -94,9 +135,13 @@ export async function loadQueueFromDisk(userDataDir: string): Promise<DownloadJo
   if (!existsSync(file)) return [];
   try {
     const raw = JSON.parse(await readFile(file, "utf8")) as unknown;
-    if (!Array.isArray(raw)) return [];
+    if (!Array.isArray(raw)) {
+      noteRecovery("queue", file);
+      return [];
+    }
     return raw.filter(isDownloadJob);
   } catch {
+    noteRecovery("queue", file);
     return [];
   }
 }
@@ -265,6 +310,7 @@ export async function loadWatchlistFromDisk(userDataDir: string): Promise<WatchC
     const raw = JSON.parse(await readFile(file, "utf8")) as unknown;
     return normalizeWatchlist(raw);
   } catch {
+    noteRecovery("watchlist", file);
     return [];
   }
 }

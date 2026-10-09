@@ -58,6 +58,48 @@ describe("mergeSettings", () => {
     ).toBe(60);
   });
 
+  it("defaults the custom format selector to off and sanitizes it", () => {
+    expect(DEFAULT_SETTINGS.customFormat).toBeNull();
+    expect(
+      mergeSettings(DEFAULT_SETTINGS, { customFormat: "bestvideo+bestaudio/best" }).customFormat,
+    ).toBe("bestvideo+bestaudio/best");
+    expect(mergeSettings(DEFAULT_SETTINGS, { customFormat: "   " }).customFormat).toBeNull();
+  });
+
+  it("defaults notifiers and LAN mode to off and sanitizes them", () => {
+    expect(DEFAULT_SETTINGS.notifyDiscord).toBe(false);
+    expect(DEFAULT_SETTINGS.notifyTelegram).toBe(false);
+    expect(DEFAULT_SETTINGS.telegramChatId).toBeNull();
+    expect(DEFAULT_SETTINGS.lanEnabled).toBe(false);
+    expect(DEFAULT_SETTINGS.lanAllowlist).toBe("");
+    expect(DEFAULT_SETTINGS.lanAutoDisableHours).toBeNull();
+    const m = mergeSettings(DEFAULT_SETTINGS, {
+      notifyDiscord: true,
+      telegramChatId: "  12345  ",
+      lanEnabled: true,
+      lanAllowlist: "192.168.1.,10.0.0.",
+      lanAutoDisableHours: 12,
+    });
+    expect(m.notifyDiscord).toBe(true);
+    expect(m.telegramChatId).toBe("12345");
+    expect(m.lanEnabled).toBe(true);
+    expect(m.lanAllowlist).toBe("192.168.1.,10.0.0.");
+    expect(m.lanAutoDisableHours).toBe(12);
+    expect(
+      mergeSettings(DEFAULT_SETTINGS, { lanAutoDisableHours: 999 }).lanAutoDisableHours,
+    ).toBe(168);
+    expect(mergeSettings(DEFAULT_SETTINGS, { lanAutoDisableHours: 0 }).lanAutoDisableHours).toBeNull();
+  });
+
+  it("defaults the Remote API to off and clamps its port", () => {
+    expect(DEFAULT_SETTINGS.apiEnabled).toBe(false);
+    expect(DEFAULT_SETTINGS.apiPort).toBe(48127);
+    expect(mergeSettings(DEFAULT_SETTINGS, { apiEnabled: true }).apiEnabled).toBe(true);
+    expect(mergeSettings(DEFAULT_SETTINGS, { apiPort: 80 }).apiPort).toBe(48127);
+    expect(mergeSettings(DEFAULT_SETTINGS, { apiPort: 99999 }).apiPort).toBe(48127);
+    expect(mergeSettings(DEFAULT_SETTINGS, { apiPort: 8080 }).apiPort).toBe(8080);
+  });
+
   it("defaults comfortable density and sanitizes it", () => {    expect(DEFAULT_SETTINGS.density).toBe("comfortable");
     expect(DEFAULT_SETTINGS.thumbnailAccent).toBe(true);
     expect(DEFAULT_SETTINGS.accentOverride).toBeNull();
@@ -147,17 +189,29 @@ describe("mergeSettings", () => {
     expect(Object.keys(DEFAULT_SETTINGS).sort()).toEqual([
       "accentOverride",
       "analyzeTimeoutSec",
+      "apiEnabled",
+      "apiPort",
       "autoCheckUpdate",
       "autoSort",
+      "autoUpdateTools",
       "batchDraft",
       "closeBehavior",
       "codecPreference",
       "concurrency",
+      "concurrencyGallery",
+      "concurrentFragments",
       "cookiesFile",
       "cookiesFromBrowser",
+      "crashReports",
+      "customFormat",
       "defaultPreset",
       "density",
+      "dismissedPackHints",
+      "domainRules",
       "downloadDir",
+      "downloadRetries",
+      "downloadWindowEnd",
+      "downloadWindowStart",
       "embedMetadata",
       "embedSubs",
       "embedThumbnail",
@@ -165,30 +219,47 @@ describe("mergeSettings", () => {
       "filenameTemplate",
       "followSystemTheme",
       "historyLimit",
+      "images",
+      "impersonateClient",
       "includeAutoSubs",
+      "lanAllowlist",
+      "lanAutoDisableHours",
+      "lanEnabled",
       "language",
+      "lastFolderByMedia",
       "lastQueueFilter",
+      "lastToolCheckAt",
       "lastView",
       "launchAtLogin",
       "mergeContainer",
       "minimizeToTray",
+      "notifyDiscord",
       "notifyFinished",
+      "notifyTelegram",
       "onboardingDone",
       "pacing",
       "playlistSubfolder",
       "postDownloadAction",
+      "postProcess",
       "presetBySite",
       "proxy",
       "recentSearches",
+      "routerMode",
       "savedSearches",
       "skipArchived",
       "skippedUpdate",
+      "socketTimeoutSec",
       "speedLimit",
       "sponsorBlock",
+      "sponsorBlockCategories",
+      "stalledTimeoutSec",
       "subtitleLangs",
       "subtitles",
+      "telegramChatId",
       "theme",
       "thumbnailAccent",
+      "useAria2c",
+      "ytdlpChannel",
     ]);
   });
 
@@ -269,6 +340,23 @@ describe("pacing settings", () => {
       pacing: "nonsense",
     } as never);
     expect(merged.pacing.sleepRequestsSec).toBe(3);
+  });
+
+  it("keeps a raw gallery-dl config override, capped and nullable (v1.8.5)", () => {
+    expect(DEFAULT_SETTINGS.images.customConfig).toBeNull();
+    const kept = mergeSettings(DEFAULT_SETTINGS, {
+      images: { ...DEFAULT_SETTINGS.images, customConfig: '{\n  "extractor": {}\n}' },
+    });
+    expect(kept.images.customConfig).toBe('{\n  "extractor": {}\n}');
+    const cleared = mergeSettings(
+      { ...DEFAULT_SETTINGS, images: { ...DEFAULT_SETTINGS.images, customConfig: "{}" } },
+      { images: { ...DEFAULT_SETTINGS.images, customConfig: "   " } },
+    );
+    expect(cleared.images.customConfig).toBeNull();
+    const capped = mergeSettings(DEFAULT_SETTINGS, {
+      images: { ...DEFAULT_SETTINGS.images, customConfig: `{"k":"${"x".repeat(300_000)}"}` },
+    });
+    expect(capped.images.customConfig?.length).toBe(200_000);
   });
 });
 

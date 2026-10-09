@@ -537,6 +537,12 @@ function setupTray(): void {
             .catch(() => undefined);
         },
       },
+      {
+        label: "Open downloads folder",
+        click: () => {
+          openDownloadsFolder();
+        },
+      },
       { type: "separator" },
       {
         label: "Quit",
@@ -593,6 +599,10 @@ function getEngine(): DesktopEngine {
         aggTooltip = state.tooltip;
         refreshTaskbar();
       },
+      // Completion notifications with actions (Phase 3): the engine shows
+      // them only when the window is NOT focused; the renderer covers the
+      // focused case, so exactly one fires.
+      isWindowFocused: () => mainWindow?.isFocused() ?? true,
       chrome: {
         apply: (state) => chrome.apply(state),
         subscribe: (cb) => chrome.subscribe(cb),

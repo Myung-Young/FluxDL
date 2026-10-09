@@ -23,6 +23,7 @@ const PREVIEW_SAMPLE: Readonly<Record<string, string>> = {
   ext: "mp4",
   upload_date: "20260101",
   uploader: "Sample Channel",
+  extractor: "youtube",
 };
 
 /** Render a template with sample metadata (unknown keys pass through). */
@@ -31,4 +32,24 @@ export function previewFilename(template: string): string {
     const value = PREVIEW_SAMPLE[key];
     return value === undefined ? match : value;
   });
+}
+
+/**
+ * Trim time for --download-sections: empty (off), plain seconds, or
+ * [HH:]MM:SS with optional fraction. Hints only — args sanitizes again.
+ */
+export function validateTrimTime(value: string | null): boolean {
+  if (value === null) return true;
+  const t = value.trim();
+  if (t.length === 0) return true;
+  if (/^\d+(\.\d+)?$/.test(t)) return true;
+  return /^(?:\d+:)?[0-5]?\d:[0-5]\d(?:\.\d+)?$/.test(t);
+}
+
+/** Download-window clock time: empty (off) or strict 24 h HH:MM. */
+export function validateWindowTime(value: string | null): boolean {
+  if (value === null) return true;
+  const t = value.trim();
+  if (t.length === 0) return true;
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(t);
 }

@@ -55,6 +55,8 @@ function makeEngine() {
       if (i >= 0) history.splice(i, 1);
       return Promise.resolve();
     },
+    updateEngine: (): Promise<{ ytdlp: string; ffmpeg: string | null; app: string }> =>
+      Promise.resolve({ ytdlp: "2026.08.19", ffmpeg: "7.1", app: "test" }),
     loadQueue: (): Promise<DownloadJob[]> => Promise.resolve([...snapshot]),
     loadSettings: (): Promise<AppSettings> => Promise.resolve(storedSettings),
     saveSettings: (patch: Partial<AppSettings>): Promise<AppSettings> => {
@@ -158,13 +160,15 @@ describe("stores", () => {
     });
   });
 
-  it("refresh pumps a hydrated queue so boot jobs actually start (M4.1)", async () => {
+  it("refresh hydrates boot jobs as interrupted (explicit resume starts them)", async () => {
     const e = makeEngine();
     e.snapshot.push({ ...makeJob("old", input, 1), status: "downloading" });
     const store = createQueueStore(e, { concurrency: 2, maxRetries: 3 });
     await store.getState().refresh();
     expect(store.getState().ready).toBe(true);
+    expect(store.getState().jobs.map((j) => j.status)).toContain("interrupted");
+    expect(e.started).toHaveLength(0);
+    await store.getState().resume("old");
     expect(e.started).toHaveLength(1);
-    expect(store.getState().jobs.map((j) => j.status)).toContain("downloading");
   });
 });

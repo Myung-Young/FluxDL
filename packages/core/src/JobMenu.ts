@@ -1,4 +1,5 @@
 import type { DownloadJob } from "./types.js";
+import type { PostStep } from "./postprocess.js";
 import type { Strings } from "./strings.js";
 import {
   MENU_AUDIO_PRESETS,
@@ -19,6 +20,22 @@ export interface JobMenuHandlers {
   readonly moveDown?: () => void;
   readonly remove: () => void;
   readonly deleteFile: () => void;
+  /** Manual pipeline run with explicit steps (Phase 4). */
+  readonly postRun?: (steps: readonly PostStep[]) => void;
+  /** Re-run the failed pipeline (Phase 4, postfailed only). */
+  readonly postReprocess?: () => void;
+  /** Show the ffprobe details (Phase 4; Library modal, Downloads omits). */
+  readonly showMediaInfo?: () => void;
+}
+
+/**
+ * Steps offered for a manual run: one per content class present on the job.
+ * Gallery jobs convert, audio jobs tag, video jobs compress.
+ */
+export function postStepsForJob(job: DownloadJob): PostStep[] {
+  if (job.preset.kind === "audio") return ["tag-audio"];
+  if (job.engineId === "gallery-dl") return ["convert-image"];
+  return ["compress-video"];
 }
 
 /** Build themed-menu defs for one job (Downloads cards + Library rows). */
@@ -132,6 +149,73 @@ export function buildJobMenu(
           },
         });
         break;
+      case "post-run": {
+        const run = h.postRun;
+        if (run === undefined) break;
+        const steps = postStepsForJob(job);
+        const label =
+          steps[0] === "tag-audio"
+            ? strings.downloads.postMenuTag
+            : steps[0] === "convert-image"
+              ? strings.downloads.postMenuConvert
+              : strings.downloads.postMenuCompress;
+        defs.push({
+          id,
+          label,
+          run: () => {
+            run(steps);
+          },
+        });
+        break;
+      }
+      case "post-reprocess": {
+        const reprocess = h.postReprocess;
+        if (reprocess === undefined) break;
+        defs.push({
+          id,
+          label: strings.downloads.postMenuReprocess,
+          run: () => {
+            reprocess();
+          },
+        });
+        break;
+      }
+      case "post-transcribe": {
+        const run = h.postRun;
+        if (run === undefined || job.preset.kind !== "audio") break;
+        defs.push({
+          id,
+          label: strings.downloads.postMenuTranscribe,
+          run: () => {
+            run(["transcribe-audio"]);
+          },
+        });
+        break;
+      }
+      case "post-upload": {
+        const run = h.postRun;
+        if (run === undefined) break;
+        defs.push({
+          id,
+          label: strings.downloads.postMenuUpload,
+          run: () => {
+            run(["upload-remote"]);
+          },
+        });
+        break;
+      }
+      case "media-info": {
+        const show = h.showMediaInfo;
+        if (show === undefined) break;
+        defs.push({
+          id,
+          label: strings.downloads.postMenuMediaInfo,
+          run: () => {
+            show();
+          },
+        });
+        break;
+      }
     }
   }
   return defs;

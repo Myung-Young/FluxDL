@@ -1197,6 +1197,23 @@ input[type="radio"]:disabled {
   gap: var(--space-3);
 }
 
+/* Library grid view (Phase 3): fixed 3-up cards, same grabber-card style. */
+.dl-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.dl-grid .grabber-card {
+  min-width: 0;
+}
+
+@media (max-width: 1100px) {
+  .dl-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* Downloads command bar: search + status filters + quick throttle + ETA. */
 .dl-toolbar {
   display: flex;
@@ -1218,6 +1235,24 @@ input[type="radio"]:disabled {
   margin-top: var(--space-2);
   color: var(--fg-2);
   max-width: 100%;
+}
+
+/* Media details in the preview modal (Phase 4): compact definition list. */
+.media-details {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-2) 0 0;
+  font-size: 0.9em;
+}
+
+.media-details dt {
+  color: var(--fg-2);
+}
+
+.media-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 /* In-app changelog entries: summary header + expanding full notes. */
@@ -1756,4 +1791,52 @@ video.preview-media {
     background: Canvas;
     border: 1px dashed GrayText;
   }
+}
+
+/* Gallery preview grid (Phase 1 v1.8.5): lazy thumbs + select checkboxes. */
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.gallery-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  background: var(--bg-2);
+  cursor: pointer;
+}
+
+.gallery-cell[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+
+.gallery-check {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.gallery-thumb {
+  width: 100%;
+  height: 96px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+}
+
+.gallery-caption {
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

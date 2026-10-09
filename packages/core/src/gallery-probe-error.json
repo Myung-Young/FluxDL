@@ -1,0 +1,9 @@
+[
+  [
+    -1,
+    {
+      "error": "HttpError",
+      "message": " ConnectTimeoutError: Connection to danbooru.donmai.us timed out. (connect timeout=30)"
+    }
+  ]
+]

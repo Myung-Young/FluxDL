@@ -180,6 +180,10 @@ function heightCapOf(videoPreset: VideoPreset): number {
       return 720;
     case "480":
       return 480;
+    case "Smallest":
+      // Unreachable: Smallest short-circuits in estimatePresetSize below.
+      // Zero keeps the switch total without implying a height.
+      return 0;
   }
 }
 
@@ -229,6 +233,22 @@ function pickBest(candidates: readonly FormatOption[]): FormatOption | null {
   return best;
 }
 
+/** Fewest bytes (filesize, else tbr x duration) or null when unknowable. */
+function pickSmallest(
+  candidates: readonly FormatOption[],
+  durationSec: number | null,
+): { bytes: number; approximate: boolean } | null {
+  let smallest: { bytes: number; approximate: boolean } | null = null;
+  for (const c of candidates) {
+    const sized = formatBytes(c, durationSec);
+    if (sized === null) continue;
+    if (smallest === null || sized.bytes < smallest.bytes) {
+      smallest = { bytes: sized.bytes, approximate: sized.usedFallback };
+    }
+  }
+  return smallest;
+}
+
 /**
  * Pure per-preset size estimate from analyzed formats.
  * Video: best video stream within the height cap (+ best audio stream when
@@ -248,6 +268,29 @@ export function estimatePresetSize(
     const sized = formatBytes(best, info.duration);
     if (sized === null) return null;
     return { bytes: sized.bytes, approximate: sized.usedFallback };
+  }
+  if (preset.videoPreset === "Smallest") {
+    // Smallest = worst streams: least bytes across video (+ smallest audio
+    // when the video carries none). Pure estimate of `-f worst*`.
+    let smallestVideo: { bytes: number; approximate: boolean } | null = null;
+    for (const f of info.formats) {
+      if (f.kind !== "video" && f.kind !== "video+audio") continue;
+      const sized = formatBytes(f, info.duration);
+      if (sized === null) continue;
+      if (smallestVideo === null || sized.bytes < smallestVideo.bytes) {
+        smallestVideo = { bytes: sized.bytes, approximate: sized.usedFallback };
+      }
+    }
+    if (smallestVideo === null) return null;
+    const smallestAudio = pickSmallest(
+      info.formats.filter((f) => f.kind === "audio"),
+      info.duration,
+    );
+    if (smallestAudio === null) return { bytes: smallestVideo.bytes, approximate: true };
+    return {
+      bytes: smallestVideo.bytes + smallestAudio.bytes,
+      approximate: smallestVideo.approximate || smallestAudio.approximate,
+    };
   }
   const cap = heightCapOf(preset.videoPreset);
   const prefix = vcodecPrefixOf(codecPref, preset.videoPreset);

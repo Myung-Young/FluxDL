@@ -22,6 +22,8 @@ export interface DiagnosticsData {
   readonly logTail: string | null;
   readonly logJobTitle: string | null;
   readonly includeUrls: boolean;
+  /** Opt-in local crash reports (capped upstream, messages already trimmed). */
+  readonly crashes?: readonly { readonly t: number; readonly view: string; readonly message: string }[];
 }
 
 export const LOG_TAIL_CHARS = 4000;
@@ -124,6 +126,14 @@ export function buildDiagnostics(data: DiagnosticsData): string {
     lines.push(L.reportNoLog);
   } else {
     lines.push(redactText(data.logTail.slice(-LOG_TAIL_CHARS), data.includeUrls));
+  }
+  const crashes = data.crashes ?? [];
+  if (crashes.length > 0) {
+    lines.push("", L.reportCrashes);
+    for (const c of crashes.slice(0, 5)) {
+      const stamp = Number.isFinite(c.t) ? new Date(c.t).toISOString() : "?";
+      lines.push(`[${stamp}] (${c.view.slice(0, 64)}) ${redactText(c.message.slice(0, 500), data.includeUrls)}`);
+    }
   }
   return lines.join("\n");
 }

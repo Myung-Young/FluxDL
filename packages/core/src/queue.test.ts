@@ -1,22 +1,28 @@
 import { describe, expect, it } from "vitest";
 import {
   activeCount,
+  activeGalleryCount,
   applyEngineProgress,
   canTransition,
   clampConcurrency,
   computeBackoffMs,
+  filterHistory,
   isFinished,
+  isInDownloadWindow,
   jobsEqual,
   makeJob,
+  priorityOf,
   pruneHistory,
   reorder,
   retryInSeconds,
   searchHistory,
   selectNextToStart,
   shouldRetry,
+  sortHistory,
   toStartInput,
   transition,
 } from "./queue.js";
+import type { DownloadWindow } from "./queue.js";
 import type { DownloadJob, DownloadJobInput } from "./types.js";
 
 const input: DownloadJobInput = {
@@ -204,6 +210,52 @@ describe("queue state machine", () => {
     expect(j.totalBytes).toBe(1000);
   });
 
+  it("folds gallery file counters without touching yt-dlp snapshots (v1.8.5)", () => {
+    // Gallery progress carries per-file counts (downloadedBytes is a count,
+    // not bytes, on that path). Cards render "N files" from these fields.
+    let g = transition(jobAt("queued"), "start");
+    g = applyEngineProgress(g, {
+      percent: null,
+      speed: null,
+      eta: null,
+      downloadedBytes: 7,
+      totalBytes: null,
+      stage: "downloading",
+      destination: "C:\\Pics",
+      downloadedCount: 7,
+      skippedCount: 2,
+      failedCount: 1,
+    });
+    expect(g.downloadedCount).toBe(7);
+    expect(g.skippedCount).toBe(2);
+    expect(g.failedCount).toBe(1);
+    // A counter-less fold keeps known counters (monotonic, like bytes).
+    g = applyEngineProgress(g, {
+      percent: null,
+      speed: null,
+      eta: null,
+      downloadedBytes: 7,
+      totalBytes: null,
+      stage: "downloading",
+      destination: "C:\\Pics",
+    });
+    expect(g.downloadedCount).toBe(7);
+    // yt-dlp jobs never gain the keys: snapshots stay byte-identical.
+    let v = transition(jobAt("queued"), "start");
+    v = applyEngineProgress(v, {
+      percent: 50,
+      speed: "1M/s",
+      eta: "00:01",
+      downloadedBytes: 50,
+      totalBytes: 100,
+      stage: "downloading",
+      destination: null,
+    });
+    expect("downloadedCount" in v).toBe(false);
+    expect("skippedCount" in v).toBe(false);
+    expect("failedCount" in v).toBe(false);
+  });
+
   it("resumes accept progress and done events after pause (D53)", () => {
     const paused = transition(jobAt("downloading"), "pause");
     expect(paused.status).toBe("paused");
@@ -255,12 +307,160 @@ describe("queue state machine", () => {
     expect(computeBackoffMs(99)).toBe(30_000);
   });
 
+  it("moves a failed pipeline to postfailed without burning attempts (Phase 4)", () => {
+    const active = { ...jobAt("processing"), attempts: 2, destination: "C:\\Vids\\a.mp4" };
+    const failed = applyEngineProgress(active, {
+      percent: null,
+      speed: null,
+      eta: null,
+      downloadedBytes: null,
+      totalBytes: null,
+      stage: "postfailed",
+      destination: null,
+      errorMessage: "tag: no match",
+    });
+    expect(failed.status).toBe("postfailed");
+    expect(failed.attempts).toBe(2);
+    expect(failed.error).toBe("tag: no match");
+    expect(failed.destination).toBe("C:\\Vids\\a.mp4");
+    expect(isFinished(failed)).toBe(true);
+    // Re-download works; a fresh done must not accept a postfail.
+    expect(transition(failed, "retry").status).toBe("queued");
+    const done = { ...jobAt("done"), error: null };
+    expect(applyEngineProgress(done, {
+      percent: null,
+      speed: null,
+      eta: null,
+      downloadedBytes: null,
+      totalBytes: null,
+      stage: "postfailed",
+      destination: null,
+    }).status).toBe("postfailed");
+    expect(canTransition("queued", "postfail")).toBe(false);
+  });
+
+  it("orders by priority tier first, then FIFO (Phase 3)", () => {
+    const lo = { ...jobAt("queued", 1, "lo"), priority: 0 as const };
+    const hi = { ...jobAt("queued", 3, "hi"), priority: 2 as const };
+    const mid = jobAt("queued", 2, "mid");
+    expect(priorityOf(mid)).toBe(1);
+    expect(priorityOf({})).toBe(1);
+    expect(priorityOf({ priority: 9 as never })).toBe(1);
+    // High jumps the queue even when created last.
+    expect(selectNextToStart([lo, mid, hi], 5, 0)?.id).toBe("hi");
+    expect(selectNextToStart([lo, mid], 5, 0)?.id).toBe("mid");
+    // makeJob defaults to normal and carries an explicit tier.
+    expect(makeJob("x", input, 1).priority).toBe(1);
+    expect(toStartInput({ ...input, priority: 2 }).priority).toBe(2);
+  });
+
+  it("caps gallery-dl jobs separately from the global cap (Phase 3)", () => {    const gal = (id: string, createdAt: number, status: DownloadJob["status"] = "queued") => ({
+      ...jobAt(status, createdAt, id),
+      engineId: "gallery-dl" as const,
+    });
+    const running = gal("g0", 0, "downloading");
+    const g1 = gal("g1", 1);
+    const v1 = jobAt("queued", 2, "v1");
+    expect(activeGalleryCount([running, g1, v1])).toBe(1);
+    // Gallery slot full (cap 1): the video job still starts.
+    expect(selectNextToStart([g1, v1, running], 5, 0, 1)?.id).toBe("v1");
+    // Gallery slot free: gallery job starts.
+    expect(selectNextToStart([g1, v1], 5, 0, 1)?.id).toBe("g1");
+    // Default cap 2 keeps old callers working.
+    expect(selectNextToStart([g1, v1], 5, 0)?.id).toBe("g1");
+  });
+
+  it("holds starts outside the download window (Phase 3)", () => {
+    // Noon and midnight UTC; local-time assertions would be flaky, so the
+    // window checks use full-day vs empty vs overnight ranges instead.
+    expect(isInDownloadWindow(0, null)).toBe(true);
+    expect(isInDownloadWindow(0, { start: null, end: null })).toBe(true);
+    expect(isInDownloadWindow(0, { start: "abc", end: null })).toBe(true);
+    expect(isInDownloadWindow(0, { start: "09:00", end: "09:00" })).toBe(true);
+    // A window covering the whole day is open at any instant.
+    expect(isInDownloadWindow(Date.now(), { start: "00:00", end: "23:59" })).toBe(true);
+    // Closed window starts nothing but leaves queued jobs queued.
+    const a = jobAt("queued", 1, "a");
+    const closed: DownloadWindow = { start: "00:00", end: "00:01" };
+    const atNoon = new Date(2026, 5, 15, 12, 0).getTime();
+    expect(isInDownloadWindow(atNoon, closed)).toBe(false);
+    expect(selectNextToStart([a], 5, atNoon, 2, closed)).toBeNull();
+    expect(selectNextToStart([a], 5, atNoon, 2, null)?.id).toBe("a");
+    // Overnight wrap: 22:00 -> 06:00 is open at 23:00 and 05:00.
+    const night: DownloadWindow = { start: "22:00", end: "06:00" };
+    expect(isInDownloadWindow(new Date(2026, 5, 15, 23, 0).getTime(), night)).toBe(true);
+    expect(isInDownloadWindow(new Date(2026, 5, 15, 5, 0).getTime(), night)).toBe(true);
+    expect(isInDownloadWindow(new Date(2026, 5, 15, 12, 0).getTime(), night)).toBe(false);
+  });
+
   it("searches and prunes history", () => {
     const h = [jobAt("done", 3, "c"), jobAt("error", 1, "a"), jobAt("cancelled", 2, "b")];
     expect(searchHistory(h, "buck")).toHaveLength(3);
     expect(searchHistory(h, "youtu.be")).toHaveLength(3);
     expect(searchHistory(h, "nope")).toHaveLength(0);
     expect(pruneHistory(h, 2).map((j) => j.id)).toEqual(["c", "b"]);
+  });
+
+  it("filters history by kind, engine and site (Phase 3)", () => {
+    const video: DownloadJob = { ...jobAt("done", 1, "v"), extractor: "youtube" };
+    const audio: DownloadJob = {
+      ...jobAt("done", 2, "a"),
+      preset: { kind: "audio", videoPreset: "1080", audioPreset: "MP3", rawFormat: null },
+      extractor: "soundcloud",
+    };
+    const gallery: DownloadJob = {
+      ...jobAt("done", 3, "g"),
+      engineId: "gallery-dl",
+      extractor: "flickr",
+    };
+    const all = [video, audio, gallery];
+    const base = { kind: "all", engine: "all", site: "" } as const;
+    expect(filterHistory(all, base)).toHaveLength(3);
+    expect(filterHistory(all, { ...base, kind: "audio" }).map((j) => j.id)).toEqual(["a"]);
+    expect(filterHistory(all, { ...base, engine: "gallery-dl" }).map((j) => j.id)).toEqual([
+      "g",
+    ]);
+    expect(filterHistory(all, { ...base, site: "tube" }).map((j) => j.id)).toEqual(["v"]);
+    expect(filterHistory(all, { ...base, site: "  " })).toHaveLength(3);
+    // Old rows without an engine read as yt-dlp.
+    expect(
+      filterHistory(all, { ...base, engine: "yt-dlp" }).map((j) => j.id).sort(),
+    ).toEqual(["a", "v"]);
+  });
+
+  it("sorts history newest/oldest/title/size (Phase 3)", () => {    const a: DownloadJob = { ...jobAt("done", 1, "a"), title: "Banana", totalBytes: 100 };
+    const b: DownloadJob = {
+      ...jobAt("done", 2, "b"),
+      title: "apple",
+      totalBytes: null,
+      downloadedBytes: 50,
+    };
+    const c: DownloadJob = { ...jobAt("done", 3, "c"), title: "Cherry", totalBytes: 300 };
+    const all = [a, b, c];
+    expect(sortHistory(all, "newest").map((j) => j.id)).toEqual(["c", "b", "a"]);
+    expect(sortHistory(all, "oldest").map((j) => j.id)).toEqual(["a", "b", "c"]);
+    expect(sortHistory(all, "title").map((j) => j.id)).toEqual(["b", "a", "c"]);
+    // Unknown sizes sink to the bottom.
+    const d: DownloadJob = { ...jobAt("done", 4, "d"), title: "Date", totalBytes: null };
+    expect(sortHistory([d, a, c], "size").map((j) => j.id)).toEqual(["c", "a", "d"]);
+  });
+
+  it("filters + sorts 1500 history rows well inside a frame budget (Phase 3 DoD)", () => {
+    const big: DownloadJob[] = [];
+    for (let i = 0; i < 1500; i += 1) {
+      big.push({
+        ...jobAt("done", i, `h${String(i)}`),
+        title: `Video ${String(i)} rust compilation`,
+        extractor: i % 3 === 0 ? "youtube" : "vimeo",
+      });
+    }
+    const started = Date.now();
+    const out = sortHistory(
+      filterHistory(searchHistory(big, "rust"), { kind: "all", engine: "all", site: "tube" }),
+      "size",
+    );
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(out.length).toBeGreaterThan(0);
   });
 
   it("reorders queued jobs by permuting createdAt (FIFO honors it)", () => {
@@ -344,6 +544,9 @@ describe("toStartInput", () => {
     liveFromStart: true,
     waitForVideo: true,
     splitChapters: true,
+    engineId: "gallery-dl",
+    priority: 2,
+    range: "2-4,7",
   };
 
   it("carries every optional flag back out of a queued job (R1)", () => {
@@ -353,13 +556,22 @@ describe("toStartInput", () => {
 
   it("keeps makeJob and toStartInput on one allow-list (R1)", () => {
     // Anything makeJob accepts must survive the projection, and vice versa.
+    // Minimal inputs default to the yt-dlp engine (Phase 1 back-compat).
     expect(toStartInput(makeJob("j1", full, 1))).toEqual(full);
-    expect(toStartInput(makeJob("j2", input, 1))).toEqual(input);
+    expect(toStartInput(makeJob("j2", input, 1))).toEqual({
+      ...input,
+      engineId: "yt-dlp",
+      priority: 1,
+    });
   });
 
   it("drops unknown keys from the untrusted renderer payload (R1)", () => {
     const smuggled = { ...input, evil: "rm -rf" } as unknown as DownloadJobInput;
-    expect(toStartInput(makeJob("j3", smuggled, 1))).toEqual(input);
+    expect(toStartInput(makeJob("j3", smuggled, 1))).toEqual({
+      ...input,
+      engineId: "yt-dlp",
+      priority: 1,
+    });
   });
 
   it("omits flags that were never set (older snapshots stay clean)", () => {
@@ -386,7 +598,14 @@ describe("toStartInput", () => {
       },
       1,
     );
-    expect(toStartInput(job)).toEqual(input);
+    expect(toStartInput(job)).toEqual({ ...input, engineId: "yt-dlp", priority: 1 });
+  });
+
+  it("carries a valid gallery --range and drops flag smuggling (v1.8.5)", () => {
+    expect(toStartInput(makeJob("jr", { ...input, range: "2-4,7" }, 1)).range).toBe("2-4,7");
+    expect(toStartInput(makeJob("jx", { ...input, range: "--config x" }, 1))).not.toHaveProperty(
+      "range",
+    );
   });
 });
 

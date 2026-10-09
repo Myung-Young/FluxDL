@@ -149,6 +149,44 @@ describe("estimatePresetSize", () => {
     });
     expect(estimatePresetSize(noDuration, videoPreset("Best"), "auto")).toBeNull();
   });
+
+  it("estimates Smallest from the smallest streams", () => {
+    const info = parseMediaInfo("https://youtu.be/x", {
+      duration: 100,
+      formats: [
+        {
+          format_id: "big",
+          ext: "mp4",
+          vcodec: "avc1",
+          acodec: "none",
+          width: 1920,
+          height: 1080,
+          filesize: 500_000_000,
+        },
+        {
+          format_id: "small",
+          ext: "mp4",
+          vcodec: "avc1",
+          acodec: "none",
+          width: 256,
+          height: 144,
+          filesize: 8_000_000,
+        },
+        {
+          format_id: "a",
+          ext: "m4a",
+          vcodec: "none",
+          acodec: "mp4a",
+          tbr: 128,
+        },
+      ],
+    });
+    // 8 MB video + 128 kbps x 100 s audio.
+    expect(estimatePresetSize(info, videoPreset("Smallest"), "auto")).toEqual({
+      bytes: 9_600_000,
+      approximate: true,
+    });
+  });
 });
 
 describe("formatSize", () => {

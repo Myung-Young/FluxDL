@@ -1,10 +1,10 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, statfsSync, statSync } from "node:fs";
-import { open, readFile, readdir, rm, stat, unlink } from "node:fs/promises";
+import { existsSync, mkdirSync, renameSync, statfsSync, statSync, writeFileSync } from "node:fs";
+import { open, access, copyFile, readFile, readdir, rm, stat, unlink } from "node:fs/promises";
 import { platform as osPlatform, release as osRelease } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { clipboard, dialog, shell, app } from "electron";
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { clipboard, dialog, safeStorage, shell, app, Notification } from "electron";
 import { APP_NAME } from "@grabber/core/branding.js";
 import type {
   AppSettings,
@@ -19,10 +19,24 @@ import type {
   DownloadEngine,
   EngineProgress,
   EngineVersions,
+  GalleryProbe,
   GetInfoInit,
+  NotifierRequest,
+  NotifierResult,
+  PostProcessRequest,
+  PostProcessResult,
+  PostReport,
+  PostStepResult,
+  PackRequest,
+  PacksResult,
   ProgressCallback,
+  RecoveryNotice,
+  RemoteApiRequest,
+  RemoteApiResult,
+  RemoteApiStatus,
   RepairReport,
   StorageInsights,
+  TagCandidate,
   ThumbnailColor,
   Unsubscribe,
   UpdateDownloadProgress,
@@ -46,11 +60,14 @@ import { STRINGS, STRINGS_MS } from "@grabber/core/strings.js";
 import {
   buildFfmpegVersionArgs,
   buildInfoArgs,
-  buildUpdateArgs,
+  buildUpdateToArgs,
   buildVersionArgs,
 } from "@grabber/core/args.js";
+import { buildDoctorReport, isCheckDue, versionCheck } from "@grabber/core/doctor.js";
+import type { DoctorCheck, DoctorReport } from "@grabber/core/doctor.js";
+import { MIN_TOOL_VERSIONS } from "@grabber/core/tools.js";
 import { toStartInput } from "@grabber/core/queue.js";
-import { cancelledMapped, mapDownloadError, timeoutMapped } from "@grabber/core/errors.js";
+import { cancelledMapped, engineBrokenMapped, mapDownloadError, timeoutMapped } from "@grabber/core/errors.js";
 import { hasMojibake, isExecutablePath, mediaGroup, pickFallbackFile } from "@grabber/core/destination.js";
 import { redactArgs } from "@grabber/core/args.js";
 import { normalizeUrl } from "@grabber/core/url.js";
@@ -58,6 +75,7 @@ import { parseMediaInfo } from "@grabber/core/media.js";
 import { parseProgressLine } from "@grabber/core/progress.js";
 import {
   ensureUserDataBinary,
+  readPinnedVersions,
   repairBinaries,
   resolveFfmpegDir,
   resolveFfmpegPath,
@@ -66,6 +84,7 @@ import {
 import {
   appendHistoryToDisk,
   clearHistoryOnDisk,
+  consumeRecoveryNotices as consumeDiskRecoveryNotices,
   isDownloadJob,
   loadHistoryFromDisk,
   loadQueueFromDisk,
@@ -79,9 +98,77 @@ import {
   updateHistoryOnDisk,
 } from "./persist.js";
 import { thumbnailColor } from "./thumbnail.js";
+import {
+  POST_STEPS,
+  TAG_AUTO_SCORE,
+  classifyPostFile as classifyFile,
+  hintFromFilename,
+  stepsFor,
+} from "@grabber/core/postprocess.js";
+import type { PostStep } from "@grabber/core/postprocess.js";
+import {
+  PostAbortedError,
+  listPostFiles,
+  mediaInfoFor,
+  runPostSteps,
+  runTagAudio,
+  type PostRunnerDeps,
+  type StepOutcome,
+} from "./postprocess.js";
+import {
+  cancelPackOp,
+  checkPackUpdate,
+  installPack,
+  installWhisperModel,
+  installedPackVersion,
+  isUpdateAvailable,
+  packProgress as packProgressState,
+  packStatus,
+  removeWhisperModel,
+  resolvePackExe,
+  uninstallPack,
+  whisperModelPath,
+} from "./packManager.js";
+import { packManifest } from "@grabber/core/packs.js";
+import {
+  LocalApiServer,
+  readQueueSnapshot,
+  type QueueProgress,
+  type TokenStore,
+} from "./localApi.js";
+import {
+  cleanDiscordWebhook,
+  cleanTelegramToken,
+  postDiscordWebhook,
+  postTelegramMessage,
+  readNotifierSecrets,
+  writeNotifierSecrets,
+} from "./secrets.js";
 import { outputBytes } from "./outputSize.js";
 import { contentRange, parseByteRange } from "./mediaRange.js";
-import { buildStartArgs } from "./jobArgs.js";
+import { buildGalleryDlArgs, buildNm3u8dlArgs, buildStartArgs, buildStreamlinkArgs } from "./jobArgs.js";
+import {
+  GALLERYDL_EXE,
+  detectTool,
+  reinstallBundledTool,
+  resolveToolPath,
+  rollbackTool,
+} from "./binaryManager.js";
+import { resolveGalleryConfigText } from "@grabber/core/galleryConfig.js";
+import {
+  applyGalleryFileEvent,
+  emptyGalleryProgress,
+  parseGalleryDlLine,
+  splitGalleryChunk,
+} from "@grabber/core/galleryProgress.js";
+import {
+  GALLERY_PROBE_MAX_CHARS,
+  GALLERY_PROBE_MAX_ITEMS,
+  buildProbeArgs,
+  galleryStderrErrors,
+  isUnsupportedUrlMessage,
+  parseGalleryProbeJson,
+} from "@grabber/core/galleryProbe.js";
 
 /**
  * One `media://` answer. `start`/`end` are inclusive byte offsets into the
@@ -124,6 +211,13 @@ export interface DesktopEngineDeps {
   readonly broadcastBatchLink: (text: string) => void;
   readonly onAggregate: (state: AggregateProgressState) => void;
   /**
+   * True when the app window is focused (Phase 3). The engine shows
+   * completion notifications with actions only when unfocused; the
+   * renderer covers the focused case. Optional so headless tests omit it
+   * (default reads as focused = silent).
+   */
+  readonly isWindowFocused?: () => boolean;
+  /**
    * Window chrome (M4.4/M4.6). Optional so headless tests can omit it;
    * the desktop app always injects the main-process controller.
    */
@@ -135,6 +229,15 @@ export interface DesktopEngineDeps {
 
 type JobState = "running" | "pausing" | "cancelling" | "paused";
 
+/** One in-flight metadata call (yt-dlp getInfo analyses + gallery probes). */
+interface AnalyzeEntry {
+  proc: ChildProcess | null;
+  timer: NodeJS.Timeout | null;
+  settled: boolean;
+  cancelled: boolean;
+  timedOut: boolean;
+}
+
 interface ActiveJob {
   proc: ChildProcess | null;
   input: DownloadJobInput;
@@ -143,6 +246,12 @@ interface ActiveJob {
   lastPercent: number | null;
   rawLog: string;
   state: JobState;
+  /** Last stdout/stderr activity (ms epoch) for the stall watchdog. */
+  lastActivityAt: number;
+  /** True once a stall was emitted for the current quiet spell. */
+  stalledFired: boolean;
+  /** Live ffmpeg post-process child (pause/cancel/quit kills it). */
+  postProc: ChildProcess | null;
 }
 
 const DESTINATION_RE = /\[download\] Destination: (.+)/;
@@ -307,6 +416,13 @@ const MEDIA_EXTENSIONS = [
 ] as const;
 
 /**
+ * yt-dlp archive-skip marker (`--download-archive` hit). Exit code is 0 but
+ * no file is written, so the output-integrity check must not fire: the skip
+ * is the success. Mirrors the test's `/already been (downloaded|recorded)/`.
+ */
+export const ARCHIVE_SKIP_RE = /already been (downloaded|recorded)/;
+
+/**
  * True for `github.com` / `githubusercontent.com` and their real subdomains.
  * A plain `endsWith` also accepted `evil-github.com`, which is exactly the
  * class of host this allowlist exists to reject (v1.7.2).
@@ -391,6 +507,40 @@ async function fetchLatestTag(apiUrl: string): Promise<string | null> {
   return payload === null ? null : payload.tag;
 }
 
+/** 24 h update-check throttle (Phase 2: at most one check per day). */
+export const UPDATE_CHECK_INTERVAL_MS = 86_400_000;
+
+/**
+ * Best-effort newest non-draft yt-dlp tag for the nightly channel (null on
+ * any failure). Stable keeps using /latest; nightly scans the recent list
+ * (prereleases included).
+ */
+export async function fetchNightlyTag(listUrl: string): Promise<string | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => {
+    ctrl.abort();
+  }, 8000);
+  try {
+    const res = await fetch(listUrl, { signal: ctrl.signal });
+    if (!res.ok) return null;
+    const raw: unknown = await res.json();
+    if (!Array.isArray(raw)) return null;
+    for (const entry of raw.slice(0, 10)) {
+      if (typeof entry !== "object" || entry === null) continue;
+      const rec = entry as Record<string, unknown>;
+      if (rec["draft"] === true) continue;
+      if (typeof rec["tag_name"] === "string" && rec["tag_name"].length > 0) {
+        return rec["tag_name"];
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Best-effort GitHub latest-release payload (null on any failure:
  * offline, rate-limited, malformed). Update checks must never throw
@@ -418,26 +568,47 @@ async function fetchReleasePayload(apiUrl: string): Promise<ParsedRelease | null
 function runBinary(
   binary: string,
   args: readonly string[],
+  timeoutMs = 30_000,
 ): Promise<{ stdout: string; stderr: string; code: number | null }> {
   return new Promise((resolve, reject) => {
     // NEVER shell:true — always an args array.
-    const proc = spawn(binary, [...args], {
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-      shell: false,
-    });
+    let proc: ChildProcess;
+    try {
+      proc = spawn(binary, [...args], {
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+        shell: false,
+      });
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error(String(err)));
+      return;
+    }
     let stdout = "";
     let stderr = "";
-    proc.stdout.on("data", (chunk: Buffer) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      killProcessTree(proc);
+      reject(new Error(`Timed out running ${binary}.`));
+    }, timeoutMs);
+    if (typeof timer.unref === "function") timer.unref();
+    proc.stdout?.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
     });
-    proc.stderr.on("data", (chunk: Buffer) => {
+    proc.stderr?.on("data", (chunk: Buffer) => {
       stderr += chunk.toString("utf8");
     });
     proc.on("error", (err: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       reject(err);
     });
     proc.on("close", (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       resolve({ stdout, stderr, code });
     });
   });
@@ -468,10 +639,321 @@ export class DesktopEngine implements DownloadEngine {
 
   constructor(deps: DesktopEngineDeps) {
     this.deps = deps;
+    // Loopback Remote API (Phase 6A): the engine owns the server; the token
+    // store is safeStorage-backed (DPAPI on Windows) and injected so tests
+    // can substitute a fake. Nothing starts listening until settings say so.
+    const userDataDir = deps.userDataDir;
+    const tokenStore: TokenStore = this.secretStore();
+    this.apiServer = new LocalApiServer({
+      userDataDir,
+      appVersion: deps.appVersion,
+      tokenStore,
+      readSettings: () => {
+        const s = loadSettingsFromDisk(userDataDir);
+        return {
+          apiEnabled: s.apiEnabled,
+          apiPort: s.apiPort,
+          lan: {
+            enabled: s.lanEnabled,
+            allowlist: s.lanAllowlist
+              .split(",")
+              .map((p) => p.trim())
+              .filter((p) => p.length > 0)
+              .slice(0, 20),
+            autoDisableHours: s.lanAutoDisableHours,
+          },
+        };
+      },
+      readQueue: () => readQueueSnapshot(userDataDir),
+      readProgress: (): readonly QueueProgress[] =>
+        [...this.jobs.entries()].map(([id, job]) => ({
+          id,
+          progress: job.lastPercent,
+          // Live speed/eta are not retained per job; the queue snapshot
+          // already carries the last persisted ones (toApiJobView falls back).
+          speed: null,
+          eta: null,
+        })),
+      engineActiveCount: () => this.jobs.size,
+      controlActive: async (id, action) => {
+        if (!this.jobs.has(id)) return false;
+        try {
+          if (action === "pause") await this.pause(id);
+          else if (action === "resume") await this.resume(id);
+          else await this.cancel(id);
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      announceUrls: (urls) => {
+        if (urls.length === 1) {
+          const first = urls[0];
+          if (first !== undefined) this.emitDeepLink(first);
+        } else {
+          this.emitBatchLink(urls.join("\n"));
+        }
+      },
+    });
+  }
+
+  /**
+   * Loopback Remote API control (Phase 6A): status, token rotate/reveal,
+   * renderer drain of API-queued actions, redacted audit. The socket itself
+   * is reconciled with settings here (lazy: no index.ts boot wiring needed —
+   * the renderer's 1 s drain tick performs the first sync when enabled).
+   */
+  async remoteApi(request: RemoteApiRequest): Promise<RemoteApiResult> {
+    switch (request.op) {
+      case "status": {
+        const state = await this.apiServer.sync().catch(() => this.apiServer.state());
+        return { kind: "status", status: await this.apiStatus(state) };
+      }
+      case "rotate": {
+        try {
+          return { kind: "token", token: this.apiServer.rotateToken() };
+        } catch {
+          throw new Error("Token store unavailable.");
+        }
+      }
+      case "reveal": {
+        try {
+          return { kind: "token", token: this.apiServer.tokenForPairing() };
+        } catch {
+          throw new Error("Token store unavailable.");
+        }
+      }
+      case "drain": {
+        // First drain after boot/settings-save reconciles the socket (once).
+        if (this.apiSyncNeeded) {
+          this.apiSyncNeeded = false;
+          void this.apiServer.sync().catch(() => undefined);
+        }
+        return { kind: "actions", actions: this.apiServer.drainActions() };
+      }
+      case "audit": {
+        return { kind: "audit", entries: this.apiServer.auditEntries() };
+      }
+      default: {
+        throw new Error("Unknown remote API op.");
+      }
+    }
+  }
+
+  /**
+   * Notifier secrets + tests (Phase 6B). Secrets flow renderer → main
+   * only and rest safeStorage-encrypted; status reports configured-flags,
+   * never values. Throws safe messages (never a secret, never a path).
+   */
+  async notifiers(request: NotifierRequest): Promise<NotifierResult> {
+    const userDataDir = this.deps.userDataDir;
+    const store = this.secretStore();
+    switch (request.op) {
+      case "status": {
+        const secrets = readNotifierSecrets(userDataDir, store);
+        let chatId: string | null = null;
+        try {
+          chatId = loadSettingsFromDisk(userDataDir).telegramChatId;
+        } catch {
+          chatId = null;
+        }
+        return {
+          kind: "status",
+          discord: secrets.discordWebhook !== null,
+          telegram: secrets.telegramBotToken !== null && chatId !== null,
+        };
+      }
+      case "save": {
+        const current = readNotifierSecrets(userDataDir, store);
+        let discordWebhook = current.discordWebhook;
+        if (request.discordWebhook !== undefined) {
+          if (request.discordWebhook.trim().length === 0) discordWebhook = null;
+          else {
+            const cleaned = cleanDiscordWebhook(request.discordWebhook);
+            if (cleaned === null) throw new Error("Invalid Discord webhook URL.");
+            discordWebhook = cleaned;
+          }
+        }
+        let telegramBotToken = current.telegramBotToken;
+        if (request.telegramBotToken !== undefined) {
+          if (request.telegramBotToken.trim().length === 0) telegramBotToken = null;
+          else {
+            const cleaned = cleanTelegramToken(request.telegramBotToken);
+            if (cleaned === null) throw new Error("Invalid Telegram bot token.");
+            telegramBotToken = cleaned;
+          }
+        }
+        try {
+          writeNotifierSecrets(userDataDir, store, { discordWebhook, telegramBotToken });
+        } catch {
+          throw new Error("Token store unavailable.");
+        }
+        return { kind: "ok" };
+      }
+      case "test-discord": {
+        const secrets = readNotifierSecrets(userDataDir, store);
+        if (secrets.discordWebhook === null) throw new Error("No Discord webhook configured.");
+        const ok = await postDiscordWebhook(secrets.discordWebhook, "FluxDL test notification.");
+        if (!ok) throw new Error("Notification failed.");
+        return { kind: "ok" };
+      }
+      case "test-telegram": {
+        const secrets = readNotifierSecrets(userDataDir, store);
+        let chatId: string | null = null;
+        try {
+          chatId = loadSettingsFromDisk(userDataDir).telegramChatId;
+        } catch {
+          chatId = null;
+        }
+        if (secrets.telegramBotToken === null || chatId === null) {
+          throw new Error("Telegram bot token or chat ID missing.");
+        }
+        const ok = await postTelegramMessage(secrets.telegramBotToken, chatId, "FluxDL test notification.");
+        if (!ok) throw new Error("Notification failed.");
+        return { kind: "ok" };
+      }
+      default: {
+        throw new Error("Unknown notifiers op.");
+      }
+    }
+  }
+
+  /**
+   * Remote finish/fail ping (Phase 6B): Discord webhook + Telegram, guarded
+   * by their own toggles (independent of window focus and OS notifications).
+   * Fire-and-forget — failures must never fail a download.
+   */
+  private notifyRemote(title: string, ok: boolean): void {
+    void (async (): Promise<void> => {
+      let notifyDiscord = false;
+      let notifyTelegram = false;
+      let chatId: string | null = null;
+      try {
+        const s = loadSettingsFromDisk(this.deps.userDataDir);
+        notifyDiscord = s.notifyDiscord;
+        notifyTelegram = s.notifyTelegram;
+        chatId = s.telegramChatId;
+      } catch {
+        return;
+      }
+      if (!notifyDiscord && !notifyTelegram) return;
+      const secrets = readNotifierSecrets(this.deps.userDataDir, this.secretStore());
+      const text = `${APP_NAME}: ${ok ? "Finished" : "Failed"}: ${title}`;
+      const sends: Promise<boolean>[] = [];
+      if (notifyDiscord && secrets.discordWebhook !== null) {
+        sends.push(postDiscordWebhook(secrets.discordWebhook, text));
+      }
+      if (notifyTelegram && secrets.telegramBotToken !== null && chatId !== null) {
+        sends.push(postTelegramMessage(secrets.telegramBotToken, chatId, text));
+      }
+      await Promise.all(sends);
+    })().catch(() => undefined);
+  }
+
+  private async apiStatus(state: { readonly running: boolean; readonly port: number | null; readonly error: string | null }): Promise<RemoteApiStatus> {    let queueActive = 0;
+    let queueQueued = 0;
+    let queueErrors = 0;
+    for (const job of await readQueueSnapshot(this.deps.userDataDir)) {
+      if (job.status === "error" || job.status === "postfailed") queueErrors += 1;
+      else if (
+        job.status === "downloading" ||
+        job.status === "processing" ||
+        job.status === "analyzing" ||
+        job.status === "probing"
+      ) {
+        queueActive += 1;
+      } else queueQueued += 1;
+    }
+    return {
+      running: state.running,
+      port: state.port,
+      error: state.error,
+      queueActive,
+      queueQueued,
+      queueErrors,
+      engineActive: this.jobs.size,
+      lan: { enabled: this.apiServer.isLan(), addresses: this.apiServer.lanAddresses() },
+    };
+  }
+
+  private readonly apiServer: LocalApiServer;
+  /** Set by saveSettings; the next drain tick reconciles the socket. */
+  private apiSyncNeeded = true;
+
+  /**
+   * safeStorage-backed secret store (DPAPI on Windows), shared by the API
+   * token and notifier secrets. Fresh adapter per call — safeStorage is
+   * stateless; tests inject fakes at the LocalApiServer/secrets boundary.
+   */
+  private secretStore(): TokenStore {
+    return {
+      get available(): boolean {
+        try {
+          return safeStorage.isEncryptionAvailable();
+        } catch {
+          return false;
+        }
+      },
+      encrypt: (plain: string) => safeStorage.encryptString(plain),
+      decrypt: (data: Buffer) => safeStorage.decryptString(data),
+    };
   }
 
   private ytDlp(): string {
     return resolveYtDlpPath(this.deps.userDataDir, this.deps.bundledBinDir);
+  }
+
+  /**
+   * Optional-tool detection cache (deno/node/aria2c). Refreshed at most
+   * every 10 min; probes are short-timeout spawns that never throw, so a
+   * missing tool simply reads absent.
+   */
+  private runtimeCache: {
+    at: number;
+    js: { name: string; binary: string; version: string } | null;
+    aria2c: { binary: string; version: string } | null;
+  } | null = null;
+
+  private async detectRuntimes(): Promise<{
+    js: { name: string; binary: string; version: string } | null;
+    aria2c: { binary: string; version: string } | null;
+  }> {
+    const now = Date.now();
+    if (this.runtimeCache !== null && now - this.runtimeCache.at < 600_000) {
+      return { js: this.runtimeCache.js, aria2c: this.runtimeCache.aria2c };
+    }
+    const [deno, node, aria2c] = await Promise.all([
+      detectTool(this.deps.userDataDir, "deno.exe"),
+      detectTool(this.deps.userDataDir, "node.exe"),
+      detectTool(this.deps.userDataDir, "aria2c.exe"),
+    ]);
+    const js =
+      deno.binary !== null && deno.version !== null
+        ? { name: "deno", binary: deno.binary, version: deno.version }
+        : node.binary !== null && node.version !== null
+          ? { name: "node", binary: node.binary, version: node.version }
+          : null;
+    const out = {
+      js,
+      aria2c:
+        aria2c.binary !== null && aria2c.version !== null
+          ? { binary: aria2c.binary, version: aria2c.version }
+          : null,
+    };
+    this.runtimeCache = { at: now, ...out };
+    return out;
+  }
+
+  /** --js-runtimes value (name or name:path) or null when no runtime found. */
+  private jsRuntimeFlag(
+    detected: { name: string; binary: string } | null,
+  ): string | null {
+    if (detected === null) return null;
+    // Drop-in binaries outside PATH need an explicit path; PATH names do not.
+    if (detected.binary !== "deno.exe" && detected.binary !== "node.exe") {
+      return `${detected.name}:${detected.binary}`;
+    }
+    return detected.name;
   }
 
   /** Active error locale: explicit setting, else system locale. */
@@ -509,16 +991,13 @@ export class DesktopEngine implements DownloadEngine {
     }
   }
 
-  private readonly analyses = new Map<
-    string,
-    {
-      proc: ChildProcess | null;
-      timer: NodeJS.Timeout | null;
-      settled: boolean;
-      cancelled: boolean;
-      timedOut: boolean;
-    }
-  >();
+  private readonly analyses = new Map<string, AnalyzeEntry>();
+
+  /**
+   * Gallery `-j` probes in flight (v1.8.5). Same lifecycle as analyses and
+   * cancelled through the same `cancelAnalyze(requestId)` call.
+   */
+  private readonly probes = new Map<string, AnalyzeEntry>();
 
   /** Raw console access for the Logs screen (M4 wires it to IPC). */
   getRawLog(id: string): Promise<string | null> {
@@ -665,8 +1144,17 @@ export class DesktopEngine implements DownloadEngine {
     this.analyses.clear();
     for (const job of this.jobs.values()) {
       killProcessTree(job.proc);
+      if (job.postProc !== null) {
+        try {
+          job.postProc.kill();
+        } catch {
+          // Already gone.
+        }
+        job.postProc = null;
+      }
       job.proc = null;
     }
+    void this.apiServer.stop().catch(() => undefined);
     return Promise.resolve();
   }
 
@@ -744,20 +1232,27 @@ export class DesktopEngine implements DownloadEngine {
 
   /**
    * One best-effort round trip for app + yt-dlp freshness (GitHub Releases
-   * API, 8 s timeout each, hourly cache). Offline/malformed responses
+   * API, 8 s timeout each, 24 h cache). Offline/malformed responses
    * resolve update=false — they must never break launch. force=true
    * bypasses the cache (the Logs button; launch uses the cache).
    */
   async checkForUpdates(force = false): Promise<UpdateStatus> {
     const now = Date.now();
-    if (!force && this.lastUpdate !== null && now - this.lastUpdate.at < 3_600_000) {
+    if (
+      !force &&
+      this.lastUpdate !== null &&
+      !isCheckDue(this.lastUpdate.at, now, UPDATE_CHECK_INTERVAL_MS)
+    ) {
       return this.lastUpdate.status;
     }
+    const channel = loadSettingsFromDisk(this.deps.userDataDir).ytdlpChannel;
     const versions = await this.getEngineVersion().catch(() => null);
     const ytdlpCurrent = versions?.ytdlp ?? "unknown";
     const [appRelease, ytdlpLatest] = await Promise.all([
       fetchReleasePayload(APP_API_URL),
-      fetchLatestTag(YTDLP_API_URL),
+      channel === "nightly"
+        ? fetchNightlyTag("https://api.github.com/repos/yt-dlp/yt-dlp/releases?per_page=10")
+        : fetchLatestTag(YTDLP_API_URL),
     ]);
     const appLatest = appRelease?.tag ?? null;
     const appUpdate = isNewerVersion(this.deps.appVersion, appLatest);
@@ -788,6 +1283,11 @@ export class DesktopEngine implements DownloadEngine {
       checkedAt: now,
     };
     this.lastUpdate = { at: now, status };
+    try {
+      saveSettingsToDisk(this.deps.userDataDir, { lastToolCheckAt: now });
+    } catch {
+      // Best effort: the check result matters, not the timestamp.
+    }
     return status;
   }
 
@@ -1151,18 +1651,133 @@ export class DesktopEngine implements DownloadEngine {
   }
 
   cancelAnalyze(requestId: string): Promise<void> {
-    const entry = this.analyses.get(requestId);
+    const entry = this.analyses.get(requestId) ?? this.probes.get(requestId);
     if (entry === undefined || entry.settled) return Promise.resolve();
     entry.cancelled = true;
     killProcessTree(entry.proc);
     return Promise.resolve();
   }
 
-  start(job: DownloadJobInput): Promise<string> {
+  /**
+   * Gallery metadata probe (v1.8.5): gallery-dl `-j` lists up to 50 items
+   * without downloading anything (verified: `-j` alone writes no files).
+   * Unsupported URLs resolve `{supported:false}` (exit 64 + stderr marker) —
+   * the router falls back to yt-dlp. Timeout/cancel/spawn problems reject
+   * like getInfo; cancel via cancelAnalyze(requestId).
+   */
+  async probeGallery(url: string, init?: GetInfoInit): Promise<GalleryProbe> {
+    const normalized = normalizeUrl(url);
+    const binary = this.galleryBinary();
+    if (binary === GALLERYDL_EXE) {
+      throw new EngineError(engineBrokenMapped(this.errorLang()));
+    }
+    const settings = loadSettingsFromDisk(this.deps.userDataDir);
+    const configPath = this.writeGalleryConfigAtomic(settings, this.deps.defaultOutputDir);
+    const args = buildProbeArgs({
+      configPath,
+      count: GALLERY_PROBE_MAX_ITEMS,
+      url: normalized,
+    });
+    const requestId =
+      init?.requestId !== undefined && init.requestId.length > 0 ? init.requestId : randomUUID();
+    const timeoutSec = settings.analyzeTimeoutSec;
+    return new Promise<GalleryProbe>((resolve, reject) => {
+      const entry: AnalyzeEntry = {
+        proc: null,
+        timer: null,
+        settled: false,
+        cancelled: false,
+        timedOut: false,
+      };
+      this.probes.set(requestId, entry);
+      const settle = (fn: () => void): void => {
+        if (entry.settled) return;
+        entry.settled = true;
+        if (entry.timer !== null) clearTimeout(entry.timer);
+        this.probes.delete(requestId);
+        fn();
+      };
+      // NEVER shell:true — always an args array.
+      const proc = spawn(binary, [...args], {
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+        shell: false,
+      });
+      entry.proc = proc;
+      entry.timer = setTimeout(() => {
+        entry.timedOut = true;
+        killProcessTree(proc);
+      }, timeoutSec * 1000);
+      let stdout = "";
+      let stderr = "";
+      let overflowed = false;
+      proc.stdout.on("data", (chunk: Buffer) => {
+        if (overflowed) return;
+        stdout += chunk.toString("utf8");
+        if (stdout.length > GALLERY_PROBE_MAX_CHARS) {
+          overflowed = true;
+          stdout = "";
+          entry.timedOut = false;
+          killProcessTree(proc);
+        }
+      });
+      proc.stderr.on("data", (chunk: Buffer) => {
+        // Diagnostics only: bounded, never the full log.
+        if (stderr.length < 65536) stderr += chunk.toString("utf8");
+      });
+      proc.on("error", (err: Error) => {
+        settle(() => {
+          reject(
+            new EngineError(mapDownloadError(err instanceof Error ? err.message : String(err), this.errorLang())),
+          );
+        });
+      });
+      proc.on("close", (code: number | null) => {
+        if (entry.cancelled) {
+          settle(() => {
+            reject(new EngineError(cancelledMapped(this.errorLang())));
+          });
+          return;
+        }
+        if (overflowed || entry.timedOut) {
+          settle(() => {
+            reject(new EngineError(timeoutMapped(timeoutSec, this.errorLang())));
+          });
+          return;
+        }
+        const errLines = galleryStderrErrors(stderr);
+        if (errLines.some(isUnsupportedUrlMessage)) {
+          settle(() => {
+            resolve({ supported: false, items: [], errors: errLines });
+          });
+          return;
+        }
+        if (code !== 0) {
+          settle(() => {
+            reject(new EngineError(mapDownloadError(stderr, this.errorLang())));
+          });
+          return;
+        }
+        // Exit 0 means an extractor handled the URL (unhandled ones exit
+        // 64 with the marker above), even for an empty gallery.
+        const parsed = parseGalleryProbeJson(stdout);
+        settle(() => {
+          resolve({ supported: true, items: parsed.items, errors: parsed.errors });
+        });
+      });
+    });
+  }
+
+  async start(job: DownloadJobInput): Promise<string> {
     const normalizedUrl = normalizeUrl(job.url);
     if (job.title.trim().length === 0) {
       throw new EngineError(mapDownloadError("Unsupported URL: missing title.", this.errorLang()));
     }
+    // Phase 1: gallery-dl jobs take a separate spawn path; yt-dlp below is untouched.
+    if (job.engineId === "gallery-dl") return this.startGalleryDl(job, normalizedUrl);
+    // Phase 5: pack engines (installed on demand; guidance error when absent).
+    if (job.engineId === "streamlink") return this.startStreamlink(job, normalizedUrl);
+    if (job.engineId === "n-m3u8dl-re") return this.startNm3u8dl(job, normalizedUrl);
     const outputDir = job.outputDir.trim().length > 0 ? job.outputDir : this.deps.defaultOutputDir;
     const input: DownloadJobInput = { ...toStartInput(job), url: normalizedUrl, outputDir };
     const id = randomUUID();
@@ -1178,6 +1793,11 @@ export class DesktopEngine implements DownloadEngine {
       s.cookiesFile !== null && s.cookiesFile.trim().length > 0 && existsSync(s.cookiesFile)
         ? s.cookiesFile
         : null;
+    // Optional runtimes: detected (cached), never blocking when absent.
+    const runtimes = await this.detectRuntimes().catch(() => ({
+      js: null,
+      aria2c: null,
+    }));
     const args = buildStartArgs(input, {
       settings: s,
       ffmpegDir: resolveFfmpegDir(this.deps.bundledBinDir),
@@ -1186,6 +1806,8 @@ export class DesktopEngine implements DownloadEngine {
         s.skipArchived && input.useArchive === true
           ? archivePathFor(this.deps.userDataDir)
           : null,
+      jsRuntime: this.jsRuntimeFlag(runtimes.js),
+      aria2cAvailable: runtimes.aria2c !== null,
     });
     this.jobs.set(id, {
       proc: null,
@@ -1195,9 +1817,13 @@ export class DesktopEngine implements DownloadEngine {
       lastPercent: null,
       rawLog: "",
       state: "running",
+      lastActivityAt: Date.now(),
+      stalledFired: false,
+      postProc: null,
     });
     this.launch(id);
-    return Promise.resolve(id);
+    this.ensureWatchdog();
+    return id;
   }
 
   private launch(id: string): void {
@@ -1246,6 +1872,8 @@ export class DesktopEngine implements DownloadEngine {
     proc.stdout.on("data", (chunk: Buffer) => {
       const text = chunk.toString("utf8");
       job.rawLog = appendLog(job.rawLog, text);
+      job.lastActivityAt = Date.now();
+      job.stalledFired = false;
       stdoutTail += text;
       const lines = stdoutTail.split(/\r?\n/);
       stdoutTail = lines.pop() ?? "";
@@ -1254,6 +1882,8 @@ export class DesktopEngine implements DownloadEngine {
     proc.stderr.on("data", (chunk: Buffer) => {
       const text = chunk.toString("utf8");
       job.rawLog = appendLog(job.rawLog, text);
+      job.lastActivityAt = Date.now();
+      job.stalledFired = false;
       for (const line of text.split(/\r?\n/)) handleLine(line);
     });
     proc.on("error", (err: Error) => {
@@ -1301,13 +1931,320 @@ export class DesktopEngine implements DownloadEngine {
       if (code === 0) {
         void (async (): Promise<void> => {
           await this.repairDestination(current).catch(() => undefined);
+          if (ARCHIVE_SKIP_RE.test(current.rawLog)) {
+            // Archive skip: yt-dlp wrote nothing because the entry was
+            // already recorded. No integrity check possible — the skip is
+            // the success (pre-Phase-2 behavior: done, destination as-is).
+            this.rememberFinished(id, current.rawLog, current.downloadArgs);
+            this.jobs.delete(id);
+            this.emit({
+              id,
+              percent: 100,
+              speed: null,
+              eta: null,
+              downloadedBytes: null,
+              totalBytes: null,
+              stage: "done",
+              destination: current.destination,
+            });
+            return;
+          }
+          // Phase 2 integrity: a zero exit with no output (killed ffmpeg
+          // merge, AV interference, full disk) must not read as success.
+          const bytes = outputBytes(current.destination);
+          if (bytes === null) {
+            this.finishWithError(
+              id,
+              mapDownloadError(
+                `Finished but the output file is missing or empty: ${current.destination ?? "(unknown)"}`,
+                this.errorLang(),
+              ),
+            );
+            return;
+          }
+          await this.cleanupLeftoverSiblings(current.destination);
+          // Phase 4: pipeline runs while the job still owns its slot.
+          await this.runAutoPost(id, current, () => {
+            this.rememberFinished(id, current.rawLog, current.downloadArgs);
+            this.jobs.delete(id);
+            // v1.7.2: report the REAL size of the finished output. The download
+            // phase only knows the pre-merge/pre-extract byte count and often
+            // reports no total at all, which is why the Stats "total size" tile
+            // read "Unknown" for most libraries.
+            this.emit({
+              id,
+              percent: 100,
+              speed: null,
+              eta: null,
+              downloadedBytes: bytes,
+              totalBytes: bytes,
+              stage: "done",
+              destination: current.destination,
+            });
+            this.notifyFinished(current.input.title, current.destination, true);
+            this.notifyRemote(current.input.title, true);
+          });
+        })();
+        return;
+      }
+      this.finishWithError(id, mapDownloadError(current.rawLog, this.errorLang()));
+    });
+  }
+
+  /** gallery-dl config path owned by the app (never the user's global config). */
+  private galleryConfigPath(): string {
+    return join(this.deps.userDataDir, "gallery-dl.conf.json");
+  }
+
+  private writeGalleryConfigAtomic(settings: AppSettings, downloadRoot: string): string {
+    const path = this.galleryConfigPath();
+    mkdirSync(this.deps.userDataDir, { recursive: true });
+    // v1.8.5: a validated raw override replaces the generated file (Reset
+    // clears it back to null). Invalid JSON never reaches the binary — the
+    // resolver falls back to generated (see resolveGalleryConfigText).
+    const text = resolveGalleryConfigText({
+      images: settings.images,
+      cookiesFile:
+        settings.cookiesFile !== null && existsSync(settings.cookiesFile)
+          ? settings.cookiesFile
+          : null,
+      downloadRoot,
+    });
+    const tmp = `${path}.tmp`;
+    writeFileSync(tmp, text, "utf8");
+    renameSync(tmp, path);
+    return path;
+  }
+
+  private galleryBinary(): string {
+    return resolveToolPath(this.deps.userDataDir, this.deps.bundledBinDir, GALLERYDL_EXE);
+  }
+
+  /** Temp dirs for N_m3u8DL-RE jobs (cleaned on close; resume reuses). */
+  private readonly packTmpDirs = new Map<string, string>();
+
+  private packBinary(packId: "streamlink" | "n-m3u8dl-re"): Promise<string | null> {
+    return resolvePackExe(this.deps.userDataDir, packId);
+  }
+
+  private startPackJob(
+    job: DownloadJobInput,
+    normalizedUrl: string,
+    engineId: "streamlink" | "n-m3u8dl-re",
+    built: { args: string[]; destination: string; tmpDir?: string },
+    binary: string,
+  ): Promise<string> {
+    mkdirSync(this.deps.userDataDir, { recursive: true });
+    const outputDir = job.outputDir.trim().length > 0 ? job.outputDir : this.deps.defaultOutputDir;
+    mkdirSync(outputDir, { recursive: true });
+    const id = randomUUID();
+    const input: DownloadJobInput = { ...toStartInput(job), url: normalizedUrl, outputDir, engineId };
+    this.jobs.set(id, {
+      proc: null,
+      input,
+      downloadArgs: built.args,
+      destination: built.destination,
+      lastPercent: null,
+      rawLog: "",
+      state: "running",
+      lastActivityAt: Date.now(),
+      stalledFired: false,
+      postProc: null,
+    });
+    if (built.tmpDir !== undefined) {
+      this.packTmpDirs.set(id, built.tmpDir);
+      mkdirSync(built.tmpDir, { recursive: true });
+    }
+    this.launchPack(id, binary);
+    this.ensureWatchdog();
+    return Promise.resolve(id);
+  }
+
+  private async startStreamlink(job: DownloadJobInput, normalizedUrl: string): Promise<string> {
+    const binary = await this.packBinary("streamlink");
+    if (binary === null) {
+      const id = randomUUID();
+      this.jobs.set(id, {
+        proc: null,
+        input: { ...toStartInput(job), url: normalizedUrl, engineId: "streamlink" },
+        downloadArgs: [],
+        destination: null,
+        lastPercent: null,
+        rawLog: "",
+        state: "running",
+        lastActivityAt: Date.now(),
+        stalledFired: false,
+        postProc: null,
+      });
+      this.finishWithError(
+        id,
+        mapDownloadError(this.errorStrings().engine.packNeedsBinary, this.errorLang()),
+      );
+      return id;
+    }
+    const outputDir = job.outputDir.trim().length > 0 ? job.outputDir : this.deps.defaultOutputDir;
+    const built = buildStreamlinkArgs({ ...job, engineId: "streamlink" }, outputDir);
+    return this.startPackJob(job, normalizedUrl, "streamlink", built, binary);
+  }
+
+  private async startNm3u8dl(job: DownloadJobInput, normalizedUrl: string): Promise<string> {
+    const binary = await this.packBinary("n-m3u8dl-re");
+    if (binary === null) {
+      const id = randomUUID();
+      this.jobs.set(id, {
+        proc: null,
+        input: { ...toStartInput(job), url: normalizedUrl, engineId: "n-m3u8dl-re" },
+        downloadArgs: [],
+        destination: null,
+        lastPercent: null,
+        rawLog: "",
+        state: "running",
+        lastActivityAt: Date.now(),
+        stalledFired: false,
+        postProc: null,
+      });
+      this.finishWithError(
+        id,
+        mapDownloadError(this.errorStrings().engine.packNeedsBinary, this.errorLang()),
+      );
+      return id;
+    }
+    const outputDir = job.outputDir.trim().length > 0 ? job.outputDir : this.deps.defaultOutputDir;
+    const built = buildNm3u8dlArgs(
+      { ...job, engineId: "n-m3u8dl-re" },
+      outputDir,
+      { ffmpegDir: resolveFfmpegDir(this.deps.bundledBinDir) },
+      randomUUID().slice(0, 8),
+    );
+    return this.startPackJob(job, normalizedUrl, "n-m3u8dl-re", built, binary);
+  }
+
+  /**
+   * Generic pack-engine spawn (Phase 5: streamlink, N_m3u8DL-RE). Progress
+   * is indeterminate — their progress formats are unverified, so no fake
+   * percentages; the watchdog watches stderr activity for stalls.
+   * NEVER shell:true — always an args array.
+   */
+  private launchPack(id: string, binary: string): void {
+    const job = this.jobs.get(id);
+    if (job === undefined) return;
+    const ffmpegDir = resolveFfmpegDir(this.deps.bundledBinDir);
+    const pathKey = Object.keys(process.env).find((k) => k.toLowerCase() === "path") ?? "PATH";
+    const proc = spawn(binary, [...job.downloadArgs], {
+      cwd: job.input.outputDir,
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+      shell: false,
+      ...(ffmpegDir !== null
+        ? {
+            env: {
+              ...process.env,
+              [pathKey]: `${ffmpegDir}${delimiter}${process.env[pathKey] ?? ""}`,
+            },
+          }
+        : {}),
+    });
+    job.proc = proc;
+    job.state = "running";
+    let rest = "";
+    let lastEmit = 0;
+    const onText = (text: string): void => {
+      job.rawLog = appendLog(job.rawLog, text);
+      job.lastActivityAt = Date.now();
+      job.stalledFired = false;
+      rest += text;
+      const lines = rest.split(/\r?\n/);
+      rest = lines.pop() ?? "";
+      if (lines.length === 0) return;
+      const now = Date.now();
+      if (now - lastEmit < 1000) return;
+      lastEmit = now;
+      this.emit({
+        id,
+        percent: null,
+        speed: null,
+        eta: null,
+        downloadedBytes: null,
+        totalBytes: null,
+        stage: "downloading",
+        destination: job.destination,
+      });
+    };
+    proc.stdout.on("data", (chunk: Buffer) => {
+      onText(chunk.toString("utf8"));
+    });
+    proc.stderr.on("data", (chunk: Buffer) => {
+      onText(chunk.toString("utf8"));
+    });
+    proc.on("error", (err: Error) => {
+      const current = this.jobs.get(id);
+      if (current === undefined) return;
+      if (current.state === "pausing" || current.state === "cancelling") return;
+      this.finishWithError(id, mapDownloadError(err.message, this.errorLang()));
+    });
+    proc.on("close", (code: number | null) => {
+      const current = this.jobs.get(id);
+      if (current === undefined) return;
+      if (current.state === "pausing") {
+        current.state = "paused";
+        current.proc = null;
+        this.emit({
+          id,
+          percent: current.lastPercent,
+          speed: null,
+          eta: null,
+          downloadedBytes: null,
+          totalBytes: null,
+          stage: "paused",
+          destination: current.destination,
+        });
+        return;
+      }
+      if (current.state === "cancelling") {
+        const tmp = this.packTmpDirs.get(id);
+        this.packTmpDirs.delete(id);
+        void (async (): Promise<void> => {
+          if (tmp !== undefined) await rm(tmp, { recursive: true, force: true }).catch(() => undefined);
+          await this.cleanupPartFiles(current.destination);
+          this.jobs.delete(id);
+          this.emit({
+            id,
+            percent: current.lastPercent,
+            speed: null,
+            eta: null,
+            downloadedBytes: null,
+            totalBytes: null,
+            stage: "cancelled",
+            destination: current.destination,
+          });
+        })();
+        return;
+      }
+      if (code !== 0) {
+        this.packTmpDirs.delete(id);
+        this.finishWithError(id, mapDownloadError(current.rawLog, this.errorLang()));
+        return;
+      }
+      void (async (): Promise<void> => {
+        // Integrity gate like yt-dlp: zero exit with no output is not success.
+        const bytes = outputBytes(current.destination);
+        if (bytes === null) {
+          this.packTmpDirs.delete(id);
+          this.finishWithError(
+            id,
+            mapDownloadError(
+              `Finished but the output file is missing or empty: ${current.destination ?? "(unknown)"}`,
+              this.errorLang(),
+            ),
+          );
+          return;
+        }
+        const tmp = this.packTmpDirs.get(id);
+        this.packTmpDirs.delete(id);
+        if (tmp !== undefined) await rm(tmp, { recursive: true, force: true }).catch(() => undefined);
+        await this.runAutoPost(id, current, () => {
           this.rememberFinished(id, current.rawLog, current.downloadArgs);
           this.jobs.delete(id);
-          // v1.7.2: report the REAL size of the finished output. The download
-          // phase only knows the pre-merge/pre-extract byte count and often
-          // reports no total at all, which is why the Stats "total size" tile
-          // read "Unknown" for most libraries.
-          const bytes = outputBytes(current.destination);
           this.emit({
             id,
             percent: 100,
@@ -1317,6 +2254,222 @@ export class DesktopEngine implements DownloadEngine {
             totalBytes: bytes,
             stage: "done",
             destination: current.destination,
+          });
+          this.notifyFinished(current.input.title, current.destination, true);
+          this.notifyRemote(current.input.title, true);
+        });
+      })();
+    });
+  }
+
+  private startGalleryDl(job: DownloadJobInput, normalizedUrl: string): Promise<string> {
+    mkdirSync(this.deps.userDataDir, { recursive: true });
+    const s = loadSettingsFromDisk(this.deps.userDataDir);
+    const downloadDir =
+      job.outputDir.trim().length > 0
+        ? job.outputDir
+        : s.images.downloadDir.trim().length > 0
+          ? s.images.downloadDir
+          : join(this.deps.defaultOutputDir, "Images");
+    mkdirSync(downloadDir, { recursive: true });
+    const binary = this.galleryBinary();
+    const id = randomUUID();
+    if (binary === GALLERYDL_EXE) {
+      this.jobs.set(id, {
+        proc: null,
+        input: { ...toStartInput(job), url: normalizedUrl, outputDir: downloadDir },
+        downloadArgs: [],
+        destination: null,
+        lastPercent: null,
+        rawLog: "",
+        state: "running",
+        lastActivityAt: Date.now(),
+        stalledFired: false,
+        postProc: null,
+      });
+      this.finishWithError(
+        id,
+        engineBrokenMapped(this.errorLang()),
+      );
+      return Promise.resolve(id);
+    }
+    const configPath = this.writeGalleryConfigAtomic(s, downloadDir);
+    const cookiesFile =
+      s.cookiesFile !== null && s.cookiesFile.trim().length > 0 && existsSync(s.cookiesFile)
+        ? s.cookiesFile
+        : null;
+    const input: DownloadJobInput = { ...toStartInput(job), url: normalizedUrl, outputDir: downloadDir };
+    const args = buildGalleryDlArgs(input, { settings: s, configPath, downloadDir, cookiesFile });
+    this.jobs.set(id, {
+      proc: null,
+      input,
+      downloadArgs: args,
+      destination: downloadDir,
+      lastPercent: null,
+      rawLog: "",
+      state: "running",
+      lastActivityAt: Date.now(),
+      stalledFired: false,
+      postProc: null,
+    });
+    this.launchGallery(id, binary);
+    this.ensureWatchdog();
+    return Promise.resolve(id);
+  }
+
+  private launchGallery(id: string, binary: string): void {
+    const job = this.jobs.get(id);
+    if (job === undefined) return;
+    // gallery-dl's --ugoira conversion shells out to `ffmpeg`: give the
+    // child the bundled ffmpeg dir on PATH (scoped to this spawn only).
+    // NEVER shell:true — always an args array; URL travels after `--`.
+    const ffmpegDir = resolveFfmpegDir(this.deps.bundledBinDir);
+    const pathKey = Object.keys(process.env).find((k) => k.toLowerCase() === "path") ?? "PATH";
+    const proc = spawn(binary, [...job.downloadArgs], {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+      shell: false,
+      ...(ffmpegDir !== null
+        ? {
+            env: {
+              ...process.env,
+              [pathKey]: `${ffmpegDir}${delimiter}${process.env[pathKey] ?? ""}`,
+            },
+          }
+        : {}),
+    });
+    job.proc = proc;
+    job.state = "running";
+    let progress = emptyGalleryProgress();
+    let rest = "";
+    let stdoutTail = "";
+
+    const handleLine = (line: string): void => {
+      const event = parseGalleryDlLine(line);
+      if (event === null) return;
+      progress = applyGalleryFileEvent(progress, event);
+      if (event.path !== null) job.destination = event.path;
+      const total = progress.downloaded + progress.skipped + progress.failed;
+      this.emit({
+        id,
+        percent: null,
+        speed: null,
+        eta: null,
+        downloadedBytes: null,
+        totalBytes: progress.total,
+        downloadedCount: progress.downloaded,
+        skippedCount: progress.skipped,
+        failedCount: progress.failed,
+        stage: total > 0 ? "downloading" : "downloading",
+        destination: job.destination,
+      });
+    };
+
+    proc.stdout.on("data", (chunk: Buffer) => {
+      const text = chunk.toString("utf8");
+      job.rawLog = appendLog(job.rawLog, text);
+      job.lastActivityAt = Date.now();
+      job.stalledFired = false;
+      stdoutTail += text;
+      const split = splitGalleryChunk(text, rest);
+      rest = split.rest;
+      for (const line of split.lines) handleLine(line);
+    });
+    proc.stderr.on("data", (chunk: Buffer) => {
+      const text = chunk.toString("utf8");
+      job.rawLog = appendLog(job.rawLog, text);
+      job.lastActivityAt = Date.now();
+      job.stalledFired = false;
+      const split = splitGalleryChunk(text, "");
+      for (const line of split.lines) handleLine(line);
+    });
+    proc.on("error", (err: Error) => {
+      const current = this.jobs.get(id);
+      if (current === undefined) return;
+      if (current.state === "pausing" || current.state === "cancelling") return;
+      this.finishWithError(id, mapDownloadError(err.message, this.errorLang()));
+    });
+    proc.on("close", (code: number | null) => {
+      const current = this.jobs.get(id);
+      if (current === undefined) return;
+      if (rest.trim().length > 0) handleLine(rest);
+      if (stdoutTail.trim().length > 0 && rest.trim().length === 0) {
+        const last = stdoutTail.split(/\r?\n/).pop() ?? "";
+        if (last.trim().length > 0) handleLine(last);
+      }
+      if (current.state === "pausing") {
+        current.state = "paused";
+        current.proc = null;
+        this.emit({
+          id,
+          percent: null,
+          speed: null,
+          eta: null,
+          downloadedBytes: null,
+          totalBytes: progress.total,
+          downloadedCount: progress.downloaded,
+          skippedCount: progress.skipped,
+          failedCount: progress.failed,
+          stage: "paused",
+          destination: current.destination,
+        });
+        return;
+      }
+      if (current.state === "cancelling") {
+        this.jobs.delete(id);
+        this.emit({
+          id,
+          percent: null,
+          speed: null,
+          eta: null,
+          downloadedBytes: null,
+          totalBytes: progress.total,
+          downloadedCount: progress.downloaded,
+          skippedCount: progress.skipped,
+          failedCount: progress.failed,
+          stage: "cancelled",
+          destination: current.destination,
+        });
+        return;
+      }
+      if (code === 0) {
+        void (async (): Promise<void> => {
+          // Phase 4: pipeline first (postfailed short-circuits), then the
+          // partial/done split on the downloaded files.
+          await this.runAutoPost(id, current, () => {
+            this.rememberFinished(id, current.rawLog, current.downloadArgs);
+            this.jobs.delete(id);
+            if (progress.failed > 0) {
+              this.emit({
+                id,
+                percent: null,
+                speed: null,
+                eta: null,
+                downloadedBytes: null,
+                totalBytes: progress.total,
+                downloadedCount: progress.downloaded,
+                skippedCount: progress.skipped,
+                failedCount: progress.failed,
+                stage: "partial",
+                destination: current.destination,
+              });
+              return;
+            }
+            this.emit({
+              id,
+              percent: 100,
+              speed: null,
+              eta: null,
+              downloadedBytes: null,
+              totalBytes: progress.total,
+              downloadedCount: progress.downloaded,
+              skippedCount: progress.skipped,
+              failedCount: progress.failed,
+              stage: "done",
+              destination: current.destination,
+            });
+            this.notifyFinished(current.input.title, current.destination, true);
+            this.notifyRemote(current.input.title, true);
           });
         })();
         return;
@@ -1329,6 +2482,10 @@ export class DesktopEngine implements DownloadEngine {
     const job = this.jobs.get(id);
     this.rememberFinished(id, job?.rawLog ?? mapped.raw, job?.downloadArgs ?? []);
     this.jobs.delete(id);
+    if (job !== undefined) {
+      this.notifyFinished(job.input.title, null, false);
+      this.notifyRemote(job.input.title, false);
+    }
     this.emit({
       id,
       percent: job?.lastPercent ?? 0,
@@ -1341,6 +2498,409 @@ export class DesktopEngine implements DownloadEngine {
       errorMessage: mapped.message,
       errorCategory: mapped.category,
     });
+  }
+
+  /**
+   * Completion notification with actions (Phase 3, main-side so it can have
+   * buttons — the renderer Notification API has none). Fires only when the
+   * window is NOT focused and the user opted into finish notifications; the
+   * renderer covers the focused case, so exactly one notification appears.
+   * Body click opens the file, the button reveals it in Explorer. Best
+   * effort throughout: notification failures must never fail a download.
+   */
+  private notifyFinished(title: string, destination: string | null, ok: boolean): void {
+    try {
+      if (!Notification.isSupported()) return;
+      if (this.deps.isWindowFocused?.() ?? true) return;
+      let enabled = false;
+      try {
+        enabled = loadSettingsFromDisk(this.deps.userDataDir).notifyFinished;
+      } catch {
+        enabled = false;
+      }
+      if (!enabled) return;
+      const note = new Notification({
+        title: APP_NAME,
+        body: ok ? `Finished: ${title}` : `Failed: ${title}`,
+        ...(ok && destination !== null
+          ? { actions: [{ type: "button" as const, text: "Show in folder" }] }
+          : {}),
+      });
+      note.on("click", () => {
+        if (ok && destination !== null) void this.openPath(destination).catch(() => undefined);
+      });
+      note.on("action", () => {
+        if (destination !== null) void this.revealInFolder(destination).catch(() => undefined);
+      });
+      note.show();
+    } catch {
+      // Best effort.
+    }
+  }
+
+  /**
+   * Post-processing auto-run (Phase 4). The finished job still owns its
+   * queue slot: resolve applicable steps, emit `processing` (indeterminate
+   * card), run them, and return null on success or the failure message for
+   * finishPostFailed. Throws PostAbortedError when pause/cancel/quit lands
+   * mid-pipeline (the caller follows the pause/cancel path, never an error).
+   */
+  private async autoPostProcess(id: string, current: ActiveJob): Promise<string | null> {
+    const s = loadSettingsFromDisk(this.deps.userDataDir).postProcess;
+    const dest = current.destination;
+    let files: string[] = [];
+    if (dest !== null) {
+      try {
+        const st = await stat(dest);
+        files = st.isDirectory() ? await listPostFiles(dest) : [dest];
+      } catch {
+        files = [];
+      }
+    }
+    if (files.length === 0) return null;
+    const packaged = current.input.engineId === "gallery-dl" && s.packageGallery !== "off";
+    const steps = stepsFor({
+      kind: current.input.preset.kind,
+      engine: current.input.engineId ?? null,
+      files: files.map((f) => classifyFile(f)),
+      settings: s,
+      packaged,
+    });
+    if (steps.length === 0) {
+      if (packaged && s.convertImages) {
+        current.rawLog = appendLog(current.rawLog, "[post] convert skipped: outputs are packaged\n");
+      }
+      return null;
+    }
+    this.emit({
+      id,
+      percent: null,
+      speed: null,
+      eta: null,
+      downloadedBytes: null,
+      totalBytes: null,
+      stage: "processing",
+      destination: current.destination,
+    });
+    const deps: PostRunnerDeps = {
+      bundledBinDir: this.deps.bundledBinDir,
+      appVersion: this.deps.appVersion,
+      onLog: (line) => {
+        current.rawLog = appendLog(current.rawLog, `${line}\n`);
+        current.lastActivityAt = Date.now();
+      },
+      track: (proc) => {
+        current.postProc = proc;
+      },
+      isCancelled: () => current.state !== "running",
+    };
+    const { outcomes, candidates } = await runPostSteps(deps, files, steps, {
+      settings: s,
+      tagHint: { title: current.input.title, artist: current.input.uploader ?? null },
+      ...(await this.postPackPaths()),
+    });
+    current.postProc = null;
+    const saved = outcomes.reduce((n, o) => n + (o.savedBytes ?? 0), 0);
+    if (saved > 0) {
+      current.rawLog = appendLog(
+        current.rawLog,
+        `[post] saved ${(saved / 1_048_576).toFixed(1)} MB\n`,
+      );
+    }
+    const low = candidates[0];
+    if (low !== undefined) {
+      current.rawLog = appendLog(
+        current.rawLog,
+        `[post] tag: best match "${low.title} — ${low.artist}" scores ${String(low.score)} (needs ${String(TAG_AUTO_SCORE)}); use Tag audio to force it\n`,
+      );
+    }
+    const failed = outcomes.filter((o) => !o.ok);
+    if (failed.length === 0) return null;
+    return failed.map((o) => `${o.step}: ${o.note ?? "failed"}`).join("; ");
+  }
+
+  /** Shared tail for a pipeline aborted by pause/cancel (both engines). */
+  private async emitAbortedPost(id: string, current: ActiveJob): Promise<void> {
+    if (current.state === "pausing") {
+      current.state = "paused";
+      current.proc = null;
+      this.emit({
+        id,
+        percent: current.lastPercent,
+        speed: null,
+        eta: null,
+        downloadedBytes: null,
+        totalBytes: null,
+        stage: "paused",
+        destination: current.destination,
+      });
+      return;
+    }
+    await this.cleanupPostTemps(current.destination);
+    this.jobs.delete(id);
+    this.emit({
+      id,
+      percent: current.lastPercent,
+      speed: null,
+      eta: null,
+      downloadedBytes: null,
+      totalBytes: null,
+      stage: "cancelled",
+      destination: current.destination,
+    });
+  }
+
+  /** Shared tail for a finished pipeline: postfailed or continue to done. */
+  private finishPostTail(id: string, postError: string | null): boolean {
+    if (postError !== null) {
+      this.finishPostFailed(id, postError);
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Run the auto pipeline, then either finish postfailed or continue with
+   * onSuccess. Pause/cancel mid-pipeline follows the pause/cancel path
+   * (never an error). Shared by all four engines.
+   */
+  private async runAutoPost(id: string, current: ActiveJob, onSuccess: () => void): Promise<void> {
+    try {
+      if (this.finishPostTail(id, await this.autoPostProcess(id, current))) return;
+    } catch (err) {
+      if (err instanceof PostAbortedError) {
+        await this.emitAbortedPost(id, current);
+        return;
+      }
+      this.finishPostFailed(id, err instanceof Error ? err.message : String(err));
+      return;
+    }
+    onSuccess();
+  }
+
+  /** Resolve whisper/rclone paths for the pipeline (null = guidance error). */
+  private async postPackPaths(): Promise<{
+    whisperModelPath: string | null;
+    whisperExe: string | null;
+    rclonePath: string | null;
+  }> {
+    const s = loadSettingsFromDisk(this.deps.userDataDir).postProcess;
+    const modelFile = whisperModelPath(this.deps.userDataDir, s.whisperModel);
+    return {
+      whisperModelPath: existsSync(modelFile) ? modelFile : null,
+      whisperExe: await resolvePackExe(this.deps.userDataDir, "whisper"),
+      rclonePath: await resolvePackExe(this.deps.userDataDir, "rclone"),
+    };
+  }
+
+  /** Terminal post-process failure: the download is intact, only the pipeline failed. */
+  private finishPostFailed(id: string, message: string): void {
+    const job = this.jobs.get(id);
+    if (job === undefined) return;
+    this.rememberFinished(id, job.rawLog, job.downloadArgs);
+    this.jobs.delete(id);
+    this.emit({
+      id,
+      percent: job.lastPercent,
+      speed: null,
+      eta: null,
+      downloadedBytes: null,
+      totalBytes: null,
+      stage: "postfailed",
+      destination: job.destination,
+      errorMessage: message,
+    });
+  }
+
+  /** Best-effort temp cleanup for a cancelled pipeline (originals untouched). */
+  private async cleanupPostTemps(destination: string | null): Promise<void> {
+    if (destination === null) return;
+    try {
+      const dir = (await stat(destination).catch(() => null))?.isDirectory() === true
+        ? destination
+        : dirname(destination);
+      const entries = await readdir(dir);
+      await Promise.all(
+        entries
+          .filter((e) => e.includes(".fluxdl-tmp-"))
+          .map((e) => rm(join(dir, e), { force: true }).catch(() => undefined)),
+      );
+    } catch {
+      // Best effort.
+    }
+  }
+
+  /**
+   * Manual post-processing entry (Phase 4, single `postProcess` channel).
+   * Guarded: paths allow-listed, files/steps capped, one run per file-set.
+   */
+  async postProcess(request: PostProcessRequest): Promise<PostProcessResult> {
+    const action = request.action;
+    if (action === "media-info") {
+      const p = typeof request.path === "string" ? request.path : "";
+      if (p.length === 0) throw new Error("Missing path.");
+      await this.assertAllowed(p);
+      return { kind: "media", summary: await mediaInfoFor(this.deps.bundledBinDir, p) };
+    }
+    if (action === "apply-tag") {
+      const p = typeof request.path === "string" ? request.path : "";
+      const mbid = typeof request.mbid === "string" ? request.mbid : "";
+      if (p.length === 0 || !/^[0-9a-f-]{36}$/i.test(mbid)) throw new Error("Missing path or recording id.");
+      await this.assertAllowed(p);
+      const outcome = await runTagAudio(this.postDeps(null), p, {
+        title: hintFromFilename(p).title,
+        artist: null,
+        forceMbid: mbid,
+      });
+      return { kind: "report", report: this.toReport([outcome], outcome.candidates) };
+    }
+    const files = [...new Set((request.files ?? []).filter((f) => typeof f === "string"))].slice(0, 500);
+    if (files.length === 0) throw new Error("No files.");
+    const steps = [...new Set((request.steps ?? []).filter((s): s is PostStep =>
+      (POST_STEPS as readonly string[]).includes(s),
+    ))];
+    if (steps.length === 0) throw new Error("No steps.");
+    for (const f of files) {
+      await this.assertAllowed(f);
+      try {
+        await stat(f);
+      } catch {
+        throw new Error(`File not found: ${basename(f)}`);
+      }
+    }
+    const key = `${files.join("\n")}\n${steps.join(",")}`;
+    if (this.postRunning.has(key)) throw new Error("Post-processing is already running for these files.");
+    this.postRunning.add(key);
+    try {
+      const s = loadSettingsFromDisk(this.deps.userDataDir).postProcess;
+      const { outcomes, candidates } = await runPostSteps(this.postDeps(null), files, steps, {
+        settings: s,
+        tagHint: (file) => hintFromFilename(file),
+        ...(await this.postPackPaths()),
+      });
+      return { kind: "report", report: this.toReport(outcomes, candidates) };
+    } finally {
+      this.postRunning.delete(key);
+    }
+  }
+
+  /** Runner deps for manual runs (no job to track or cancel). */
+  private postDeps(onLog: ((line: string) => void) | null): PostRunnerDeps {
+    return {
+      bundledBinDir: this.deps.bundledBinDir,
+      appVersion: this.deps.appVersion,
+      ...(onLog === null ? {} : { onLog }),
+    };
+  }
+
+  private toReport(outcomes: readonly StepOutcome[], candidates: readonly TagCandidate[]): PostReport {
+    const results: PostStepResult[] = outcomes.map((o) => ({
+      step: o.step,
+      ok: o.ok,
+      output: o.output,
+      savedBytes: o.savedBytes,
+      note: o.note,
+    }));
+    return { ok: results.every((r) => r.ok), results, candidates: [...candidates] };
+  }
+
+  /** Guard set for manual runs (one run per file-set). */
+  private readonly postRunning = new Set<string>();
+
+  /**
+   * Optional Tool Packs (Phase 5, single `packs` channel). Resources root
+   * is the parent of the bin dir (prod resources/, dev resources/).
+   */
+  async packs(request: PackRequest): Promise<PacksResult> {
+    const deps = {
+      userDataDir: this.deps.userDataDir,
+      resourcesDir: dirname(this.deps.bundledBinDir),
+    };
+    const op = request.op;
+    if (op === "status") {
+      const rows = await packStatus(deps);
+      return {
+        kind: "status",
+        rows: rows.map((r) => ({
+          id: r.manifest.id,
+          name: r.manifest.name,
+          kind: r.manifest.kind,
+          exe: r.manifest.exe,
+          version: r.manifest.version,
+          homepage: r.manifest.homepage,
+          license: r.manifest.license,
+          sizeBytes: r.manifest.sizeBytes,
+          capabilities: [...r.manifest.capabilities],
+          consentNote: r.manifest.consentNote,
+          installed: r.installed,
+          exePath: r.exePath,
+          diskBytes: r.diskBytes,
+          models: r.models.map((m) => ({ ...m })),
+        })),
+      };
+    }
+    if (op === "progress") {
+      const p = packProgressState();
+      return {
+        kind: "progress",
+        progress: { phase: p.phase, packId: p.packId, receivedBytes: p.receivedBytes, totalBytes: p.totalBytes },
+      };
+    }
+    if (op === "cancel") {
+      cancelPackOp();
+      return { kind: "ok" };
+    }
+    const id = typeof request.id === "string" ? request.id : "";
+    if (packManifest(id) === null) throw new Error(`Unknown pack: ${id === "" ? "(missing)" : id}.`);
+    if (op === "uninstall") {
+      await uninstallPack(deps, id);
+      return { kind: "ok" };
+    }
+    if (op === "install-model" || op === "remove-model") {
+      const model = typeof request.model === "string" ? request.model : "";
+      if (model !== "tiny" && model !== "base" && model !== "small") {
+        throw new Error(`Unknown model: ${model === "" ? "(missing)" : model}.`);
+      }
+      if (op === "remove-model") {
+        await removeWhisperModel(deps, model);
+        return { kind: "ok" };
+      }
+      const done = await installWhisperModel(deps, model);
+      return { kind: "model", path: done.path };
+    }
+    if (op === "check-update" || op === "update") {
+      const current = await installedPackVersion(deps.userDataDir, id);
+      let latest: string | null = null;
+      let url: string | null = null;
+      try {
+        const found = await checkPackUpdate(id);
+        if (found !== null) {
+          latest = found.version;
+          url = found.url;
+        }
+      } catch {
+        latest = null;
+      }
+      const updateAvailable = isUpdateAvailable(current, latest);
+      if (op === "check-update" || !updateAvailable) {
+        return { kind: "latest", id, current, latest, updateAvailable };
+      }
+      const wantVersion = latest ?? (typeof request.version === "string" ? request.version : null);
+      const wantUrl = url ?? (typeof request.url === "string" ? request.url : null);
+      const done = await installPack(deps, id, {
+        ...(wantVersion !== null ? { version: wantVersion } : {}),
+        ...(wantUrl !== null ? { url: wantUrl } : {}),
+        acceptNoChecksum: request.acceptNoChecksum === true,
+      });
+      return { kind: "installed", id, version: done.version, exePath: done.exePath };
+    }
+    // install
+    const done = await installPack(deps, id, {
+      ...(typeof request.version === "string" ? { version: request.version } : {}),
+      ...(typeof request.url === "string" ? { url: request.url } : {}),
+      acceptNoChecksum: request.acceptNoChecksum === true,
+    });
+    return { kind: "installed", id, version: done.version, exePath: done.exePath };
   }
 
   /**
@@ -1396,12 +2956,71 @@ export class DesktopEngine implements DownloadEngine {
     }
   }
 
+  /** Best-effort removal of leftover siblings after a verified success. */
+  private async cleanupLeftoverSiblings(destination: string | null): Promise<void> {
+    if (destination === null || destination.length === 0) return;
+    for (const candidate of [`${destination}.part`, `${destination}.ytdl`]) {
+      try {
+        await unlink(candidate);
+      } catch {
+        // Best effort: missing files are fine.
+      }
+    }
+  }
+
+  /**
+   * Stall watchdog (Phase 2): one unref'd 10 s tick for all jobs. A running
+   * job quieter than stalledTimeoutSec gets a single "stalled" emit (the
+   * queue keeps it downloading; the card offers Restart). 0 disables.
+   */
+  private watchdog: NodeJS.Timeout | null = null;
+
+  private ensureWatchdog(): void {
+    if (this.watchdog !== null) return;
+    const timer = setInterval(() => {
+      let timeoutSec = 120;
+      try {
+        timeoutSec = loadSettingsFromDisk(this.deps.userDataDir).stalledTimeoutSec;
+      } catch {
+        timeoutSec = 120;
+      }
+      if (timeoutSec <= 0) return;
+      const now = Date.now();
+      for (const [id, job] of this.jobs) {
+        if (job.state !== "running" || job.stalledFired) continue;
+        if (!Number.isFinite(job.lastActivityAt)) continue;
+        if (now - job.lastActivityAt < timeoutSec * 1000) continue;
+        job.stalledFired = true;
+        this.emit({
+          id,
+          percent: job.lastPercent,
+          speed: null,
+          eta: null,
+          downloadedBytes: null,
+          totalBytes: null,
+          stage: "stalled",
+          destination: job.destination,
+        });
+      }
+    }, 10_000);
+    if (typeof timer.unref === "function") timer.unref();
+    this.watchdog = timer;
+  }
+
   pause(id: string): Promise<void> {
     const job = this.jobs.get(id);
     if (job === undefined) throw new Error(`Unknown download: ${id}`);
     if (job.state === "paused") return Promise.resolve();
     job.state = "pausing";
     killProcessTree(job.proc);
+    // A live pipeline notices via isCancelled and aborts (never an error).
+    if (job.postProc !== null) {
+      try {
+        job.postProc.kill();
+      } catch {
+        // Already gone.
+      }
+    }
     return Promise.resolve();
   }
 
@@ -1410,6 +3029,26 @@ export class DesktopEngine implements DownloadEngine {
     if (job === undefined) throw new Error(`Unknown download: ${id}`);
     if (job.state === "running") return Promise.resolve();
     job.state = "running";
+    if (job.input.engineId === "gallery-dl") {
+      this.launchGallery(id, this.galleryBinary());
+      return Promise.resolve();
+    }
+    if (job.input.engineId === "streamlink" || job.input.engineId === "n-m3u8dl-re") {
+      const engineId = job.input.engineId;
+      void (async (): Promise<void> => {
+        const binary = await this.packBinary(engineId);
+        if (this.jobs.get(id) === undefined) return;
+        if (binary === null) {
+          this.finishWithError(
+            id,
+            mapDownloadError(this.errorStrings().engine.packNeedsBinary, this.errorLang()),
+          );
+          return;
+        }
+        this.launchPack(id, binary);
+      })();
+      return Promise.resolve();
+    }
     this.launch(id);
     return Promise.resolve();
   }
@@ -1417,6 +3056,17 @@ export class DesktopEngine implements DownloadEngine {
   async cancel(id: string): Promise<void> {
     const job = this.jobs.get(id);
     if (job === undefined) return;
+    if (job.postProc !== null) {
+      // Mid-pipeline: stop ffmpeg, keep the finished download (originals are
+      // intact — only temps are dropped). The abort tail emits `cancelled`.
+      try {
+        job.postProc.kill();
+      } catch {
+        // Already gone.
+      }
+      job.state = "cancelling";
+      return;
+    }
     if (job.state === "paused" || job.proc === null) {
       await this.cleanupPartFiles(job.destination);
       this.jobs.delete(id);
@@ -1452,9 +3102,10 @@ export class DesktopEngine implements DownloadEngine {
       ytdlp = "unknown";
     }
     let ffmpeg: string | null = null;
+    const ffmpegPath = resolveFfmpegPath(this.deps.bundledBinDir);
     try {
       const out = await runBinary(
-        resolveFfmpegPath(this.deps.bundledBinDir),
+        ffmpegPath,
         buildFfmpegVersionArgs(),
       );
       const first = out.stdout.trim().split(/\r?\n/)[0] ?? "";
@@ -1465,10 +3116,32 @@ export class DesktopEngine implements DownloadEngine {
     }
     // process.versions is typed string-only; Electron-only keys are absent in plain node.
     const runtime = process.versions as Record<string, string | undefined>;
+    let galleryDl: string | null = null;
+    const galleryPath = resolveToolPath(this.deps.userDataDir, this.deps.bundledBinDir, GALLERYDL_EXE);
+    try {
+      const out = await runBinary(
+        galleryPath,
+        ["--version"],
+      );
+      if (out.code === 0) galleryDl = out.stdout.trim().split(/\r?\n/)[0] ?? null;
+    } catch {
+      galleryDl = null;
+    }
+    const runtimes = await this.detectRuntimes().catch(() => ({ js: null, aria2c: null }));
     return {
       ytdlp,
       ffmpeg,
       app: this.deps.appVersion,
+      galleryDl,
+      jsRuntime: runtimes.js?.version ?? null,
+      aria2c: runtimes.aria2c?.version ?? null,
+      toolPaths: {
+        ytDlp: this.ytDlp(),
+        ffmpeg: ffmpegPath,
+        galleryDl: galleryPath === GALLERYDL_EXE ? null : galleryPath,
+        deno: runtimes.js?.name === "deno" ? runtimes.js.binary : null,
+        aria2c: runtimes.aria2c?.binary ?? null,
+      },
       os: `${osPlatform()} ${osRelease()}`,
       arch: process.arch,
       electron: runtime["electron"] ?? "unknown",
@@ -1481,10 +3154,17 @@ export class DesktopEngine implements DownloadEngine {
     if (this.jobs.size > 0) {
       throw new Error(this.errorStrings().errors.updateBlockedBusy);
     }
+    const channel = loadSettingsFromDisk(this.deps.userDataDir).ytdlpChannel;
     const target = await ensureUserDataBinary(this.deps.userDataDir, this.deps.bundledBinDir);
+    // Keep the previous copy so rollbackTool() can restore it.
+    try {
+      await copyFile(target, `${target}.bak`);
+    } catch {
+      // Best effort: no backup, no rollback — the update still proceeds.
+    }
     let out: { stdout: string; stderr: string; code: number | null };
     try {
-      out = await runBinary(target, buildUpdateArgs());
+      out = await runBinary(target, buildUpdateToArgs(channel), 600_000);
     } catch (err) {
       throw new EngineError(mapDownloadError(err instanceof Error ? err.message : String(err), this.errorLang()));
     }
@@ -1508,6 +3188,159 @@ export class DesktopEngine implements DownloadEngine {
       versions.ytdlp !== "unknown" &&
       versions.ffmpeg !== null;
     return { ok, repaired, failed, versions };
+  }
+
+  /**
+   * Drain corrupt-store recovery notices (Phase 3). The persist layer
+   * quarantines + resets bad files transparently; this surfaces what
+   * happened so the UI can toast it once.
+   */
+  consumeRecoveryNotices(): Promise<RecoveryNotice[]> {
+    return Promise.resolve(consumeDiskRecoveryNotices());
+  }
+
+  /**
+   * Restore a previous tool copy (Phase 2). yt-dlp keeps its .bak next to
+   * the userData copy (written by updateEngine); userData/bin tools use
+   * binaryManager rollback. False when there is nothing to restore.
+   */
+  async rollbackTool(toolId: string): Promise<boolean> {
+    if (toolId === "yt-dlp") {
+      const target = join(this.deps.userDataDir, "yt-dlp.exe");
+      const backup = `${target}.bak`;
+      if (!existsSync(backup)) return false;
+      await copyFile(backup, target);
+      return true;
+    }
+    if (toolId === "gallery-dl") {
+      return rollbackTool(this.deps.userDataDir, GALLERYDL_EXE);
+    }
+    return false;
+  }
+
+  /**
+   * Reinstall a bundled tool from packaged resources (Phase 2). External
+   * tools (deno/aria2c) reject with placement guidance — the app never
+   * downloads executables itself beyond the existing app-updater path.
+   */
+  async reinstallTool(toolId: string): Promise<EngineVersions> {
+    if (toolId === "yt-dlp" || toolId === "ffmpeg") {
+      const { failed } = await repairBinaries(this.deps.userDataDir, this.deps.bundledBinDir);
+      if (failed.length > 0) {
+        throw new Error(`Reinstall failed for ${failed.join(", ")}.`);
+      }
+      return this.getEngineVersion();
+    }
+    if (toolId === "gallery-dl") {
+      const versions = readPinnedVersions(this.deps.bundledBinDir);
+      await reinstallBundledTool(
+        join(this.deps.userDataDir, "bin"),
+        this.deps.bundledBinDir,
+        GALLERYDL_EXE,
+        versions.galleryDlSha256,
+      );
+      return this.getEngineVersion();
+    }
+    if (toolId === "deno" || toolId === "aria2c") {
+      throw new Error(
+        `Place ${toolId === "deno" ? "deno.exe" : "aria2c.exe"} in the app bin folder or on PATH; FluxDL detects it automatically.`,
+      );
+    }
+    throw new Error(`Unknown tool: ${toolId}.`);
+  }
+
+  /**
+   * Doctor health check (Phase 2). Best-effort and offline-safe: every
+   * probe is guarded, so the report always resolves (possibly all-fail).
+   */
+  async runDoctor(): Promise<DoctorReport> {
+    const now = Date.now();
+    const checks: DoctorCheck[] = [];
+    const versions = await this.getEngineVersion().catch(() => null);
+    const s = loadSettingsFromDisk(this.deps.userDataDir);
+    // Required tools.
+    const ytdlp = versions?.ytdlp ?? null;
+    checks.push({
+      ...versionCheck("yt-dlp", "yt-dlp", ytdlp === "unknown" ? null : ytdlp, MIN_TOOL_VERSIONS["yt-dlp"] ?? null),
+      fix: ytdlp === null || ytdlp === "unknown" ? "repair" : "update",
+    });
+    checks.push({
+      ...versionCheck("ffmpeg", "ffmpeg + ffprobe", versions?.ffmpeg ?? null, null),
+      fix: "reinstall",
+    });
+    // Optional tools.
+    const gallery = versions?.galleryDl ?? null;
+    checks.push({
+      ...versionCheck("gallery-dl", "gallery-dl (images)", gallery, MIN_TOOL_VERSIONS["gallery-dl"] ?? null),
+      fix: "reinstall",
+    });
+    const js = versions?.jsRuntime ?? null;
+    checks.push({
+      id: "js-runtime",
+      label: "JS runtime (deno/node)",
+      status: js !== null ? "ok" : "warn",
+      detail: js ?? "none found — YouTube JS challenges may fail",
+      fix: "install-guide",
+    });
+    const aria = versions?.aria2c ?? null;
+    if (s.useAria2c && aria === null) {
+      checks.push({
+        id: "aria2c",
+        label: "aria2c",
+        status: "fail",
+        detail: "enabled but no binary found",
+        fix: "install-guide",
+      });
+    } else {
+      checks.push({
+        id: "aria2c",
+        label: "aria2c",
+        status: "ok",
+        detail: aria ?? "not needed (toggle off)",
+      });
+    }
+    // Download folder writable.
+    const dir = s.downloadDir.trim().length > 0 ? s.downloadDir : this.deps.defaultOutputDir;
+    try {
+      mkdirSync(dir, { recursive: true });
+      await access(dir);
+      checks.push({ id: "download-dir", label: "Download folder", status: "ok", detail: dir });
+    } catch {
+      checks.push({
+        id: "download-dir",
+        label: "Download folder",
+        status: "fail",
+        detail: `${dir} is not writable`,
+        fix: "open-settings",
+      });
+    }
+    // Free disk (warn under 1 GiB).
+    try {
+      const fs = statfsSync(dir);
+      const free = fs.bfree * fs.bsize;
+      const low = free < 1_073_741_824;
+      checks.push({
+        id: "disk",
+        label: "Free disk",
+        status: low ? "warn" : "ok",
+        detail: `${(free / 1_073_741_824).toFixed(1)} GiB free`,
+        ...(low ? { fix: "open-settings" as const } : {}),
+      });
+    } catch {
+      checks.push({ id: "disk", label: "Free disk", status: "warn", detail: "unknown" });
+    }
+    // GitHub reachable.
+    const reachable = await fetchLatestTag(YTDLP_API_URL).then(
+      () => true,
+      () => false,
+    );
+    checks.push({
+      id: "github",
+      label: "Update server reachable",
+      status: reachable ? "ok" : "warn",
+      detail: reachable ? "github.com reachable" : "offline — checks report update=false",
+    });
+    return buildDoctorReport(checks, now);
   }
 
   setAggregateProgress(state: AggregateProgressState): Promise<void> {
@@ -1753,8 +3586,13 @@ export class DesktopEngine implements DownloadEngine {
     return Promise.resolve(loadSettingsFromDisk(this.deps.userDataDir));
   }
 
-  saveSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
-    return Promise.resolve(saveSettingsToDisk(this.deps.userDataDir, patch));
+  async saveSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
+    const saved = saveSettingsToDisk(this.deps.userDataDir, patch);
+    // Remote API follows its settings immediately (same pattern as
+    // syncLoginSettings): the socket reconciles now, not on the next tick.
+    this.apiSyncNeeded = true;
+    await this.apiServer.sync().catch(() => undefined);
+    return saved;
   }
 
   async loadQueue(): Promise<DownloadJob[]> {

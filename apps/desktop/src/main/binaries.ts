@@ -95,22 +95,25 @@ export function sha256File(path: string): Promise<string> {
 export interface PinnedVersions {
   readonly ytdlpSha256: string | null;
   readonly ffmpegSha256: string | null;
+  readonly galleryDlSha256: string | null;
 }
 
 /** Pinned hashes from fetch-binaries (absent in some dev checkouts). */
 export function readPinnedVersions(bundledBinDir: string): PinnedVersions {
+  const empty: PinnedVersions = { ytdlpSha256: null, ffmpegSha256: null, galleryDlSha256: null };
   try {
     const raw = JSON.parse(
       readFileSync(join(bundledBinDir, "versions.json"), "utf8"),
     ) as unknown;
-    if (typeof raw !== "object" || raw === null) return { ytdlpSha256: null, ffmpegSha256: null };
+    if (typeof raw !== "object" || raw === null) return empty;
     const rec = raw as Record<string, unknown>;
     return {
       ytdlpSha256: typeof rec["ytdlpSha256"] === "string" ? rec["ytdlpSha256"] : null,
       ffmpegSha256: typeof rec["ffmpegSha256"] === "string" ? rec["ffmpegSha256"] : null,
+      galleryDlSha256: typeof rec["galleryDlSha256"] === "string" ? rec["galleryDlSha256"] : null,
     };
   } catch {
-    return { ytdlpSha256: null, ffmpegSha256: null };
+    return empty;
   }
 }
 

@@ -5,6 +5,7 @@ import type {
   AudioPreset,
   Container,
   DownloadJobInput,
+  EngineId,
   LiveStatus,
   VideoPreset,
   WatchChannel,
@@ -12,10 +13,13 @@ import type {
 import {
   AUDIO_PRESETS,
   CONTAINERS,
+  ENGINE_IDS,
   LIVE_STATUSES,
   VIDEO_PRESETS,
 } from "@grabber/core/types.js";
 import { isAudioMetadata, normalizeAudioMetadata } from "@grabber/core/metadata.js";
+import { cleanGalleryRange } from "@grabber/core/galleryProbe.js";
+import type { PostStep } from "@grabber/core/postprocess.js";
 import type { DesktopEngine } from "./desktopEngine.js";
 import { isDownloadJob } from "./persist.js";
 
@@ -98,6 +102,28 @@ function parseJobInput(raw: unknown): DownloadJobInput {
     ...(typeof raw["startAfter"] === "number" && Number.isFinite(raw["startAfter"])
       ? { startAfter: raw["startAfter"] }
       : {}),
+    ...(typeof raw["trimStart"] === "string" && raw["trimStart"].trim().length > 0
+      ? { trimStart: raw["trimStart"].trim().slice(0, 32) }
+      : {}),
+    ...(typeof raw["trimEnd"] === "string" && raw["trimEnd"].trim().length > 0
+      ? { trimEnd: raw["trimEnd"].trim().slice(0, 32) }
+      : {}),
+    // Per-job proxy override (Phase 3): trimmed + length-capped like the
+    // global setting. It travels as its own argv element (never shell),
+    // so no flag smuggling is possible.
+    ...(typeof raw["proxyOverride"] === "string" && raw["proxyOverride"].trim().length > 0
+      ? { proxyOverride: raw["proxyOverride"].trim().slice(0, 512) }
+      : {}),
+    // v1.8.5: gallery-dl --range for selected-items downloads. Validated
+    // by the shared cleaner — anything else never reaches argv.
+    ...(() => {
+      const range = cleanGalleryRange(typeof raw["range"] === "string" ? raw["range"] : null);
+      return range === null ? {} : { range };
+    })(),
+    ...(typeof raw["engineId"] === "string" &&
+    (ENGINE_IDS as readonly string[]).includes(raw["engineId"])
+      ? { engineId: raw["engineId"] as EngineId }
+      : {}),
     ...(raw["pinned"] === true ? { pinned: true as const } : {}),
     // Audio tag overrides (M4.3): rebuilt from primitives, never trusted.
     ...(isAudioMetadata(raw["audioMetadata"])
@@ -125,6 +151,18 @@ export function registerEngineIpc(engine: DesktopEngine): void {
     if (id === null) throw new Error("Missing request id.");
     await engine.cancelAnalyze(id);
   });
+  ipcMain.handle(IPC_CHANNELS.probeGallery, async (_event, rawUrl: unknown, rawInit: unknown) => {
+    const urlRaw = asNonEmptyString(rawUrl);
+    if (urlRaw === null) throw new Error("Missing URL.");
+    let requestId: string | undefined;
+    if (isRecord(rawInit) && typeof rawInit["requestId"] === "string") {
+      requestId = rawInit["requestId"];
+    }
+    return engine.probeGallery(
+      normalizeUrl(urlRaw),
+      requestId === undefined ? undefined : { requestId },
+    );
+  });
   ipcMain.handle(IPC_CHANNELS.start, async (_event, rawJob: unknown) => {
     return engine.start(parseJobInput(rawJob));
   });
@@ -151,6 +189,88 @@ export function registerEngineIpc(engine: DesktopEngine): void {
   });
   ipcMain.handle(IPC_CHANNELS.repairEngine, async () => {
     return engine.repairEngine();
+  });
+  ipcMain.handle(IPC_CHANNELS.rollbackTool, async (_event, rawId: unknown) => {
+    const id = asNonEmptyString(rawId);
+    if (id === null) throw new Error("Missing tool id.");
+    return engine.rollbackTool(id);
+  });
+  ipcMain.handle(IPC_CHANNELS.reinstallTool, async (_event, rawId: unknown) => {
+    const id = asNonEmptyString(rawId);
+    if (id === null) throw new Error("Missing tool id.");
+    return engine.reinstallTool(id);
+  });
+  ipcMain.handle(IPC_CHANNELS.runDoctor, async () => {
+    return engine.runDoctor();
+  });
+  ipcMain.handle(IPC_CHANNELS.consumeRecoveryNotices, async () => {
+    return engine.consumeRecoveryNotices();
+  });
+  ipcMain.handle(IPC_CHANNELS.postProcess, async (_event, raw: unknown) => {
+    if (!isRecord(raw)) throw new Error("Invalid post-process request.");
+    const action = raw["action"];
+    if (action !== "run" && action !== "media-info" && action !== "apply-tag") {
+      throw new Error("Unknown post-process action.");
+    }
+    const filesRaw = raw["files"];
+    const stepsRaw = raw["steps"];
+    return engine.postProcess({
+      action,
+      ...(Array.isArray(filesRaw)
+        ? { files: filesRaw.filter((f): f is string => typeof f === "string").slice(0, 500) }
+        : {}),
+      ...(Array.isArray(stepsRaw)
+        ? { steps: stepsRaw.filter((s): s is PostStep => typeof s === "string") }
+        : {}),
+      ...(typeof raw["path"] === "string" ? { path: raw["path"].slice(0, 4096) } : {}),
+      ...(typeof raw["mbid"] === "string" ? { mbid: raw["mbid"].slice(0, 64) } : {}),
+    });
+  });
+  ipcMain.handle(IPC_CHANNELS.packs, async (_event, raw: unknown) => {    if (!isRecord(raw)) throw new Error("Invalid packs request.");
+    const op = raw["op"];
+    if (
+      op !== "status" && op !== "check-update" && op !== "install" && op !== "update" &&
+      op !== "uninstall" && op !== "progress" && op !== "cancel" &&
+      op !== "install-model" && op !== "remove-model"
+    ) {
+      throw new Error("Unknown packs op.");
+    }
+    return engine.packs({
+      op,
+      ...(typeof raw["id"] === "string" ? { id: raw["id"].slice(0, 64) } : {}),
+      ...(typeof raw["version"] === "string" ? { version: raw["version"].slice(0, 64) } : {}),
+      ...(typeof raw["url"] === "string" ? { url: raw["url"].slice(0, 2048) } : {}),
+      ...(raw["acceptNoChecksum"] === true ? { acceptNoChecksum: true as const } : {}),
+      ...(typeof raw["model"] === "string" ? { model: raw["model"].slice(0, 16) } : {}),
+    });
+  });
+  ipcMain.handle(IPC_CHANNELS.remoteApi, async (_event, raw: unknown) => {
+    if (!isRecord(raw)) throw new Error("Invalid remote API request.");
+    const op = raw["op"];
+    if (
+      op !== "status" && op !== "rotate" && op !== "reveal" && op !== "drain" && op !== "audit"
+    ) {
+      throw new Error("Unknown remote API op.");
+    }
+    return engine.remoteApi({ op });
+  });
+  ipcMain.handle(IPC_CHANNELS.notifiers, async (_event, raw: unknown) => {
+    if (!isRecord(raw)) throw new Error("Invalid notifiers request.");
+    const op = raw["op"];
+    if (op !== "status" && op !== "save" && op !== "test-discord" && op !== "test-telegram") {
+      throw new Error("Unknown notifiers op.");
+    }
+    return engine.notifiers({
+      op,
+      // Secrets ride the request one way (renderer → main); length-capped
+      // here, validated in the engine. Never echoed back.
+      ...(typeof raw["discordWebhook"] === "string"
+        ? { discordWebhook: raw["discordWebhook"].slice(0, 512) }
+        : {}),
+      ...(typeof raw["telegramBotToken"] === "string"
+        ? { telegramBotToken: raw["telegramBotToken"].slice(0, 256) }
+        : {}),
+    });
   });
   ipcMain.handle(IPC_CHANNELS.setAggregateProgress, async (_event, raw: unknown) => {
     if (!isRecord(raw)) throw new Error("Invalid aggregate state.");

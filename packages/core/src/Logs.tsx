@@ -10,6 +10,9 @@ import { pressScale } from "./motion.js";
 import { buildDiagnostics } from "./diagnostics.js";
 import { countLogMatches, filterLogLines } from "./logFilter.js";
 import { writeClipboardText } from "./clipboard.js";
+import { buildIssueUrl } from "./updates.js";
+import { clearCrashReports, readCrashReports } from "./ErrorBoundary.js";
+import thirdPartyNotices from "../../../THIRD_PARTY_NOTICES.md?raw";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 
 export interface LogsProps {
@@ -177,6 +180,7 @@ export function Logs({ engine, queue, settings }: LogsProps): React.JSX.Element 
       logTail: logText,
       logJobTitle: jobTitle,
       includeUrls,
+      crashes: readCrashReports(),
     });
     setReport(text);
     return text;
@@ -235,6 +239,16 @@ const copyReport = async (): Promise<void> => {
           {S.logs.appVersion}: {versions?.app ?? "…"} · {S.logs.ytdlpVersion}:{" "}
           {versions?.ytdlp ?? "…"} · {S.logs.ffmpegVersion}: {versions?.ffmpeg ?? "…"}
         </p>
+        {versions !== null &&
+          (versions.galleryDl !== undefined ||
+            versions.jsRuntime !== undefined ||
+            versions.aria2c !== undefined) && (
+            <p className="muted">
+              gallery-dl: {versions.galleryDl ?? "—"}
+              {" · "}JS: {versions.jsRuntime ?? "—"}
+              {" · "}aria2c: {versions.aria2c ?? "—"}
+            </p>
+          )}
         <div className="chip-row">
           <button
             type="button"
@@ -525,7 +539,67 @@ const copyReport = async (): Promise<void> => {
             </pre>
           </details>
         )}
+        <div className="chip-row">
+          <button
+            type="button"
+            className="btn"
+            onPointerDown={(e) => {
+              pressScale(e.currentTarget);
+            }}
+            onClick={() => {
+              const url = buildIssueUrl(versions?.app ?? "unknown", versions?.os ?? "windows");
+              void engine.openExternal(url).catch(() => undefined);
+            }}
+          >
+            {S.logs.reportBug}
+          </button>
+        </div>
+        <details className="advanced">
+          <summary>{S.logs.noticesTitle}</summary>
+          <pre className="log-pre">{thirdPartyNotices}</pre>
+        </details>
+        <CrashBlock settings={settings} />
       </div>
     </section>
+  );
+}
+
+function CrashBlock({ settings }: { readonly settings: StoreApi<SettingsStoreState> }): React.JSX.Element {
+  const S = useStrings(settings);
+  const crashOptIn = useStore(settings, (s) => s.settings.crashReports);
+  const [crashes, setCrashes] = useState<readonly { t: number; view: string; message: string }[]>(() =>
+    crashOptIn ? readCrashReports() : [],
+  );
+  useEffect(() => {
+    if (crashOptIn) setCrashes(readCrashReports());
+    else setCrashes([]);
+  }, [crashOptIn]);
+  return (
+    <div>
+      <h3 className="dl-title">{S.logs.crashTitle}</h3>
+      {crashes.length === 0 ? (
+        <p className="muted">{S.logs.crashEmpty}</p>
+      ) : (
+        <>
+          {crashes.map((c, i) => (
+            <p key={`${String(c.t)}-${String(i)}`} className="muted">
+              [{Number.isFinite(c.t) ? new Date(c.t).toLocaleString() : "?"}] ({c.view}) {c.message}
+            </p>
+          ))}
+          <div className="chip-row">
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => {
+                clearCrashReports();
+                setCrashes([]);
+              }}
+            >
+              {S.logs.crashClear}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

@@ -1,4 +1,5 @@
 import type { MediaInfo, PlaylistEntry, WatchChannel } from "./types.js";
+import { cleanSubscription, defaultSubFields } from "./subscriptions.js";
 import { normalizeUrl } from "./url.js";
 
 /**
@@ -11,29 +12,17 @@ export function normalizeWatchlist(raw: unknown): WatchChannel[] {
   const out: WatchChannel[] = [];
   const seen = new Set<string>();
   for (const item of raw.slice(0, 200)) {
-    if (typeof item !== "object" || item === null) continue;
-    const rec = item as Record<string, unknown>;
-    if (typeof rec["url"] !== "string") continue;
+    const cleaned = cleanSubscription(item);
+    if (cleaned === null) continue;
     let url = "";
     try {
-      url = normalizeUrl(rec["url"]);
+      url = normalizeUrl(cleaned.url);
     } catch {
       continue;
     }
     if (seen.has(url)) continue;
     seen.add(url);
-    out.push({
-      url,
-      title: typeof rec["title"] === "string" && rec["title"].length > 0 ? rec["title"] : url,
-      lastVideoId:
-        typeof rec["lastVideoId"] === "string" && rec["lastVideoId"].length > 0
-          ? rec["lastVideoId"]
-          : null,
-      lastCheckedAt:
-        typeof rec["lastCheckedAt"] === "number" && Number.isFinite(rec["lastCheckedAt"])
-          ? rec["lastCheckedAt"]
-          : null,
-    });
+    out.push({ ...cleaned, url });
   }
   return out;
 }
@@ -80,6 +69,7 @@ export function addWatchChannel(
       title: title.length > 0 ? title : url,
       lastVideoId: null,
       lastCheckedAt: null,
+      ...defaultSubFields(),
     },
   ];
 }
@@ -87,7 +77,22 @@ export function addWatchChannel(
 export function touchWatch(
   channels: readonly WatchChannel[],
   url: string,
-  patch: Partial<Pick<WatchChannel, "title" | "lastVideoId" | "lastCheckedAt">>,
+  patch: Partial<
+    Pick<
+      WatchChannel,
+      | "title"
+      | "lastVideoId"
+      | "lastCheckedAt"
+      | "mode"
+      | "folder"
+      | "preset"
+      | "engine"
+      | "intervalMin"
+      | "paused"
+      | "failCount"
+      | "autoDisabled"
+    >
+  >,
 ): WatchChannel[] {
   return channels.map((c) => (c.url === url ? { ...c, ...patch } : c));
 }

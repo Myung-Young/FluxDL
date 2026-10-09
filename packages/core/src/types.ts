@@ -6,7 +6,111 @@ import type { ErrorCategory } from "./errors.js";
 import type { AudioMetadata } from "./metadata.js";
 
 export type JobStatus =
-  "queued" | "analyzing" | "downloading" | "processing" | "paused" | "done" | "error" | "cancelled";
+  | "queued"
+  | "analyzing"
+  | "probing"
+  | "downloading"
+  | "processing"
+  | "paused"
+  | "done"
+  | "partial"
+  | "interrupted"
+  | "error"
+  | "postfailed"
+  | "cancelled";
+
+/** yt-dlp release channel (Phase 2). */
+export type YtDlpChannel = "stable" | "nightly";
+
+export const YTDLP_CHANNELS: readonly YtDlpChannel[] = ["stable", "nightly"];
+
+/** Which engine owns a job. Old rows omit it (= yt-dlp). */
+export type EngineId = "yt-dlp" | "gallery-dl" | "streamlink" | "n-m3u8dl-re";
+
+export const ENGINE_IDS: readonly EngineId[] = ["yt-dlp", "gallery-dl", "streamlink", "n-m3u8dl-re"];
+
+/** Router mode: Auto picks per domain/rules, or pin one engine. */
+export type RouterMode = "auto" | "video" | "images";
+
+export const ROUTER_MODES: readonly RouterMode[] = ["auto", "video", "images"];
+
+/** One downloaded file inside a (possibly multi-file) job. */
+export interface FileResult {
+  readonly path: string;
+  readonly size: number | null;
+  readonly status: "downloaded" | "skipped" | "failed";
+}
+
+/** Images (gallery-dl) preferences. All optional-safe via mergeSettings. */
+export interface ImagesSettings {
+  /** Default folder for image jobs (empty = Downloads/FluxDL/Images). */
+  readonly downloadDir: string;
+  readonly folderTemplate: string;
+  readonly filenameTemplate: string;
+  readonly sleepRequestsSec: number | null;
+  readonly maxSleepIntervalSec: number | null;
+  readonly retries: number | null;
+  readonly proxy: string | null;
+  readonly archive: boolean;
+  readonly metadataSidecar: boolean;
+  /**
+   * Raw gallery-dl config override (JSON text, validated before use).
+   * Null = generate from the fields above. "Reset" clears back to null.
+   */
+  readonly customConfig: string | null;
+}
+
+/** Gallery packaging via gallery-dl's native post-processor. */
+export type GalleryPackage = "off" | "zip" | "cbz";
+
+export const GALLERY_PACKAGES: readonly GalleryPackage[] = ["off", "zip", "cbz"];
+
+/** Pixiv ugoira conversion via gallery-dl (`--ugoira`, needs FFmpeg). */
+export type UgoiraFormat = "off" | "mp4" | "gif" | "webm";
+
+export const UGOIRA_FORMATS: readonly UgoiraFormat[] = ["off", "mp4", "gif", "webm"];
+
+/** Image conversion target. */
+export type ConvertFormat = "jpg" | "png";
+
+/** Video compress preset. */
+export type CompressPreset = "off" | "small" | "balanced" | "archive";
+
+export const COMPRESS_PRESETS: readonly CompressPreset[] = ["off", "small", "balanced", "archive"];
+
+/** whisper.cpp model size (on-demand download, sizes shown in the UI). */
+export type WhisperModelSize = "tiny" | "base" | "small";
+
+export const WHISPER_MODEL_SIZES: readonly WhisperModelSize[] = ["tiny", "base", "small"];
+
+/**
+ * Post-processing preferences (Phase 4). Gallery-native steps (package,
+ * ugoira) ride the gallery argv; the local runner handles conversion,
+ * tagging and compression. All optional-safe via mergeSettings.
+ */
+export interface PostProcessSettings {
+  readonly convertImages: boolean;
+  readonly imageFormat: ConvertFormat;
+  /** JPG/PNG quality 1-100 (mapped to each codec's scale). */
+  readonly imageQuality: number;
+  /** Downscale longer side to at most this (px). No upscale, ever. */
+  readonly imageMaxDim: number;
+  /** Strip EXIF/GPS metadata on convert. */
+  readonly stripExif: boolean;
+  readonly packageGallery: GalleryPackage;
+  readonly ugoiraFormat: UgoiraFormat;
+  readonly autoTagAudio: boolean;
+  readonly compressVideo: CompressPreset;
+  /** Transcribe audio to an .srt sidecar (whisper pack, CPU, experimental). */
+  readonly transcribeAudio: boolean;
+  readonly whisperModel: WhisperModelSize;
+  /** rclone remote target (`remote:path`, pack-owned config) or null. */
+  readonly rcloneRemote: string | null;
+  /** Upload finished video/audio via rclone automatically. */
+  readonly autoUpload: boolean;
+  /** Keep the original file next to the output (default true). */
+  readonly keepOriginals: boolean;
+}
 
 export interface FormatOption {
   readonly formatId: string;
@@ -48,18 +152,49 @@ export const LIVE_STATUSES: readonly LiveStatus[] = [
   "post_live",
 ];
 
+/** Queue priority tier (Phase 3): 2 high starts before 1 normal before 0 low. */
+export type JobPriority = 0 | 1 | 2;
+
+export const JOB_PRIORITIES: readonly JobPriority[] = [0, 1, 2];
+
 /** What the window X button does: hide to tray, or quit the app. */
 /**
  * A watched channel/playlist (A6). The app diffs fresh entries against
  * `lastVideoId`: the first check only sets the baseline, later checks
  * surface genuinely new uploads.
+ *
+ * Phase 3 subscriptions: each channel carries its own delivery mode,
+ * destination, preset, engine, interval and health counters. Every field
+ * past `lastCheckedAt` is optional-safe: the normalizer fills defaults so
+ * pre-Phase-3 rows keep working.
  */
 export interface WatchChannel {
   readonly url: string;
   readonly title: string;
   readonly lastVideoId: string | null;
   readonly lastCheckedAt: number | null;
+  /** "auto" downloads new items, "notify" only toasts. Default "notify". */
+  readonly mode: SubscriptionMode;
+  /** Per-sub folder override. Null = global downloadDir. */
+  readonly folder: string | null;
+  /** Per-sub preset override. Null = global defaultPreset. */
+  readonly preset: DownloadPreset | null;
+  /** Per-sub engine override. Null = router decides. */
+  readonly engine: EngineId | null;
+  /** Check interval in minutes, clamped ≥ 30. Default 60. */
+  readonly intervalMin: number;
+  /** Paused subs are never polled. Default false. */
+  readonly paused: boolean;
+  /** Consecutive failed checks. Reset on success. */
+  readonly failCount: number;
+  /** True after MAX_SUB_FAILURES consecutive failures (needs re-enable). */
+  readonly autoDisabled: boolean;
 }
+
+/** Subscription delivery mode: download new items, or just notify. */
+export type SubscriptionMode = "auto" | "notify";
+
+export const SUBSCRIPTION_MODES: readonly SubscriptionMode[] = ["auto", "notify"];
 
 export type CloseBehavior = "tray" | "quit";
 
@@ -73,6 +208,7 @@ export const VIDEO_PRESETS: readonly VideoPreset[] = [
   "720",
   "480",
   "Compatible",
+  "Smallest",
 ];
 
 export const AUDIO_PRESETS: readonly AudioPreset[] = [
@@ -148,7 +284,7 @@ export type AudioPreset =
   | "ALAC"
   | "WAV"
   | "Best";
-export type VideoPreset = "Best" | "2160" | "1440" | "1080" | "720" | "480" | "Compatible";
+export type VideoPreset = "Best" | "2160" | "1440" | "1080" | "720" | "480" | "Compatible" | "Smallest";
 
 /** Video output container (see CONTAINERS for the verified value set). */
 export type Container = "mp4" | "mkv" | "webm" | "avi" | "flv" | "mov" | "gif";
@@ -246,6 +382,30 @@ export interface DownloadJob {
   readonly startAfter?: number | null;
   /** Pinned jobs sort to the top of the list (B7). */
   readonly pinned?: boolean;
+  /** Trim section for this job (Phase 2, --download-sections). */
+  readonly trimStart?: string | null;
+  readonly trimEnd?: string | null;
+  /**
+   * gallery-dl `--range` selector for this job (`5`, `8-20`, `1:24:3`,
+   * `2-4,7`). Validated at every hop; absent = whole gallery.
+   */
+  readonly range?: string | null;
+  /** Set once the outdated-engine auto-retry has fired (never loops). */
+  readonly outdatedRetried?: boolean;
+  /** Queue priority tier (Phase 3, optional: older rows read as normal). */
+  readonly priority?: JobPriority;
+  /** Per-job proxy override (Phase 3: this download only, else global). */
+  readonly proxyOverride?: string | null;
+  /**
+   * Owning engine (Phase 1). Optional: rows written before v1.8 omit it
+   * and read as yt-dlp.
+   */
+  readonly engineId?: EngineId | null;
+  /** Per-file outcomes for multi-file (gallery) jobs. */
+  readonly fileResults?: readonly FileResult[] | null;
+  readonly downloadedCount?: number | null;
+  readonly skippedCount?: number | null;
+  readonly failedCount?: number | null;
 }
 
 export interface DownloadJobInput extends Pick<
@@ -267,6 +427,13 @@ export interface DownloadJobInput extends Pick<
   | "forceOverwrite"
   | "startAfter"
   | "pinned"
+  | "engineId"
+  | "trimStart"
+  | "trimEnd"
+  | "outdatedRetried"
+  | "priority"
+  | "proxyOverride"
+  | "range"
 > {
   readonly useArchive?: boolean;
   /** Sanitized playlist subfolder (UI-side, when the setting is on). */
@@ -286,6 +453,11 @@ export interface AppSettings {
   readonly downloadDir: string;
   readonly filenameTemplate: string;
   readonly concurrency: number;
+  /** Simultaneous gallery-dl jobs (polite default; yt-dlp keeps the global cap). */
+  readonly concurrencyGallery: number;
+  /** Download window bounds (HH:MM, local). Null = always open. */
+  readonly downloadWindowStart: string | null;
+  readonly downloadWindowEnd: string | null;
   readonly speedLimit: string | null;
   readonly proxy: string | null;
   readonly cookiesFromBrowser: string | null;
@@ -300,6 +472,12 @@ export interface AppSettings {
   readonly includeAutoSubs: boolean;
   /** Default container when a merge is required (yt-dlp value set). */
   readonly mergeContainer: string;
+  /**
+   * Global custom yt-dlp `-f` selector (Advanced). Null = off. Per-job
+   * rawFormat wins when set. Validated (non-empty, capped); the args array
+   * carries it untouched, so no shell round-trip is possible.
+   */
+  readonly customFormat: string | null;
   /** Polite pacing delays in seconds; null/0 = off (v1.7.2). */
   readonly pacing: PacingSettings;
   readonly sponsorBlock: boolean;
@@ -342,6 +520,11 @@ export interface AppSettings {
   readonly historyLimit: number;
   /** OS notifications when downloads finish/fail (in-app toasts stay). */
   readonly notifyFinished: boolean;
+  /**
+   * Keep local crash reports (opt-in, never uploaded). View crashes are
+   * stored in localStorage for the Logs screen + diagnostics export.
+   */
+  readonly crashReports: boolean;
   /** Follow the OS light/dark mode (light side is always Paper). */
   readonly followSystemTheme: boolean;
   /** Start with Windows (minimized to the tray). */
@@ -356,4 +539,52 @@ export interface AppSettings {
   readonly closeBehavior: CloseBehavior;
   /** Minimizing also hides the window to the tray. */
   readonly minimizeToTray: boolean;
+  /** yt-dlp release channel (Phase 2). */
+  readonly ytdlpChannel: YtDlpChannel;
+  /** Auto-install tool updates when idle (opt-in, default off). */
+  readonly autoUpdateTools: boolean;
+  /** Use aria2c as external downloader when its binary is present. */
+  readonly useAria2c: boolean;
+  /** Concurrent HLS/DASH fragments (-N), null = yt-dlp default. */
+  readonly concurrentFragments: number | null;
+  /** Network retries (-R + --fragment-retries), null = yt-dlp default. */
+  readonly downloadRetries: number | null;
+  /** Socket timeout seconds, null = yt-dlp default. */
+  readonly socketTimeoutSec: number | null;
+  /** Stall watchdog seconds (0 = off). */
+  readonly stalledTimeoutSec: number;
+  /** SponsorBlock remove list (used when sponsorBlock is on). */
+  readonly sponsorBlockCategories: string;
+  /** Experimental anti-bot impersonate client (null = off). */
+  readonly impersonateClient: string | null;
+  /** Last tool-check epoch ms (Tools page), null = never. */
+  readonly lastToolCheckAt: number | null;
+  /** Engine router (Phase 1): auto picks per domain/rules. */
+  readonly routerMode: RouterMode;
+  /** User domain → engine overrides (suffix match, lowercase host). */
+  readonly domainRules: Record<string, EngineId>;
+  /** Images (gallery-dl) preferences (Phase 1). */
+  readonly images: ImagesSettings;
+  /** Post-processing preferences (Phase 4). */
+  readonly postProcess: PostProcessSettings;
+  /** Dismissed pack-suggestion keys (streamlink-live, …). Never reset. */
+  readonly dismissedPackHints: readonly string[];
+  /** Loopback Remote API (Phase 6A): disabled by default, 127.0.0.1 only. */
+  readonly apiEnabled: boolean;
+  /** Loopback Remote API port (unprivileged only, default 48127). */
+  readonly apiPort: number;
+  /** Discord webhook on finish/fail (URL lives encrypted, never here). */
+  readonly notifyDiscord: boolean;
+  /** Telegram message on finish/fail (token lives encrypted, never here). */
+  readonly notifyTelegram: boolean;
+  /** Telegram chat id (not a secret). Null = unset. */
+  readonly telegramChatId: string | null;
+  /** LAN mode (Phase 6B): explicit opt-in, binds 0.0.0.0. Off by default. */
+  readonly lanEnabled: boolean;
+  /** Allowed LAN IP prefixes, comma-separated. Empty = any LAN client. */
+  readonly lanAllowlist: string;
+  /** Auto-disable LAN after N hours. Null = stays on until toggled. */
+  readonly lanAutoDisableHours: number | null;
+  /** Last-used folder per media type ("video" | "images"). */
+  readonly lastFolderByMedia: Record<string, string>;
 }

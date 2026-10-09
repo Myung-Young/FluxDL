@@ -1,6 +1,16 @@
-import type { Container, DownloadJob, DownloadJobInput, JobStatus } from "./types.js";
+import type {
+  Container,
+  DownloadJob,
+  DownloadJobInput,
+  EngineId,
+  JobPriority,
+  JobStatus,
+  MediaKind,
+} from "./types.js";
+import { ENGINE_IDS } from "./types.js";
 import type { ErrorCategory } from "./errors.js";
 import { isAudioMetadata, normalizeAudioMetadata } from "./metadata.js";
+import { cleanGalleryRange } from "./galleryProbe.js";
 import { fuzzyRank } from "./fuzzy.js";
 
 /**
@@ -17,34 +27,53 @@ export const MAX_HISTORY_ITEMS = 500;
 
 export type QueueEvent =
   | "analyze"
+  | "probe"
   | "start"
   | "resume"
   | "pause"
   | "progress"
   | "process"
   | "done"
+  | "partial"
+  | "postfail"
   | "fail"
   | "cancel"
   | "retry";
 
 const TRANSITIONS: Readonly<Record<QueueEvent, ReadonlySet<JobStatus>>> = {
-  analyze: new Set<JobStatus>(["queued", "error"]),
-  start: new Set<JobStatus>(["queued", "analyzing", "paused"]),
-  resume: new Set<JobStatus>(["paused"]),
-  pause: new Set<JobStatus>(["queued", "analyzing", "downloading", "processing"]),
-  progress: new Set<JobStatus>(["downloading", "processing", "paused"]),
+  analyze: new Set<JobStatus>(["queued", "error", "interrupted"]),
+  probe: new Set<JobStatus>(["queued", "error", "interrupted"]),
+  start: new Set<JobStatus>(["queued", "analyzing", "probing", "paused", "interrupted"]),
+  resume: new Set<JobStatus>(["paused", "interrupted"]),
+  pause: new Set<JobStatus>(["queued", "analyzing", "probing", "downloading", "processing"]),
+  progress: new Set<JobStatus>(["downloading", "processing", "paused", "probing"]),
   process: new Set<JobStatus>(["downloading"]),
-  done: new Set<JobStatus>(["downloading", "processing", "analyzing", "paused"]),
-  fail: new Set<JobStatus>(["queued", "analyzing", "downloading", "processing", "paused"]),
+  done: new Set<JobStatus>(["downloading", "processing", "analyzing", "probing", "paused"]),
+  partial: new Set<JobStatus>(["downloading", "processing", "probing", "paused"]),
+  // Post-process failure (Phase 4): the download itself is intact on disk,
+  // only the pipeline failed. Terminal, history-bound, reprocessable —
+  // attempts untouched (never auto-retried).
+  postfail: new Set<JobStatus>(["done", "processing"]),
+  fail: new Set<JobStatus>([
+    "queued",
+    "analyzing",
+    "probing",
+    "downloading",
+    "processing",
+    "paused",
+    "interrupted",
+  ]),
   cancel: new Set<JobStatus>([
     "queued",
     "analyzing",
+    "probing",
     "downloading",
     "processing",
     "paused",
     "error",
+    "interrupted",
   ]),
-  retry: new Set<JobStatus>(["error", "cancelled"]),
+  retry: new Set<JobStatus>(["error", "cancelled", "partial", "postfailed", "interrupted"]),
 };
 
 export function canTransition(from: JobStatus, event: QueueEvent): boolean {
@@ -60,17 +89,25 @@ export function nextStatus(from: JobStatus, event: QueueEvent): JobStatus {
   switch (event) {
     case "analyze":
       return "analyzing";
+    case "probe":
+      return "probing";
     case "start":
     case "resume":
       return "downloading";
     case "pause":
       return "paused";
     case "progress":
-      return from === "processing" ? "processing" : "downloading";
+      if (from === "processing") return "processing";
+      if (from === "probing") return "probing";
+      return "downloading";
     case "process":
       return "processing";
     case "done":
       return "done";
+    case "partial":
+      return "partial";
+    case "postfail":
+      return "postfailed";
     case "fail":
       return "error";
     case "cancel":
@@ -109,6 +146,10 @@ export function transition(
       return { ...job, status, error: null, nextRetryAt: null };
     case "done":
       return { ...job, status, progress: 100, error: null, nextRetryAt: null };
+    case "partial":
+      return { ...job, status, error: job.error, nextRetryAt: null };
+    case "postfail":
+      return { ...job, status, error: opts.error ?? job.error, nextRetryAt: null };
     case "cancel":
       return { ...job, status, error: null, nextRetryAt: null };
     default:
@@ -127,6 +168,10 @@ export interface EngineProgressLike {
   readonly errorMessage?: string;
   readonly errorCategory?: ErrorCategory;
   readonly elapsed?: string | null;
+  /** Gallery (multi-file) counters, when the engine tracks them. */
+  readonly downloadedCount?: number | null;
+  readonly skippedCount?: number | null;
+  readonly failedCount?: number | null;
 }
 
 /**
@@ -145,6 +190,23 @@ export function applyEngineProgress(job: DownloadJob, p: EngineProgressLike): Do
     downloadedBytes: p.downloadedBytes ?? job.downloadedBytes,
     totalBytes: p.totalBytes ?? job.totalBytes,
   };
+  // Gallery (multi-file) counters ride alongside bytes: the engine reports
+  // per-file downloaded/skipped/failed, which the cards render as "N files"
+  // instead of a byte size (a gallery count is not a byte count). Keys are
+  // added only once either side knows them, so yt-dlp snapshots stay
+  // byte-identical (no null-key churn on every progress fold).
+  const counters: {
+    -readonly [K in "downloadedCount" | "skippedCount" | "failedCount"]?: number | null;
+  } = {};
+  if (p.downloadedCount !== undefined || job.downloadedCount !== undefined) {
+    counters.downloadedCount = p.downloadedCount ?? job.downloadedCount ?? null;
+  }
+  if (p.skippedCount !== undefined || job.skippedCount !== undefined) {
+    counters.skippedCount = p.skippedCount ?? job.skippedCount ?? null;
+  }
+  if (p.failedCount !== undefined || job.failedCount !== undefined) {
+    counters.failedCount = p.failedCount ?? job.failedCount ?? null;
+  }
   switch (p.stage) {
     case "processing":
       if (!canTransition(job.status, "process") && job.status !== "processing") return job;
@@ -155,6 +217,7 @@ export function applyEngineProgress(job: DownloadJob, p: EngineProgressLike): Do
         speed: p.speed,
         eta: p.eta,
         ...bytes,
+        ...counters,
         stage: p.stage,
         destination: p.destination ?? job.destination,
       };
@@ -167,11 +230,33 @@ export function applyEngineProgress(job: DownloadJob, p: EngineProgressLike): Do
         speed: null,
         eta: null,
         ...bytes,
+        ...counters,
         stage: p.stage,
         error: null,
         nextRetryAt: null,
         destination: p.destination ?? job.destination,
       };
+    case "partial":
+      if (!canTransition(job.status, "partial")) return job;
+      return {
+        ...job,
+        status: "partial",
+        speed: null,
+        eta: null,
+        ...bytes,
+        ...counters,
+        stage: p.stage,
+        destination: p.destination ?? job.destination,
+        nextRetryAt: null,
+      };
+    case "postfailed":
+      // Phase 4: the engine finished the download, then a pipeline step
+      // failed. The output file is intact — only post-processing needs a
+      // re-run (Reprocess), never the download.
+      if (!canTransition(job.status, "postfail")) return job;
+      return transition(job, "postfail", {
+        error: p.errorMessage ?? job.error ?? "Post-processing failed.",
+      });
     case "error":
       // v1.7.2: never throw out of a progress fold (this runs inside a
       // `void`-ed promise in the controller), and prefer the ENGINE's mapped
@@ -191,6 +276,11 @@ export function applyEngineProgress(job: DownloadJob, p: EngineProgressLike): Do
         stage: p.stage,
         destination: p.destination ?? job.destination,
       };
+    case "stalled":
+      // Watchdog heartbeat (Phase 2): the job is still downloading, but no
+      // output arrived within the stall window. Never throws, never moves.
+      if (job.status !== "downloading" && job.status !== "processing") return job;
+      return { ...job, stage: "stalled" };
     case "cancelled":
       if (!canTransition(job.status, "cancel")) return job;
       return {
@@ -205,11 +295,12 @@ export function applyEngineProgress(job: DownloadJob, p: EngineProgressLike): Do
       if (!canTransition(job.status, "progress") && job.status !== "downloading") return job;
       return {
         ...job,
-        status: job.status === "processing" ? "processing" : "downloading",
+        status: job.status === "processing" || job.status === "probing" ? job.status : "downloading",
         progress: p.percent,
         speed: p.speed,
         eta: p.eta,
         ...bytes,
+        ...counters,
         stage: p.stage,
         destination: p.destination ?? job.destination,
       };
@@ -230,7 +321,12 @@ export function clampConcurrency(n: number): number {
 export function activeCount(jobs: readonly DownloadJob[]): number {
   let n = 0;
   for (const j of jobs) {
-    if (j.status === "analyzing" || j.status === "downloading" || j.status === "processing") {
+    if (
+      j.status === "analyzing" ||
+      j.status === "probing" ||
+      j.status === "downloading" ||
+      j.status === "processing"
+    ) {
       n += 1;
     }
   }
@@ -247,40 +343,107 @@ export function activeCount(jobs: readonly DownloadJob[]): number {
 export function unfinishedCount(jobs: readonly DownloadJob[]): number {
   let n = 0;
   for (const j of jobs) {
-    if (j.status !== "done" && j.status !== "error" && j.status !== "cancelled") {
+    if (
+      j.status !== "done" &&
+      j.status !== "partial" &&
+      j.status !== "error" &&
+      j.status !== "postfailed" &&
+      j.status !== "cancelled"
+    ) {
       n += 1;
     }
   }
   return n;
 }
 
+/**
+ * Priority tier with back-compat default (rows before Phase 3 omit it):
+ * 2 high, 1 normal, 0 low. Garbage reads as normal, never as high.
+ */
+export function priorityOf(job: { readonly priority?: JobPriority | undefined }): JobPriority {
+  return job.priority === 0 || job.priority === 2 ? job.priority : 1;
+}
+
+/** Validated download-window bounds (HH:MM); either side null = no window. */
+export interface DownloadWindow {
+  readonly start: string | null;
+  readonly end: string | null;
+}
+
+function windowMinutes(t: string | null): number | null {
+  if (t === null) return null;
+  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(t.trim());
+  if (m === null) return null;
+  return Number.parseInt(m[1] as string, 10) * 60 + Number.parseInt(m[2] as string, 10);
+}
+
+/**
+ * True when epoch-ms `now` (local time) falls inside the window. A missing
+ * or half-set window is always open; overnight ranges (22:00→06:00) wrap
+ * past midnight. Garbage reads as open, never as closed.
+ */
+export function isInDownloadWindow(now: number, window: DownloadWindow | null): boolean {
+  if (window === null) return true;
+  const start = windowMinutes(window.start);
+  const end = windowMinutes(window.end);
+  if (start === null || end === null || start === end) return true;
+  const d = new Date(now);
+  const t = d.getHours() * 60 + d.getMinutes();
+  if (start < end) return t >= start && t < end;
+  return t >= start || t < end;
+}
+
 function isDue(job: DownloadJob, now: number): boolean {
   return job.nextRetryAt === null || job.nextRetryAt <= now;
 }
 
+/** Active (engine-owned) gallery-dl jobs — the polite per-engine cap. */
+export function activeGalleryCount(jobs: readonly DownloadJob[]): number {
+  let n = 0;
+  for (const j of jobs) {
+    if (engineOf(j) !== "gallery-dl") continue;
+    if (
+      j.status === "analyzing" ||
+      j.status === "probing" ||
+      j.status === "downloading" ||
+      j.status === "processing"
+    ) {
+      n += 1;
+    }
+  }
+  return n;
+}
+
 /**
- * FIFO: earliest-created queued job whose backoff has elapsed AND whose
- * schedule has arrived (A4), or null when all slots are busy / nothing due.
+ * Priority order, then FIFO: highest tier first, earliest-created wins
+ * inside a tier. Gallery candidates additionally honor their own cap
+ * (default 2) so image jobs never crowd out the global slots. A closed
+ * download window starts nothing (running jobs finish).
  */
 export function selectNextToStart(
   jobs: readonly DownloadJob[],
   concurrency: number,
   now: number,
+  galleryCap = 2,
+  window: DownloadWindow | null = null,
 ): DownloadJob | null {
+  if (!isInDownloadWindow(now, window)) return null;
   if (activeCount(jobs) >= clampConcurrency(concurrency)) return null;
-  let best: DownloadJob | null = null;
+  const galleryFull = activeGalleryCount(jobs) >= clampConcurrency(galleryCap);
+  const due: DownloadJob[] = [];
   for (const j of jobs) {
     if (j.status !== "queued" || !isDue(j, now)) continue;
     if (j.startAfter !== undefined && j.startAfter !== null && j.startAfter > now) continue;
-    if (
-      best === null ||
-      j.createdAt < best.createdAt ||
-      (j.createdAt === best.createdAt && j.id < best.id)
-    ) {
-      best = j;
-    }
+    if (galleryFull && engineOf(j) === "gallery-dl") continue;
+    due.push(j);
   }
-  return best;
+  due.sort(
+    (a, b) =>
+      priorityOf(b) - priorityOf(a) ||
+      a.createdAt - b.createdAt ||
+      (a.id < b.id ? -1 : 1),
+  );
+  return due[0] ?? null;
 }
 
 export function shouldRetry(job: DownloadJob, maxRetries: number, now: number): boolean {
@@ -328,13 +491,19 @@ type StartOptions = Partial<
     | "forceOverwrite"
     | "startAfter"
     | "pinned"
+    | "engineId"
+    | "trimStart"
+    | "trimEnd"
+    | "outdatedRetried"
+    | "range"
   >
 > & {
     /** Per-job container override (v1.7.2); lives on the preset. */
     readonly container?: Container | null;
   };
-
 function pickJobOptions(source: DownloadJobInput): StartOptions {
+  // v1.8.5: gallery-dl --range, validated once here so every hop agrees.
+  const range = cleanGalleryRange(source.range ?? null);
   return {
     ...(source.useArchive === true ? { useArchive: true as const } : {}),
     ...(typeof source.extractor === "string" && source.extractor.length > 0
@@ -369,6 +538,26 @@ function pickJobOptions(source: DownloadJobInput): StartOptions {
       ? { startAfter: source.startAfter }
       : {}),
     ...(source.pinned === true ? { pinned: true as const } : {}),
+    ...(typeof source.engineId === "string" &&
+    (ENGINE_IDS as readonly string[]).includes(source.engineId)
+      ? { engineId: source.engineId }
+      : {}),
+    ...(typeof source.trimStart === "string" && source.trimStart.trim().length > 0
+      ? { trimStart: source.trimStart.trim().slice(0, 32) }
+      : {}),
+    ...(typeof source.trimEnd === "string" && source.trimEnd.trim().length > 0
+      ? { trimEnd: source.trimEnd.trim().slice(0, 32) }
+      : {}),
+    ...(source.outdatedRetried === true ? { outdatedRetried: true as const } : {}),
+    // v1.8.5: --range survives the hop or selected-items downloads silently
+    // become whole-gallery ones (R1 lesson again).
+    ...(range !== null ? { range } : {}),
+    ...(source.priority === 0 || source.priority === 1 || source.priority === 2
+      ? { priority: source.priority }
+      : {}),
+    ...(typeof source.proxyOverride === "string" && source.proxyOverride.trim().length > 0
+      ? { proxyOverride: source.proxyOverride.trim().slice(0, 512) }
+      : {}),
     // v1.7.2: a per-job container override rides on the preset, so it must
     // survive this hop or the job silently falls back to the global setting.
     ...(source.container !== undefined && source.container !== null
@@ -399,6 +588,7 @@ export function toStartInput(source: DownloadJobInput): DownloadJobInput {
 
 /** Factory for new queue entries (status queued, zero attempts). */
 export function makeJob(id: string, input: DownloadJobInput, createdAt: number): DownloadJob {
+  const carried = pickJobOptions(input);
   return {
     id,
     url: input.url,
@@ -417,12 +607,30 @@ export function makeJob(id: string, input: DownloadJobInput, createdAt: number):
     attempts: 0,
     nextRetryAt: null,
     destination: null,
-    ...pickJobOptions(input),
+    // Old callers omit engineId — default to yt-dlp so history stays honest.
+    engineId: "yt-dlp",
+    // Priority rides the same hop (R1 lesson); absent reads as normal (1).
+    priority: priorityOf(input),
+    ...carried,
   };
 }
 
 export function isFinished(job: DownloadJob): boolean {
-  return job.status === "done" || job.status === "error" || job.status === "cancelled";
+  return (
+    job.status === "done" ||
+    job.status === "partial" ||
+    job.status === "error" ||
+    job.status === "postfailed" ||
+    job.status === "cancelled"
+  );
+}
+
+/** Engine id with back-compat default (rows before v1.8 omit it). */
+export function engineOf(job: Pick<DownloadJob, "engineId">): EngineId {
+  if (job.engineId === "gallery-dl") return "gallery-dl";
+  if (job.engineId === "streamlink") return "streamlink";
+  if (job.engineId === "n-m3u8dl-re") return "n-m3u8dl-re";
+  return "yt-dlp";
 }
 
 /**
@@ -462,6 +670,60 @@ export function pruneHistory(history: readonly DownloadJob[], max: number): Down
   return [...history]
     .sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? -1 : 1))
     .slice(0, cap);
+}
+
+/** Library filter state (Phase 3): all = no filtering on that axis. */
+export interface HistoryFilter {
+  readonly kind: "all" | MediaKind;
+  readonly engine: "all" | EngineId;
+  /** Substring matched against the extractor key (empty = all sites). */
+  readonly site: string;
+}
+
+export const DEFAULT_HISTORY_FILTER: HistoryFilter = { kind: "all", engine: "all", site: "" };
+
+/** Filter history rows (pure; search runs separately via searchHistory). */
+export function filterHistory(
+  history: readonly DownloadJob[],
+  filter: HistoryFilter,
+): DownloadJob[] {
+  const site = filter.site.trim().toLowerCase();
+  return history.filter(
+    (h) =>
+      (filter.kind === "all" || h.preset.kind === filter.kind) &&
+      (filter.engine === "all" || engineOf(h) === filter.engine) &&
+      (site.length === 0 || (h.extractor ?? "").toLowerCase().includes(site)),
+  );
+}
+
+/** Library sort order (Phase 3). */
+export type HistorySort = "newest" | "oldest" | "title" | "size";
+
+export const HISTORY_SORTS: readonly HistorySort[] = ["newest", "oldest", "title", "size"];
+
+function historySize(h: DownloadJob): number {
+  const v = h.totalBytes ?? h.downloadedBytes;
+  return typeof v === "number" && Number.isFinite(v) ? v : -1;
+}
+
+/** Sort history rows (pure; unknown sizes sink to the bottom). */
+export function sortHistory(history: readonly DownloadJob[], sort: HistorySort): DownloadJob[] {
+  const arr = [...history];
+  switch (sort) {
+    case "oldest":
+      return arr.sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1));
+    case "title":
+      return arr.sort(
+        (a, b) => a.title.localeCompare(b.title) || b.createdAt - a.createdAt,
+      );
+    case "size":
+      return arr.sort(
+        (a, b) => historySize(b) - historySize(a) || b.createdAt - a.createdAt,
+      );
+    case "newest":
+    default:
+      return arr.sort((a, b) => b.createdAt - a.createdAt || (a.id < b.id ? -1 : 1));
+  }
 }
 
 /**

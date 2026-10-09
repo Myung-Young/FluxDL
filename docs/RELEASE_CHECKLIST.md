@@ -13,6 +13,8 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm build
   timeout is environmental, a deterministic failure is a regression (D89/D97).
 - Playwright smoke needs `pnpm build` first:
   `pnpm --filter @grabber/desktop test:e2e`.
+- `pnpm audit` is advisory, not gated: triage per the DECISIONS audit
+  posture (pinned Electron 36.x + dev-only findings). Record anything new.
 
 ## 2. Version + notes
 

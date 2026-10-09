@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actionsFor, cancelledMapped, mapDownloadError, timeoutMapped } from "./errors.js";
+import { actionsFor, cancelledMapped, engineBrokenMapped, mapDownloadError, timeoutMapped } from "./errors.js";
 
 describe("mapDownloadError", () => {
   it.each([
@@ -96,6 +96,14 @@ describe("actionable errors (M1.4)", () => {
     expect(t.category).toBe("timeout");
     expect(t.message).toContain("60");
     expect(t.actions.map((a) => a.id)).toEqual(["retry", "logs"]);
+  });
+
+  it("builds a repairable engine-broken mapping (v1.8.5)", () => {
+    const m = engineBrokenMapped();
+    expect(m.category).toBe("engine-broken");
+    expect(m.message).toMatch(/missing or damaged/);
+    expect(m.actions.map((a) => a.id)).toEqual(["repair", "logs"]);
+    expect(engineBrokenMapped("ms").message).toContain("rosak");
   });
 
   it("localizes messages to Bahasa Melayu", () => {

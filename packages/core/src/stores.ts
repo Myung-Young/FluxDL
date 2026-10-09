@@ -2,7 +2,8 @@ import { create, type StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
 import type { AppSettings, DownloadJob, DownloadJobInput } from "./types.js";
 import { QueueController } from "./queueController.js";
-import { jobsEqual } from "./queue.js";
+import { jobsEqual, priorityOf } from "./queue.js";
+import type { DownloadWindow } from "./queue.js";
 import { DEFAULT_SETTINGS, mergeSettings } from "./settings.js";
 
 export type QueueStoreEngine = Pick<
@@ -16,6 +17,7 @@ export type QueueStoreEngine = Pick<
   | "appendHistory"
   | "removeHistory"
   | "loadQueue"
+  | "updateEngine"
 >;
 
 export interface QueueStoreState {
@@ -31,6 +33,7 @@ export interface QueueStoreState {
   setJobPreset(id: string, preset: DownloadJob["preset"]): Promise<void>;
   setJobSchedule(id: string, startAfter: number | null): Promise<void>;
   togglePin(id: string): Promise<void>;
+  setPriority(id: string, priority: DownloadJob["priority"]): Promise<void>;
   remove(id: string): Promise<void>;
   reorder(id: string, toIndex: number): Promise<void>;
   pauseAll(): Promise<void>;
@@ -41,6 +44,10 @@ export interface QueueStoreState {
   retryAll(): Promise<void>;
   /** Drive due starts + backoff retries (reentrancy-guarded, cheap). */
   pump(): Promise<void>;
+  /** Live-apply the settings concurrency caps (Phase 3: caps reach the pump). */
+  setConcurrency(n: number): void;
+  setGalleryCap(n: number): void;
+  setWindow(window: DownloadWindow | null): void;
 }
 
 export function createQueueStore(
@@ -99,6 +106,9 @@ export function createQueueStore(
     togglePin: async (id) => {
       await getController(set).togglePin(id);
     },
+    setPriority: async (id, priority) => {
+      await getController(set).setPriority(id, priorityOf({ priority }));
+    },
     remove: async (id) => {
       await getController(set).remove(id);
     },
@@ -119,6 +129,15 @@ export function createQueueStore(
     },
     pump: async () => {
       await getController(set).pump();
+    },
+    setConcurrency: (n) => {
+      getController(set).setConcurrency(n);
+    },
+    setGalleryCap: (n) => {
+      getController(set).setGalleryCap(n);
+    },
+    setWindow: (window) => {
+      getController(set).setWindow(window);
     },
   }));
 }

@@ -2,7 +2,16 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
 import { DesktopEngine, extractJsonPayload, killProcessTree } from "./desktopEngine.js";
+
+function hasFfmpeg(): boolean {
+  try {
+    return spawnSync("ffmpeg", ["-version"], { timeout: 15000 }).status === 0;
+  } catch {
+    return false;
+  }
+}
 
 function makeEngine() {
   const base = mkdtempSync(join(tmpdir(), "fluxdl-addons-"));
@@ -178,6 +187,42 @@ describe("engine addons (lifecycle/deeplink/media/updates)", () => {
     expect(() => {
       killProcessTree(null);
     }).not.toThrow();
+  });
+
+  it("postProcess rejects empty requests without spawning", async () => {
+    const { engine } = makeEngine();
+    await expect(engine.postProcess({ action: "run", files: [], steps: [] })).rejects.toThrow();
+    await expect(
+      engine.postProcess({ action: "run", files: ["x"], steps: [] }),
+    ).rejects.toThrow();
+    await expect(engine.postProcess({ action: "media-info" })).rejects.toThrow();
+  });
+
+  it.runIf(hasFfmpeg())("postProcess converts an image through the channel", async () => {
+    const { engine, base } = makeEngine();
+    const { mkdirSync } = await import("node:fs");
+    const dl = join(base, "dl");
+    mkdirSync(dl, { recursive: true });
+    const src = join(dl, "a.webp");
+    const made = spawnSync(
+      "ffmpeg",
+      ["-hide_banner", "-y", "-f", "lavfi", "-i", "color=c=red:s=64x64:d=1", "-frames:v", "1", src],
+      { timeout: 60000 },
+    );
+    expect(made.status).toBe(0);
+    await engine.saveSettings({ downloadDir: dl });
+    const res = await engine.postProcess({ action: "run", files: [src], steps: ["convert-image"] });
+    expect(res.kind).toBe("report");
+    if (res.kind !== "report") return;
+    expect(res.report.ok).toBe(true);
+    expect(res.report.results[0]?.output?.endsWith(".fluxdl.jpg")).toBe(true);
+    const info = await engine.postProcess({
+      action: "media-info",
+      path: res.report.results[0]?.output ?? src,
+    });
+    expect(info.kind).toBe("media");
+    if (info.kind !== "media") return;
+    expect(info.summary?.video?.codec).toBe("mjpeg");
   });
 
   it("checkForUpdates resolves the status shape (best-effort network)", async () => {

@@ -7,10 +7,15 @@ import { CONTAINERS } from "./types.js";
 import { THEME_NAMES } from "./themes.js";
 import { deriveAccentScale } from "./color.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
+import type { ToastStoreState } from "./toast.js";
 import { formatStr, useStrings } from "./locale.js";
 import { filterSettingIds, type FilterableField } from "./settingsFilter.js";
-import { previewFilename, validateFilenameTemplate, validateSpeedLimit } from "./validate.js";
+import { previewFilename, validateFilenameTemplate, validateSpeedLimit, validateWindowTime } from "./validate.js";
 import { exportBackup, parseBackup } from "./backup.js";
+import { PackStore } from "./PackStore.js";
+import { RemoteSection } from "./RemoteSection.js";
+import { ToolsSection } from "./ToolsSection.js";
+import { validateGalleryConfigJson } from "./galleryConfig.js";
 
 const ACCENT_SWATCHES: readonly string[] = [
   "#818cf8",
@@ -27,6 +32,7 @@ export interface SettingsScreenProps {
   readonly engine: DownloadEngine;
   readonly settings: StoreApi<SettingsStoreState>;
   readonly queue: StoreApi<QueueStoreState>;
+  readonly toast: StoreApi<ToastStoreState>;
   readonly onReplay: () => void;
 }
 
@@ -34,6 +40,10 @@ const FILENAME_PRESETS: readonly string[] = [
   "%(title)s [%(id)s].%(ext)s",
   "%(title)s.%(ext)s",
   "%(upload_date)s - %(title)s [%(id)s].%(ext)s",
+  // Phase 3: by-uploader (sorts a flat folder by channel) and
+  // Plex/Jellyfin-friendly (one folder per uploader). Standard fields only.
+  "%(uploader)s - %(title)s [%(id)s].%(ext)s",
+  "%(uploader)s/%(title)s [%(id)s].%(ext)s",
 ];
 
 /**
@@ -48,7 +58,7 @@ const FILENAME_PRESETS: readonly string[] = [
  */
 const CONTAINER_CHOICES: readonly Container[] = [...CONTAINERS];
 
-export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsScreenProps): React.JSX.Element {
+export function SettingsScreen({ engine, settings, queue, toast, onReplay }: SettingsScreenProps): React.JSX.Element {
   const S = useStrings(settings);
   const saved = useStore(settings, (s) => s.settings);
   const ready = useStore(settings, (s) => s.ready);
@@ -58,6 +68,13 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
   const [query, setQuery] = useState<string>("");
   const [templateDraft, setTemplateDraft] = useState<string | null>(null);
   const [speedDraft, setSpeedDraft] = useState<string | null>(null);
+  // Raw gallery-dl config draft (v1.8.5): null = show the saved value.
+  const [customDraft, setCustomDraft] = useState<string | null>(null);
+  const [customNote, setCustomNote] = useState<string | null>(null);
+  const [windowDraft, setWindowDraft] = useState<{ start: string | null; end: string | null }>({
+    start: null,
+    end: null,
+  });
   const templateRef = useRef<HTMLInputElement | null>(null);
 
   // Filename token builder (D6): click a placeholder to splice it at the
@@ -124,11 +141,59 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
       { id: "set-dir", label: S.settings.downloadDir, keywords: ["download", "folder", "directory"] },
       { id: "set-template", label: S.settings.filenameTemplate, keywords: ["filename", "template"] },
       { id: "set-concurrency", label: S.settings.concurrency, keywords: ["concurrency", "simultaneous"] },
+      {
+        id: "set-packs",
+        label: S.settings.packsTitle,
+        keywords: ["pack", "tool", "streamlink", "whisper", "rclone", "install"],
+      },
+      {
+        id: "set-tools",
+        label: [
+          S.settings.toolsTitle,
+          S.settings.toolsChannel,
+          S.settings.toolsRunDoctor,
+          S.settings.toolsUpdateAll,
+        ].join(" "),
+        keywords: ["tools", "engines", "doctor", "health", "update", "reinstall", "rollback", "yt-dlp", "ffmpeg", "deno", "aria2c", "channel"],
+      },
+      {
+        id: "set-images",
+        label: [
+          S.settings.sectionImages,
+          S.settings.imagesDownloadDir,
+          S.settings.imagesFolderTemplate,
+          S.settings.imagesFilenameTemplate,
+          S.settings.imagesArchive,
+          S.settings.imagesSidecar,
+          S.settings.imagesCustom,
+        ].join(" "),
+        keywords: ["images", "gallery", "gallery-dl", "folder", "template", "archive", "proxy", "config", "sleep", "retries"],
+      },
+      {
+        id: "set-remote",
+        label: [S.settings.remoteTitle, S.settings.remoteEnable].join(" "),
+        keywords: ["remote", "api", "loopback", "token", "port", "pairing", "extension", "pwa", "phone"],
+      },
+      {
+        id: "set-postprocess",
+        label: S.settings.postTitle,
+        keywords: ["post", "convert", "compress", "tag", "exif", "zip", "cbz", "ugoira"],
+      },
       { id: "set-timeout", label: S.settings.analyzeTimeout, keywords: ["analyze", "timeout"] },
       { id: "set-history", label: S.settings.historyLimit, keywords: ["history", "keep"] },
       { id: "set-speed", label: S.settings.speedLimit, keywords: ["speed", "limit", "rate"] },
       { id: "set-proxy", label: S.settings.proxy, keywords: ["proxy", "network"] },
       { id: "set-cookies", label: S.settings.cookies, keywords: ["cookies", "browser"] },
+      {
+        id: "set-network2",
+        label: [
+          S.settings.downloadRetries,
+          S.settings.concurrentFragments,
+          S.settings.socketTimeoutSec,
+          S.settings.useAria2c,
+        ].join(" "),
+        keywords: ["network", "retries", "fragments", "timeout", "aria2c", "downloader"],
+      },
       { id: "set-cookies-file", label: S.settings.cookiesFile, keywords: ["cookies", "file"] },
       {
         id: "set-pacing",
@@ -141,6 +206,7 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
           S.settings.embedThumbnail,
           S.settings.embedMetadata,
           S.settings.sponsorBlock,
+          S.settings.sponsorCats,
           S.settings.skipArchived,
           S.settings.playlistSubfolder,
         ].join(" "),
@@ -164,6 +230,8 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
         id: "togglesWindow",
         label: [
           S.settings.autoCheckUpdate,
+          S.settings.autoUpdateTools,
+          S.settings.crashReports,
           S.settings.minimizeToTray,
           S.settings.notifyFinished,
           S.settings.followSystemTheme,
@@ -176,7 +244,7 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
       { id: "set-close", label: S.settings.closeBehavior, keywords: ["close", "quit", "tray", "window", "minimize"] },
       { id: "set-profiles", label: S.settings.profiles, keywords: ["profile", "preset", "music", "video", "bundle"] },
       { id: "set-sublangs", label: S.settings.subtitleLangs, keywords: ["subtitle", "language"] },
-      { id: "set-merge", label: S.settings.mergeContainer, keywords: ["merge", "container"] },
+      { id: "set-merge", label: [S.settings.mergeContainer, S.settings.customFormat].join(" "), keywords: ["merge", "container", "format", "custom"] },
       { id: "set-codec", label: S.settings.codecPreference, keywords: ["codec", "h264", "vp9", "av1"] },
       { id: "set-theme", label: S.settings.theme, keywords: ["theme"] },
       { id: "set-density", label: S.settings.density, keywords: ["density", "comfortable", "compact"] },
@@ -212,6 +280,8 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
     ["playlistSubfolder", S.settings.playlistSubfolder],
     ["thumbnailAccent", S.settings.thumbnailAccent],
     ["autoCheckUpdate", S.settings.autoCheckUpdate],
+    ["autoUpdateTools", S.settings.autoUpdateTools],
+    ["crashReports", S.settings.crashReports],
     ["minimizeToTray", S.settings.minimizeToTray],
     ["notifyFinished", S.settings.notifyFinished],
     ["followSystemTheme", S.settings.followSystemTheme],
@@ -285,12 +355,13 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
   // Backup & restore (D9): one portable JSON file, everything sanitized.
   const exportAll = async (): Promise<void> => {
     try {
-      const [s, q, h] = await Promise.all([
+      const [s, q, h, w] = await Promise.all([
         engine.loadSettings().catch(() => saved),
         engine.loadQueue().catch(() => []),
         engine.loadHistory().catch(() => []),
+        engine.loadWatchlist().catch(() => []),
       ]);
-      const blob = new Blob([exportBackup(s, q, h)], { type: "application/json" });
+      const blob = new Blob([exportBackup(s, q, h, w)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -324,11 +395,13 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
           // swallowed — so a single error mid-loop destroyed the user's
           // existing history and still reported "restored N records".
           await engine.restoreHistory(parsed.history);
+          await engine.saveWatchlist(parsed.watchlist).catch(() => undefined);
           setBackupNote(
             formatStr(S.settings.backupDone, {
               q: parsed.queue.length,
               h: parsed.history.length,
               d: parsed.dropped,
+              w: parsed.watchlist.length,
             }),
           );
           flashSaved();
@@ -453,7 +526,7 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
           }}
         />
         <div className="chip-row" aria-label={S.settings.filenameTemplate} hidden={hide("set-template")}>
-          {["%(title)s", "%(id)s", "%(uploader)s", "%(upload_date)s", "%(ext)s"].map((t) => (
+          {["%(title)s", "%(id)s", "%(uploader)s", "%(upload_date)s", "%(extractor)s", "%(ext)s"].map((t) => (
             <button
               key={t}
               type="button"
@@ -510,6 +583,71 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
           }}
         />
 
+        <label className="field-label" htmlFor="set-concurrency-gallery" hidden={hide("set-concurrency")}>
+          {S.settings.concurrencyGallery}
+        </label>
+        <input
+          id="set-concurrency-gallery"
+          key={`concurrencyGallery:${String(saved.concurrencyGallery)}`}
+          className="input"
+          type="number"
+          min={1}
+          max={5}
+          defaultValue={saved.concurrencyGallery}
+          hidden={hide("set-concurrency")}
+          onBlur={(e) => {
+            save({ concurrencyGallery: Number(e.target.value) });
+          }}
+        />
+
+        <label className="field-label" htmlFor="set-window-start" hidden={hide("set-concurrency")}>
+          {S.settings.downloadWindowStart}
+        </label>
+        <input
+          id="set-window-start"
+          key={`windowStart:${saved.downloadWindowStart ?? ""}`}
+          className="input"
+          defaultValue={saved.downloadWindowStart ?? ""}
+          placeholder="22:00"
+          spellCheck={false}
+          hidden={hide("set-concurrency")}
+          onChange={(e) => {
+            setWindowDraft((prev) => ({ ...prev, start: e.target.value }));
+          }}
+          onBlur={(e) => {
+            setWindowDraft((prev) => ({ ...prev, start: null }));
+            commitText(e, (v) => ({ downloadWindowStart: v }));
+          }}
+        />
+        <label className="field-label" htmlFor="set-window-end" hidden={hide("set-concurrency")}>
+          {S.settings.downloadWindowEnd}
+        </label>
+        <input
+          id="set-window-end"
+          key={`windowEnd:${saved.downloadWindowEnd ?? ""}`}
+          className="input"
+          defaultValue={saved.downloadWindowEnd ?? ""}
+          placeholder="06:00"
+          spellCheck={false}
+          hidden={hide("set-concurrency")}
+          onChange={(e) => {
+            setWindowDraft((prev) => ({ ...prev, end: e.target.value }));
+          }}
+          onBlur={(e) => {
+            setWindowDraft((prev) => ({ ...prev, end: null }));
+            commitText(e, (v) => ({ downloadWindowEnd: v }));
+          }}
+        />
+        {(() => {
+          const s = windowDraft.start ?? saved.downloadWindowStart;
+          const e = windowDraft.end ?? saved.downloadWindowEnd;
+          return validateWindowTime(s) && validateWindowTime(e) ? null : (
+            <p className="error-text" role="alert" hidden={hide("set-concurrency")}>
+              {S.settings.windowInvalid}
+            </p>
+          );
+        })()}
+
         <label className="field-label" htmlFor="set-timeout" hidden={hide("set-timeout")}>
           {S.settings.analyzeTimeout}
         </label>        <input
@@ -552,6 +690,7 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
           "set-proxy",
           "set-cookies",
           "set-cookies-file",
+          "set-network2",
           "set-pacing",
         ])}
       >
@@ -629,6 +768,52 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
             commitText(e, (v) => ({ cookiesFile: v }));
           }}
         />
+
+        {/* Retry/fragment/timeout knobs (Phase 2): null = tool default. */}
+        <div className="meta-grid" hidden={hide("set-network2")}>
+          {(
+            [
+              ["downloadRetries", "set-net-retries", S.settings.downloadRetries, 0, 30],
+              ["concurrentFragments", "set-net-fragments", S.settings.concurrentFragments, 1, 16],
+              ["socketTimeoutSec", "set-net-timeout", S.settings.socketTimeoutSec, 5, 300],
+            ] as const
+          ).map(([key, id, label, min, max]) => (
+            <label key={key} className="meta-field" htmlFor={id}>
+              <span className="field-label">{label}</span>
+              <input
+                id={id}
+                data-setting={key}
+                className="input"
+                type="number"
+                min={min}
+                max={max}
+                step={1}
+                key={`${key}:${String(saved[key] ?? "")}`}
+                defaultValue={saved[key] ?? ""}
+                inputMode="numeric"
+                placeholder={S.settings.pacingOff}
+                spellCheck={false}
+                onBlur={(e) => {
+                  const raw = e.target.value.trim();
+                  save({ [key]: raw.length === 0 ? null : Number(raw) });
+                }}
+              />
+            </label>
+          ))}
+        </div>
+        <div className="check-col" hidden={hide("set-network2")}>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              data-setting="useAria2c"
+              checked={saved.useAria2c}
+              onChange={(e) => {
+                save({ useAria2c: e.target.checked });
+              }}
+            />
+            {S.settings.useAria2c}
+          </label>
+        </div>
 
         {/* Polite pacing (v1.7.2): the "be a good citizen" delays. All off by
             default; each maps 1:1 onto a documented yt-dlp flag. */}
@@ -724,6 +909,193 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
 
       <section
         className="grabber-card"
+        aria-label={S.settings.sectionImages}
+        hidden={hideSection(["set-images"])}
+      >
+        <h2 className="dl-title">{S.settings.sectionImages}</h2>
+        <label className="field-label" htmlFor="set-images-dir" hidden={hide("set-images")}>
+          {S.settings.imagesDownloadDir}
+        </label>
+        <input
+          id="set-images-dir"
+          className="input"
+          data-setting="images.downloadDir"
+          type="text"
+          defaultValue={saved.images.downloadDir}
+          key={`images-dir:${saved.images.downloadDir}`}
+          hidden={hide("set-images")}
+          spellCheck={false}
+          onBlur={(e) => {
+            save({ images: { ...saved.images, downloadDir: e.target.value } });
+          }}
+        />
+        <label className="field-label" htmlFor="set-images-folder" hidden={hide("set-images")}>
+          {S.settings.imagesFolderTemplate}
+        </label>
+        <input
+          id="set-images-folder"
+          className="input"
+          data-setting="images.folderTemplate"
+          type="text"
+          defaultValue={saved.images.folderTemplate}
+          key={`images-folder:${saved.images.folderTemplate}`}
+          hidden={hide("set-images")}
+          spellCheck={false}
+          onBlur={(e) => {
+            save({ images: { ...saved.images, folderTemplate: e.target.value } });
+          }}
+        />
+        <label className="field-label" htmlFor="set-images-file" hidden={hide("set-images")}>
+          {S.settings.imagesFilenameTemplate}
+        </label>
+        <input
+          id="set-images-file"
+          className="input"
+          data-setting="images.filenameTemplate"
+          type="text"
+          defaultValue={saved.images.filenameTemplate}
+          key={`images-file:${saved.images.filenameTemplate}`}
+          hidden={hide("set-images")}
+          spellCheck={false}
+          onBlur={(e) => {
+            save({ images: { ...saved.images, filenameTemplate: e.target.value } });
+          }}
+        />
+        <label className="field-label" htmlFor="set-images-proxy" hidden={hide("set-images")}>
+          {S.settings.proxy}
+        </label>
+        <input
+          id="set-images-proxy"
+          className="input"
+          data-setting="images.proxy"
+          type="text"
+          defaultValue={saved.images.proxy ?? ""}
+          key={`images-proxy:${saved.images.proxy ?? ""}`}
+          hidden={hide("set-images")}
+          spellCheck={false}
+          onBlur={(e) => {
+            save({ images: { ...saved.images, proxy: e.target.value } });
+          }}
+        />
+        <div className="meta-grid" hidden={hide("set-images")}>
+          {(
+            [
+              ["sleepRequestsSec", "set-images-sleep-req", 0, 60],
+              ["maxSleepIntervalSec", "set-images-sleep-max", 0, 3600],
+              ["retries", "set-images-retries", 0, 20],
+            ] as const
+          ).map(([key, id, min, max]) => (
+            <label key={key} className="meta-field" htmlFor={id}>
+              <span className="field-label">{key}</span>
+              <input
+                id={id}
+                data-setting={`images.${key}`}
+                className="input"
+                type="number"
+                min={min}
+                max={max}
+                step={1}
+                key={`${key}:${String(saved.images[key] ?? "")}`}
+                defaultValue={saved.images[key] ?? ""}
+                inputMode="numeric"
+                placeholder={S.settings.pacingOff}
+                spellCheck={false}
+                onBlur={(e) => {
+                  const raw = e.target.value.trim();
+                  save({
+                    images: {
+                      ...saved.images,
+                      [key]: raw.length === 0 ? null : Number(raw),
+                    },
+                  });
+                }}
+              />
+            </label>
+          ))}
+        </div>
+        <div className="check-col" hidden={hide("set-images")}>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              data-setting="images.archive"
+              checked={saved.images.archive}
+              onChange={(e) => {
+                save({ images: { ...saved.images, archive: e.target.checked } });
+              }}
+            />
+            {S.settings.imagesArchive}
+          </label>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              data-setting="images.metadataSidecar"
+              checked={saved.images.metadataSidecar}
+              onChange={(e) => {
+                save({ images: { ...saved.images, metadataSidecar: e.target.checked } });
+              }}
+            />
+            {S.settings.imagesSidecar}
+          </label>
+        </div>
+        <label className="field-label" htmlFor="set-images-raw" hidden={hide("set-images")}>
+          {S.settings.imagesCustom}
+        </label>
+        <textarea
+          id="set-images-raw"
+          className="input batch-text"
+          data-setting="images.customConfig"
+          value={customDraft ?? saved.images.customConfig ?? ""}
+          hidden={hide("set-images")}
+          spellCheck={false}
+          rows={6}
+          placeholder={'{\n  "extractor": {}\n}'}
+          onChange={(e) => {
+            setCustomDraft(e.target.value);
+            setCustomNote(null);
+          }}
+        />
+        <p className="hint" hidden={hide("set-images")}>
+          {S.settings.imagesCustomHint}
+        </p>
+        {customNote !== null && (
+          <p className="note" role="status" hidden={hide("set-images")}>
+            {customNote}
+          </p>
+        )}
+        <div className="chip-row" hidden={hide("set-images")}>
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={() => {
+              const text = customDraft ?? saved.images.customConfig ?? "";
+              const check = validateGalleryConfigJson(text);
+              if (!check.ok) {
+                setCustomNote(formatStr(S.settings.imagesCustomInvalid, { detail: check.error }));
+                return;
+              }
+              setCustomDraft(null);
+              setCustomNote(null);
+              save({ images: { ...saved.images, customConfig: text } });
+            }}
+          >
+            {S.settings.saved}
+          </button>
+          <button
+            type="button"
+            className="btn btn-small"
+            onClick={() => {
+              setCustomDraft(null);
+              setCustomNote(null);
+              save({ images: { ...saved.images, customConfig: null } });
+            }}
+          >
+            {S.settings.imagesCustomReset}
+          </button>
+        </div>
+      </section>
+
+      <section
+        className="grabber-card"
         aria-label={S.settings.sectionSubtitles}
         hidden={hideSection(["togglesSubs", "set-sublangs"])}
       >
@@ -802,6 +1174,45 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
           "skipArchived",
           "playlistSubfolder",
         ])}
+        <label className="field-label" htmlFor="set-sponsorcats" hidden={hide("togglesQuality")}>
+          {S.settings.sponsorCats}
+        </label>
+        <input
+          id="set-sponsorcats"
+          key={`sponsorcats:${saved.sponsorBlockCategories}`}
+          className="input"
+          data-setting="sponsorBlockCategories"
+          type="text"
+          defaultValue={saved.sponsorBlockCategories}
+          hidden={hide("togglesQuality")}
+          spellCheck={false}
+          onBlur={(e) => {
+            commitText(e, (v) => ({ sponsorBlockCategories: v }));
+          }}
+        />
+        <p className="hint" hidden={hide("togglesQuality")}>
+          {S.settings.sponsorCatsHint}
+        </p>
+        <label className="field-label" htmlFor="set-customformat" hidden={hide("set-merge")}>
+          {S.settings.customFormat}
+        </label>
+        <input
+          id="set-customformat"
+          key={`customformat:${saved.customFormat ?? ""}`}
+          className="input"
+          data-setting="customFormat"
+          type="text"
+          defaultValue={saved.customFormat ?? ""}
+          placeholder="bestvideo+bestaudio/best"
+          hidden={hide("set-merge")}
+          spellCheck={false}
+          onBlur={(e) => {
+            commitText(e, (v) => ({ customFormat: v }));
+          }}
+        />
+        <p className="hint" hidden={hide("set-merge")}>
+          {S.settings.customFormatHint}
+        </p>
       </section>
 
       <section
@@ -972,6 +1383,8 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
         </select>
         {renderToggles("togglesWindow", [
           "autoCheckUpdate",
+          "autoUpdateTools",
+          "crashReports",
           "minimizeToTray",
           "notifyFinished",
           "followSystemTheme",
@@ -979,6 +1392,223 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
           "autoSort",
           "experimental",
         ])}
+      </section>
+
+      {/* Post-processing pipeline (Phase 4): after-download steps. */}
+      <section
+        className="grabber-card"
+        aria-label={S.settings.postTitle}
+        hidden={hideSection(["set-postprocess"])}
+      >
+        <h2 className="dl-title">{S.settings.postTitle}</h2>
+        <div className="check-col" hidden={hide("set-postprocess")}>
+          {(
+            [
+              ["convertImages", S.settings.ppConvert],
+              ["autoTagAudio", S.settings.ppAutoTag],
+              ["transcribeAudio", S.settings.ppTranscribe],
+              ["autoUpload", S.settings.ppAutoUpload],
+              ["keepOriginals", S.settings.ppKeepOriginals],
+            ] as const
+          ).map(([key, label]) => (
+            <label key={key} className="check-row">
+              <input
+                type="checkbox"
+                data-setting={`postProcess.${key}`}
+                checked={saved.postProcess[key]}
+                onChange={(e) => {
+                  save({ postProcess: { ...saved.postProcess, [key]: e.target.checked } });
+                }}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+        <p className="hint" hidden={hide("set-postprocess")}>
+          {S.settings.ppAutoTagHint}
+        </p>
+        <p className="hint" hidden={hide("set-postprocess")}>
+          {S.settings.ppTranscribeHint}
+        </p>
+        <label className="field-label" htmlFor="set-pp-model" hidden={hide("set-postprocess")}>
+          {S.settings.ppWhisperModel}
+        </label>
+        <select
+          id="set-pp-model"
+          className="input"
+          value={saved.postProcess.whisperModel}
+          hidden={hide("set-postprocess")}
+          onChange={(e) => {
+            const v = e.target.value;
+            save({
+              postProcess: {
+                ...saved.postProcess,
+                whisperModel: v === "base" || v === "small" ? v : "tiny",
+              },
+            });
+          }}
+        >
+          <option value="tiny">tiny · ~75 MB</option>
+          <option value="base">base · ~142 MB</option>
+          <option value="small">small · ~466 MB</option>
+        </select>
+        <label className="field-label" htmlFor="set-pp-remote" hidden={hide("set-postprocess")}>
+          {S.settings.ppRcloneRemote}
+        </label>
+        <input
+          id="set-pp-remote"
+          key={`ppRemote:${saved.postProcess.rcloneRemote ?? ""}`}
+          className="input"
+          defaultValue={saved.postProcess.rcloneRemote ?? ""}
+          placeholder="myremote:backups/"
+          spellCheck={false}
+          hidden={hide("set-postprocess")}
+          onBlur={(e) => {
+            commitText(e, (v) => ({
+              postProcess: { ...saved.postProcess, rcloneRemote: v },
+            }));
+          }}
+        />
+        <p className="hint" hidden={hide("set-postprocess")}>
+          {S.settings.ppRcloneRemoteHint}
+        </p>
+        <label className="field-label" htmlFor="set-pp-format" hidden={hide("set-postprocess")}>
+          {S.settings.ppFormat}
+        </label>
+        <select
+          id="set-pp-format"
+          className="input"
+          value={saved.postProcess.imageFormat}
+          hidden={hide("set-postprocess")}
+          onChange={(e) => {
+            save({
+              postProcess: {
+                ...saved.postProcess,
+                imageFormat: e.target.value === "png" ? "png" : "jpg",
+              },
+            });
+          }}
+        >
+          <option value="jpg">JPG</option>
+          <option value="png">PNG</option>
+        </select>
+        <label className="field-label" htmlFor="set-pp-quality" hidden={hide("set-postprocess")}>
+          {S.settings.ppQuality}
+        </label>
+        <input
+          id="set-pp-quality"
+          key={`ppQuality:${String(saved.postProcess.imageQuality)}`}
+          className="input"
+          type="number"
+          min={1}
+          max={100}
+          defaultValue={saved.postProcess.imageQuality}
+          hidden={hide("set-postprocess")}
+          onBlur={(e) => {
+            save({ postProcess: { ...saved.postProcess, imageQuality: Number(e.target.value) } });
+          }}
+        />
+        <label className="field-label" htmlFor="set-pp-maxdim" hidden={hide("set-postprocess")}>
+          {S.settings.ppMaxDim}
+        </label>
+        <input
+          id="set-pp-maxdim"
+          key={`ppMaxDim:${String(saved.postProcess.imageMaxDim)}`}
+          className="input"
+          type="number"
+          min={64}
+          max={8192}
+          defaultValue={saved.postProcess.imageMaxDim}
+          hidden={hide("set-postprocess")}
+          onBlur={(e) => {
+            save({ postProcess: { ...saved.postProcess, imageMaxDim: Number(e.target.value) } });
+          }}
+        />
+        <div className="check-col" hidden={hide("set-postprocess")}>
+          <label className="check-row">
+            <input
+              type="checkbox"
+              data-setting="postProcess.stripExif"
+              checked={saved.postProcess.stripExif}
+              onChange={(e) => {
+                save({ postProcess: { ...saved.postProcess, stripExif: e.target.checked } });
+              }}
+            />
+            {S.settings.ppStripExif}
+          </label>
+        </div>
+        <label className="field-label" htmlFor="set-pp-package" hidden={hide("set-postprocess")}>
+          {S.settings.ppPackage}
+        </label>
+        <select
+          id="set-pp-package"
+          className="input"
+          value={saved.postProcess.packageGallery}
+          hidden={hide("set-postprocess")}
+          onChange={(e) => {
+            const v = e.target.value;
+            save({
+              postProcess: {
+                ...saved.postProcess,
+                packageGallery: v === "zip" || v === "cbz" ? v : "off",
+              },
+            });
+          }}
+        >
+          <option value="off">{S.settings.ppPackageOff}</option>
+          <option value="zip">ZIP</option>
+          <option value="cbz">CBZ</option>
+        </select>
+        <label className="field-label" htmlFor="set-pp-ugoira" hidden={hide("set-postprocess")}>
+          {S.settings.ppUgoira}
+        </label>
+        <select
+          id="set-pp-ugoira"
+          className="input"
+          value={saved.postProcess.ugoiraFormat}
+          hidden={hide("set-postprocess")}
+          onChange={(e) => {
+            const v = e.target.value;
+            save({
+              postProcess: {
+                ...saved.postProcess,
+                ugoiraFormat: v === "mp4" || v === "gif" || v === "webm" ? v : "off",
+              },
+            });
+          }}
+        >
+          <option value="off">{S.settings.ppUgoiraOff}</option>
+          <option value="mp4">MP4</option>
+          <option value="gif">GIF</option>
+          <option value="webm">WebM</option>
+        </select>
+        <label className="field-label" htmlFor="set-pp-compress" hidden={hide("set-postprocess")}>
+          {S.settings.ppCompress}
+        </label>
+        <select
+          id="set-pp-compress"
+          className="input"
+          value={saved.postProcess.compressVideo}
+          hidden={hide("set-postprocess")}
+          onChange={(e) => {
+            const v = e.target.value;
+            save({
+              postProcess: {
+                ...saved.postProcess,
+                compressVideo:
+                  v === "small" || v === "balanced" || v === "archive" ? v : "off",
+              },
+            });
+          }}
+        >
+          <option value="off">{S.settings.ppCompressOff}</option>
+          <option value="small">{S.settings.ppCompressSmall}</option>
+          <option value="balanced">{S.settings.ppCompressBalanced}</option>
+          <option value="archive">{S.settings.ppCompressArchive}</option>
+        </select>
+        <p className="hint" hidden={hide("set-postprocess")}>
+          {S.settings.ppKeepOriginalsHint}
+        </p>
       </section>
 
       <section
@@ -1036,6 +1666,24 @@ export function SettingsScreen({ engine, settings, queue, onReplay }: SettingsSc
         </div>
       </section>
 
+      <PackStore
+        engine={engine}
+        settings={settings}
+        toast={toast}
+        hidden={hideSection(["set-packs"])}
+      />
+      <RemoteSection
+        engine={engine}
+        settings={settings}
+        toast={toast}
+        hidden={hideSection(["set-remote"])}
+      />
+      <ToolsSection
+        engine={engine}
+        settings={settings}
+        toast={toast}
+        hidden={hideSection(["set-tools"])}
+      />
       <section
         className="grabber-card"
         aria-label={S.settings.sectionData}

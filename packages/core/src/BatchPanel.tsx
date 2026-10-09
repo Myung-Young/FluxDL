@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { readClipboardText } from "./clipboard.js";
 import { autoSortSubdir } from "./destination.js";
+import { resolveEngine } from "./engines.js";
+import { isManifestUrl } from "./packs.js";
+import { usePackInstalled } from "./usePackInstalled.js";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand";
 import type { DownloadEngine } from "./engine.js";
@@ -11,6 +14,7 @@ import type {
   DownloadPreset,
   MediaInfo,
   MediaKind,
+  RouterMode,
   VideoPreset,
 } from "./types.js";
 import { AUDIO_PRESETS as CORE_AUDIO_PRESETS, CONTAINERS } from "./types.js";
@@ -38,7 +42,7 @@ import {
 export interface BatchPanelProps {
   readonly engine: Pick<
     DownloadEngine,
-    "getInfo" | "cancelAnalyze" | "loadHistory" | "fileExists" | "openPath"
+    "getInfo" | "cancelAnalyze" | "loadHistory" | "fileExists" | "openPath" | "packs"
   >;
   readonly queue: StoreApi<QueueStoreState>;
   readonly settings: StoreApi<SettingsStoreState>;
@@ -120,7 +124,9 @@ export function BatchPanel({
   const [busy, setBusy] = useState<boolean>(false);
   const [queueing, setQueueing] = useState<boolean>(false);
   const [kind, setKind] = useState<MediaKind>(() => settings.getState().settings.defaultPreset.kind);
-  const [videoPreset, setVideoPreset] = useState<VideoPreset>(
+  // Panel-level engine override (v1.8.5): auto follows the router for every
+  // row; video/images pins one engine instead.
+  const [batchEngine, setBatchEngine] = useState<RouterMode>("auto");  const [videoPreset, setVideoPreset] = useState<VideoPreset>(
     () => settings.getState().settings.defaultPreset.videoPreset,
   );
   const [audioPreset, setAudioPreset] = useState<AudioPreset>(
@@ -129,6 +135,7 @@ export function BatchPanel({
   const entriesRef = useRef<readonly BatchEntry[]>([]);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const settingsState = useStore(settings, (s) => s.settings);
+  const packNm3u8dl = usePackInstalled(engine).nm3u8dl;
   const S = useStrings(settings);
   const { guard, dialog: duplicateDialog } = useDuplicateGuard(
     S,
@@ -284,7 +291,7 @@ function withContainer(preset: DownloadPreset, container: Container | null): Dow
     if (ready.length === 0 || queueing) return;
     setQueueing(true);
     try {
-      const outputDir = settingsState.downloadDir;
+      const outputDir = settingsState.lastFolderByMedia[kind] ?? settingsState.downloadDir;
       const byUrl = new Map<string, BatchEntry>();
       const inputs: GuardInput[] = [];
       for (const e of ready) {
@@ -343,6 +350,18 @@ function withContainer(preset: DownloadPreset, container: Container | null): Dow
             outputDir,
             extractor: t.extractor,
             videoId: t.videoId,
+            // Same Phase 1 router as Home: image hosts become gallery jobs.
+            // Phase 5: direct manifests go to N_m3u8DL-RE when installed.
+            // v1.8.5: the panel override pins one engine for every row.
+            ...(isManifestUrl(t.url) && packNm3u8dl
+              ? { engineId: "n-m3u8dl-re" as const }
+              : resolveEngine({
+                  url: t.url,
+                  mode: batchEngine === "auto" ? settingsState.routerMode : batchEngine,
+                  userRules: settingsState.domainRules,
+                }).engine === "gallery-dl"
+              ? { engineId: "gallery-dl" as const }
+              : {}),
             ...(g.fromPlaylist && settingsState.skipArchived && !g.forceFresh
               ? { useArchive: true as const }
               : {}),
@@ -354,6 +373,15 @@ function withContainer(preset: DownloadPreset, container: Container | null): Dow
         setEntries(removeBatchEntry(entriesRef.current, row.key));
       }
       setNote(formatStr(S.batch.queuedToast, { count }));
+      if (count > 0 && outputDir.trim().length > 0) {
+        const known = settings.getState().settings.lastFolderByMedia;
+        if (known[kind] !== outputDir) {
+          void settings
+            .getState()
+            .save({ lastFolderByMedia: { ...known, [kind]: outputDir } })
+            .catch(() => undefined);
+        }
+      }
     } finally {
       setQueueing(false);
     }
@@ -472,6 +500,24 @@ function withContainer(preset: DownloadPreset, container: Container | null): Dow
             }}
           >
             {presetName(S, p)}
+          </button>
+        ))}
+      </div>
+      <div className="segmented" role="group" aria-label={S.home.engineOverride}>
+        {(["auto", "video", "images"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            className="chip"
+            aria-pressed={batchEngine === m}
+            onPointerDown={(e) => {
+              pressScale(e.currentTarget);
+            }}
+            onClick={() => {
+              setBatchEngine(m);
+            }}
+          >
+            {m === "auto" ? S.engine.auto : m === "video" ? S.engine.videoOnly : S.engine.imagesOnly}
           </button>
         ))}
       </div>

@@ -1,23 +1,48 @@
 /**
  * Update-check helpers (pure, no network here).
  * Main fetches the GitHub Releases API; these compare + gate what the UI
- * may open. `openExternal` only ever opens the project's Releases page.
+ * may open. `openExternal` only ever opens same-repo pages: Releases (and
+ * its /tag/... children) plus a prefilled new-issue form (report-a-bug).
  */
 
 export const APP_RELEASES_URL = "https://github.com/Myung-Young/FluxDL/releases" as const;
+
+export const APP_ISSUES_URL = "https://github.com/Myung-Young/FluxDL/issues" as const;
+
+/** Prefilled bug-report form. Query carries the template — capped below. */
+export function buildIssueUrl(version: string, os: string): string {
+  const clean = (s: string): string => s.trim().slice(0, 64).replace(/[\r\n]+/g, " ");
+  const body = [
+    `FluxDL ${clean(version)} / ${clean(os)}`,
+    "",
+    "Steps to reproduce:",
+    "1. ",
+    "",
+    "Diagnostics (Settings → Logs → Copy diagnostics, paste below):",
+  ].join("\n");
+  const params = new URLSearchParams({
+    title: "[bug] ",
+    body: body.slice(0, 1200),
+  });
+  return `${APP_ISSUES_URL}/new?${params.toString()}`;
+}
+
+/**
+ * Only same-repo Releases (and /tag/... children) plus the prefilled
+ * new-issue form may be opened externally. Everything else throws
+ * main-side — notably `evil-releases` prefix tricks and foreign hosts.
+ */
+export function isAllowedExternalUrl(raw: string): boolean {
+  if (raw === APP_RELEASES_URL || raw.startsWith(`${APP_RELEASES_URL}/tag/`)) return true;
+  if (raw === `${APP_ISSUES_URL}/new` || raw.startsWith(`${APP_ISSUES_URL}/new?`)) return true;
+  return false;
+}
 
 export const APP_API_URL =
   "https://api.github.com/repos/Myung-Young/FluxDL/releases/latest" as const;
 
 export const YTDLP_API_URL =
   "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest" as const;
-
-/** Only this URL (and its /tag/... children) may be opened externally. */
-export function isAllowedExternalUrl(raw: string): boolean {
-  return (
-    raw === APP_RELEASES_URL || raw.startsWith(`${APP_RELEASES_URL}/tag/`)
-  );
-}
 
 function numericParts(version: string): number[] | null {
   const clean = version.trim().replace(/^[vV]/, "");

@@ -1,0 +1,54 @@
+# Continuous verification on every push and pull request.
+# Live engine tests need internet (present here); they skip without a PATH
+# binary and the documented network flakes (D89) are re-run, never ignored.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint (zero warnings)
+        run: pnpm lint
+
+      - name: Unit + integration tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: E2E smoke (Playwright + Electron)
+        run: pnpm --filter @grabber/desktop test:e2e
+
+      - name: Dependency audit (advisory — see DECISIONS audit posture)
+        run: pnpm audit --audit-level high || echo "audit findings are triaged per DECISIONS.md, not gated"
+
+      - name: License inventory (review on change)
+        run: pnpm licenses list

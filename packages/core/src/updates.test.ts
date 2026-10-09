@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  APP_ISSUES_URL,
   APP_RELEASES_URL,
+  buildIssueUrl,
   isAllowedExternalUrl,
   isNewerVersion,
   latestTagFromRelease,
@@ -38,6 +40,17 @@ describe("isAllowedExternalUrl", () => {
     expect(isAllowedExternalUrl("https://github.com/Myung-Young/FluxDL/releases-evil")).toBe(
       false,
     );
+  });
+
+  it("allows the prefilled new-issue form and nothing around it", () => {
+    expect(isAllowedExternalUrl(`${APP_ISSUES_URL}/new`)).toBe(true);
+    const prefilled = buildIssueUrl("1.8.0", "win32 10.0.26100");
+    expect(prefilled.startsWith(`${APP_ISSUES_URL}/new?`)).toBe(true);
+    expect(isAllowedExternalUrl(prefilled)).toBe(true);
+    expect(prefilled.length).toBeLessThan(1500);
+    expect(isAllowedExternalUrl(`${APP_ISSUES_URL}/new-evil`)).toBe(false);
+    expect(isAllowedExternalUrl(`${APP_ISSUES_URL}/123`)).toBe(false);
+    expect(isAllowedExternalUrl("https://github.com/Myung-Young/FluxDLa/issues/new")).toBe(false);
   });
 });
 

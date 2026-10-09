@@ -51,6 +51,8 @@ export interface DownloadArgsInput {
   /** Sanitized playlist subfolder (joined under the output dir). */
   readonly playlistSubdir: string | null;
   readonly noPlaylist: boolean;
+  /** Global custom `-f` selector (per-job rawFormat wins). Null = off. */
+  readonly customFormat?: string | null;
   /** Live status detected for this download (M4.1). */
   readonly liveStatus?: LiveStatus | null;
   /** Record livestream from start (--live-from-start) (M4.1). */
@@ -76,6 +78,24 @@ export interface DownloadArgsInput {
   readonly minSleepIntervalSec?: number | null;
   readonly maxSleepIntervalSec?: number | null;
   readonly sleepSubtitlesSec?: number | null;
+  /** Phase 2 network/hardening knobs. All off by default (null/false). */
+  /** Detected JS runtime name for --js-runtimes (null = omit). */
+  readonly jsRuntime?: string | null;
+  /** External downloader (aria2c) when its binary is present. */
+  readonly useAria2c?: boolean;
+  /** Concurrent HLS/DASH fragments (-N). */
+  readonly concurrentFragments?: number | null;
+  /** Retries (-R + --fragment-retries). */
+  readonly downloadRetries?: number | null;
+  /** --socket-timeout seconds. */
+  readonly socketTimeoutSec?: number | null;
+  /** SponsorBlock remove list (used when sponsorBlock is on). */
+  readonly sponsorBlockCategories?: string;
+  /** Trim section bounds for --download-sections (null/empty = off). */
+  readonly trimStart?: string | null;
+  readonly trimEnd?: string | null;
+  /** Experimental --impersonate client (null = off). */
+  readonly impersonateClient?: string | null;
 }
 
 /** A finite delay of at least `min` seconds, or null when it is off. */
@@ -199,6 +219,8 @@ function videoFormatOf(preset: DownloadPreset): string {
     case "Compatible":
       // Same 1080p cap as "1080"; codecSortOf() forces H.264 + AAC via -S.
       return "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best";
+    case "Smallest":
+      return "worstvideo+worstaudio/worst";
   }
 }
 
@@ -291,6 +313,13 @@ export function buildDownloadArgs(input: DownloadArgsInput): string[] {
 
   if (input.preset.rawFormat !== null && input.preset.rawFormat.trim().length > 0) {
     args.push("--format", input.preset.rawFormat.trim());
+  } else if (
+    input.customFormat !== undefined &&
+    input.customFormat !== null &&
+    input.customFormat.trim().length > 0
+  ) {
+    // Global Advanced selector (Phase 2): per-job rawFormat wins when set.
+    args.push("--format", input.customFormat.trim());
   } else if (input.preset.kind === "audio") {
     args.push("--format", "bestaudio/best");
     // "Best" keeps the source stream: no extraction, no re-encode (v1.7.2).
@@ -345,7 +374,12 @@ export function buildDownloadArgs(input: DownloadArgsInput): string[] {
     if (input.embedSubs) args.push("--embed-subs");
   }
   if (input.sponsorBlock) {
-    args.push("--sponsorblock-remove", "all,-filler");
+    const cats =
+      typeof input.sponsorBlockCategories === "string" &&
+      input.sponsorBlockCategories.trim().length > 0
+        ? input.sponsorBlockCategories.trim()
+        : "all,-filler";
+    args.push("--sponsorblock-remove", cats);
   } else {
     args.push("--no-sponsorblock");
   }
@@ -388,6 +422,45 @@ export function buildDownloadArgs(input: DownloadArgsInput): string[] {
     );
   }
   args.push(input.noPlaylist ? "--no-playlist" : "--yes-playlist");
+  // Phase 2 hardening knobs. Every one is off by default, so the default
+  // argv stays byte-identical to earlier releases. All verified against
+  // yt-dlp 2026.08.19 --help.
+  if (typeof input.jsRuntime === "string" && input.jsRuntime.trim().length > 0) {
+    args.push("--js-runtimes", input.jsRuntime.trim().slice(0, 64));
+  }
+  if (input.useAria2c === true) {
+    // Bare --downloader: yt-dlp defaults apply. Custom tuning is deliberately
+    // absent (unverified against an aria2c binary here).
+    args.push("--downloader", "aria2c");
+  }
+  if (
+    typeof input.concurrentFragments === "number" &&
+    Number.isFinite(input.concurrentFragments)
+  ) {
+    const n = Math.min(16, Math.max(1, Math.floor(input.concurrentFragments)));
+    args.push("-N", String(n));
+  }
+  if (typeof input.downloadRetries === "number" && Number.isFinite(input.downloadRetries)) {
+    const raw = Math.floor(input.downloadRetries);
+    if (raw >= 0) {
+      const n = Math.min(30, raw);
+      args.push("-R", String(n));
+      args.push("--fragment-retries", String(n));
+    }
+  }
+  if (typeof input.socketTimeoutSec === "number" && Number.isFinite(input.socketTimeoutSec)) {
+    const n = Math.min(300, Math.max(5, Math.floor(input.socketTimeoutSec)));
+    args.push("--socket-timeout", String(n));
+  }
+  const trimStart = typeof input.trimStart === "string" ? input.trimStart.trim() : "";
+  const trimEnd = typeof input.trimEnd === "string" ? input.trimEnd.trim() : "";
+  if (trimStart.length > 0 || trimEnd.length > 0) {
+    args.push("--download-sections", `*${trimStart.slice(0, 32)}-${trimEnd.slice(0, 32)}`);
+    args.push("--force-keyframes-at-cuts");
+  }
+  if (typeof input.impersonateClient === "string" && input.impersonateClient.trim().length > 0) {
+    args.push("--impersonate", input.impersonateClient.trim().slice(0, 64));
+  }
   // Polite pacing last, right before the URL (v1.7.2). Off by default: an
   // empty array adds nothing, so the default argv is byte-identical to before.
   args.push(
@@ -423,6 +496,12 @@ export function buildVersionArgs(): string[] {
 }
 
 export function buildUpdateArgs(): string[] {
+  return ["--update"];
+}
+
+/** Channel-aware updater: stable uses -U, nightly uses --update-to. */
+export function buildUpdateToArgs(channel: "stable" | "nightly"): string[] {
+  if (channel === "nightly") return ["--update-to", "nightly@latest"];
   return ["--update"];
 }
 

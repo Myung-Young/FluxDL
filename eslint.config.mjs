@@ -13,6 +13,8 @@ export default tseslint.config(
       "**/*.config.{js,mjs,cjs,ts}",
       "scripts/**",
       "**/scripts/**",
+      // Browser-extension MV3 (plain JS, chrome.* globals, no TS project).
+      "extension/**",
     ],
   },
   js.configs.recommended,

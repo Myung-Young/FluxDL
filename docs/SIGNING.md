@@ -1,8 +1,18 @@
 # Signing FluxDL for Windows (SmartScreen)
 
-**Status: v1.4.0 is NOT signed.** Nothing in this repository signs anything.
+**Status: v1.8.0 is NOT signed.** Nothing in this repository signs anything.
 This document exists so that signing *can* be turned on without touching code,
 and so nobody is surprised by the SmartScreen warning.
+
+## v1.8.0 evaluation (no certificate obtainable in-session)
+
+A signing identity (SignPath enrollment, Azure tenant + validation, or a
+purchased OV/EV certificate) requires the maintainer's account, identity
+proof, and in most cases money — none of which an AI session can provide.
+Decision for v1.8.0: ship unsigned with SHA-256 checksums
+(`SHA256SUMS.txt` on every release) + SBOM + provenance attestation, and
+revisit providers when the maintainer picks one. The `CSC_LINK` /
+`CSC_KEY_PASSWORD` wiring below stays ready; no code change will be needed.
 
 ## Why Windows warns about an unsigned build
 

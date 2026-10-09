@@ -5,6 +5,7 @@ import {
   buildDownloadArgs,
   buildInfoArgs,
   buildUpdateArgs,
+  buildUpdateToArgs,
   buildVersionArgs,
   mergeContainerOf,
   pacingArgs,
@@ -109,6 +110,26 @@ describe("arg builder", () => {
     );
     expect(args).toContain("bv*+ba/b");
     expect(args.join(" ")).not.toContain("height<=");
+  });
+
+  it("maps Smallest to worst selectors and honors the global custom format", () => {
+    const smallest = buildDownloadArgs(
+      base({ preset: { kind: "video", videoPreset: "Smallest", audioPreset: "MP3", rawFormat: null } }),
+    );
+    const fi = smallest.indexOf("--format");
+    expect(smallest[fi + 1]).toContain("worst");
+    const custom = buildDownloadArgs(base({ customFormat: "bv*+ba/b" }));
+    const ci = custom.indexOf("--format");
+    expect(custom[ci + 1]).toBe("bv*+ba/b");
+    // Per-job rawFormat still wins over the global custom format.
+    const both = buildDownloadArgs(
+      base({
+        preset: { kind: "video", videoPreset: "720", audioPreset: "MP3", rawFormat: "bv[height=720]" },
+        customFormat: "bv*+ba/b",
+      }),
+    );
+    expect(both[both.indexOf("--format") + 1]).toBe("bv[height=720]");
+    expect(buildDownloadArgs(base())).not.toContain("worst");
   });
 
   it("passes through paths with spaces/unicode untouched (args array, no shell)", () => {
@@ -571,5 +592,74 @@ describe("polite pacing", () => {
       "10",
       base().url,
     ]);
+  });
+});
+
+describe("phase 2 hardening knobs", () => {
+  it("emits nothing new by default (default argv is unchanged)", () => {
+    const args = buildDownloadArgs(base());
+    for (const flag of [
+      "--js-runtimes",
+      "--downloader",
+      "-N",
+      "-R",
+      "--fragment-retries",
+      "--socket-timeout",
+      "--download-sections",
+      "--force-keyframes-at-cuts",
+      "--impersonate",
+    ]) {
+      expect(args).not.toContain(flag);
+    }
+    expect(args[args.length - 1]).toBe(base().url);
+  });
+
+  it("wires js-runtime, aria2c, fragments, retries, timeout", () => {
+    const args = buildDownloadArgs(
+      base({
+        jsRuntime: "deno",
+        useAria2c: true,
+        concurrentFragments: 4,
+        downloadRetries: 5,
+        socketTimeoutSec: 30,
+      }),
+    );
+    expect(args).toContain("--js-runtimes");
+    expect(args).toContain("deno");
+    expect(args).toEqual(expect.arrayContaining(["--downloader", "aria2c"]));
+    expect(args).toEqual(expect.arrayContaining(["-N", "4"]));
+    expect(args).toEqual(expect.arrayContaining(["-R", "5"]));
+    expect(args).toEqual(expect.arrayContaining(["--fragment-retries", "5"]));
+    expect(args).toEqual(expect.arrayContaining(["--socket-timeout", "30"]));
+  });
+
+  it("clamps numeric knobs into range", () => {
+    const args = buildDownloadArgs(
+      base({ concurrentFragments: 99, downloadRetries: -3, socketTimeoutSec: 9999 }),
+    );
+    expect(args).toEqual(expect.arrayContaining(["-N", "16"]));
+    expect(args).not.toContain("-R");
+    expect(args).toEqual(expect.arrayContaining(["--socket-timeout", "300"]));
+  });
+
+  it("emits trim sections with keyframes cut", () => {
+    const args = buildDownloadArgs(base({ trimStart: "10:00", trimEnd: "11:00" }));
+    expect(args).toEqual(expect.arrayContaining(["--download-sections", "*10:00-11:00"]));
+    expect(args).toContain("--force-keyframes-at-cuts");
+    expect(buildDownloadArgs(base())).not.toContain("--download-sections");
+  });
+
+  it("honours custom sponsorblock categories and impersonate", () => {
+    const args = buildDownloadArgs(
+      base({ sponsorBlock: true, sponsorBlockCategories: "sponsor,intro", impersonateClient: "chrome" }),
+    );
+    expect(args).toEqual(expect.arrayContaining(["--sponsorblock-remove", "sponsor,intro"]));
+    expect(args).toEqual(expect.arrayContaining(["--impersonate", "chrome"]));
+  });
+
+  it("builds channel-aware update args", () => {
+    expect(buildUpdateArgs()).toEqual(["--update"]);
+    expect(buildUpdateToArgs("stable")).toEqual(["--update"]);
+    expect(buildUpdateToArgs("nightly")).toEqual(["--update-to", "nightly@latest"]);
   });
 });

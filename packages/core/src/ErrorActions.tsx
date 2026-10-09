@@ -5,7 +5,8 @@ import type { DownloadJob } from "./types.js";
 import { actionsFor, type ErrorAction, type ErrorActionId } from "./errors.js";
 import type { Strings } from "./strings.js";
 import { useStrings } from "./locale.js";
-import { unfinishedCount } from "./queue.js";
+import { engineOf, unfinishedCount } from "./queue.js";
+import { usePackInstalled } from "./usePackInstalled.js";
 import type { QueueStoreState, SettingsStoreState } from "./stores.js";
 import type { ToastStoreState } from "./toast.js";
 
@@ -80,7 +81,14 @@ export function ErrorActionButtons({
     whale: S.browsers.whale,
   };
   const actions = actionsFor(job.errorCategory);
-  if (actions.length === 0) return null;
+  // "Try with N_m3u8DL-RE" (Phase 5): offered on any failure when the pack
+  // is installed — stubborness is usually HLS/DASH-shaped. Same job,
+  // engine flipped; the pack errors with guidance when it can't cope.
+  const packs = usePackInstalled(engine);
+  // "Try other engine" / "Download both" (v1.8.5): always offered on
+  // yt-dlp/gallery-dl failures, even when no mapped action exists.
+  const showTryOther = engineOf(job) === "yt-dlp" || engineOf(job) === "gallery-dl";
+  if (actions.length === 0 && !packs.nm3u8dl && !showTryOther) return null;
   const needsCookies = actions.some(
     (a) => a.id === "cookies-once" || a.id === "cookies-always",
   );
@@ -221,6 +229,99 @@ export function ErrorActionButtons({
           {labelFor(S, a, busy)}
         </button>
       ))}
+      {packs.nm3u8dl && job.engineId !== "n-m3u8dl-re" && (
+        <button
+          type="button"
+          className="btn btn-small"
+          disabled={busy !== null}
+          onClick={() => {
+            void queue
+              .getState()
+              .enqueue({
+                url: job.url,
+                title: job.title,
+                preset: job.preset,
+                outputDir: settings.getState().settings.downloadDir,
+                extractor: job.extractor ?? null,
+                videoId: job.videoId ?? null,
+                engineId: "n-m3u8dl-re",
+              })
+              .then(() => {
+                toast.getState().push(S.toast.queued, "info");
+              })
+              .catch((err: unknown) => {
+                toast
+                  .getState()
+                  .push(err instanceof Error ? err.message : S.errors.actionFailed, "error");
+              });
+          }}
+        >
+          {S.errors.actionTryNm3u8dl}
+        </button>
+      )}
+      {showTryOther && (
+        <button
+          type="button"
+          className="btn btn-small"
+          disabled={busy !== null}
+          onClick={() => {
+            // "Try other engine" (v1.8.5): same job, engine flipped. A            // gallery-dl binary that is somehow absent errors with install
+            // guidance instead of failing silently.
+            const flipped = engineOf(job) === "gallery-dl" ? {} : { engineId: "gallery-dl" as const };
+            void queue
+              .getState()
+              .enqueue({
+                url: job.url,
+                title: job.title,
+                preset: job.preset,
+                outputDir: settings.getState().settings.downloadDir,
+                extractor: job.extractor ?? null,
+                videoId: job.videoId ?? null,
+                ...flipped,
+              })
+              .then(() => {
+                toast.getState().push(S.toast.queued, "info");
+              })
+              .catch((err: unknown) => {
+                toast
+                  .getState()
+                  .push(err instanceof Error ? err.message : S.errors.actionFailed, "error");
+              });
+          }}
+        >
+          {S.engine.tryOther}
+        </button>
+      )}
+      {showTryOther && (
+        <button
+          type="button"
+          className="btn btn-small"
+          disabled={busy !== null}
+          onClick={() => {
+            // "Download both" (v1.8.5): one job per engine (mixed hosts like
+            // social timelines genuinely need both passes).
+            void (async (): Promise<void> => {
+              const base = {
+                url: job.url,
+                title: job.title,
+                preset: job.preset,
+                outputDir: settings.getState().settings.downloadDir,
+                extractor: job.extractor ?? null,
+                videoId: job.videoId ?? null,
+              };
+              await queue.getState().enqueue(base);
+              await queue.getState().enqueue({ ...base, engineId: "gallery-dl" as const });
+              toast.getState().push(S.toast.queued, "info");
+            })().catch((err: unknown) => {
+              toast
+                .getState()
+                .push(err instanceof Error ? err.message : S.errors.actionFailed, "error");
+            });
+          }}
+        >
+          {S.engine.downloadBoth}
+        </button>
+      )}
     </div>
   );
 }

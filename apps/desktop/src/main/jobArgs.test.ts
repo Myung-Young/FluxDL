@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "@grabber/core/settings.js";
 import type { AppSettings, DownloadJobInput } from "@grabber/core/types.js";
 import { makeJob, toStartInput } from "@grabber/core/queue.js";
-import { buildStartArgs } from "./jobArgs.js";
+import { buildGalleryDlArgs, buildNm3u8dlArgs, buildStartArgs, buildStreamlinkArgs } from "./jobArgs.js";
 
 /**
  * R1: the job -> argv hop. Before this milestone the live/chapter flags were
@@ -100,6 +100,19 @@ describe("buildStartArgs", () => {
     expect(valueOf(withOverride, "--cookies-from-browser")).toBe("firefox");
   });
 
+  it("lets a per-job proxy override the setting (Phase 3, R1)", () => {
+    const withSetting = args(input, { proxy: "http://global:8080" });
+    expect(valueOf(withSetting, "--proxy")).toBe("http://global:8080");
+    const withOverride = args(
+      { ...input, proxyOverride: "http://job:9090" },
+      { proxy: "http://global:8080" },
+    );
+    expect(valueOf(withOverride, "--proxy")).toBe("http://job:9090");
+    // Empty override falls back to the setting.
+    const empty = args({ ...input, proxyOverride: "  " }, { proxy: "http://global:8080" });
+    expect(valueOf(empty, "--proxy")).toBe("http://global:8080");
+  });
+
   it("passes the archive path only when the caller resolved one (R1)", () => {
     expect(flagIndex(args(input, { skipArchived: true }), "--download-archive")).toBe(-1);
     const argv = buildStartArgs({ ...input, useArchive: true }, {
@@ -142,5 +155,131 @@ describe("buildStartArgs", () => {
     });
     expect(valueOf(argv, "--audio-quality")).toBe("0");
     expect(flagIndex(args(input), "--audio-quality")).toBe(-1);
+  });
+});
+
+describe("buildGalleryDlArgs", () => {
+  it("emits an args array ending with -- <url> (never shell)", () => {
+    const argv = buildGalleryDlArgs(input, {
+      settings: DEFAULT_SETTINGS,
+      configPath: "C:\\data\\gallery-dl.conf.json",
+      downloadDir: "C:\\dl\\Images",
+      cookiesFile: null,
+    });
+    expect(argv).toContain("--config");
+    expect(argv).toContain("--dest");
+    expect(argv.slice(-2)).toEqual(["--", input.url]);
+    expect(argv).not.toContain(input.url.replace("https://", ""));
+  });
+
+  it("passes retries/proxy/sleep only when set", () => {
+    const argv = buildGalleryDlArgs(
+      { ...input, engineId: "gallery-dl" },
+      {
+        settings: {
+          ...DEFAULT_SETTINGS,
+          images: { ...DEFAULT_SETTINGS.images, retries: 5, proxy: "http://127.0.0.1:8080" },
+        },
+        configPath: "c",
+        downloadDir: "d",
+        cookiesFile: "C:\\cookies.txt",
+      },
+    );
+    expect(valueOf(argv, "--retries")).toBe("5");
+    expect(valueOf(argv, "--proxy")).toBe("http://127.0.0.1:8080");
+    expect(valueOf(argv, "--cookies")).toBe("C:\\cookies.txt");
+  });
+
+  it("lets a per-job proxy beat the images/global proxy (Phase 3)", () => {
+    const argv = buildGalleryDlArgs(
+      { ...input, engineId: "gallery-dl", proxyOverride: "http://job:9090" },
+      {
+        settings: {
+          ...DEFAULT_SETTINGS,
+          proxy: "http://global:8080",
+          images: { ...DEFAULT_SETTINGS.images, proxy: "http://images:8080" },
+        },
+        configPath: "c",
+        downloadDir: "d",
+        cookiesFile: null,
+      },
+    );
+    expect(valueOf(argv, "--proxy")).toBe("http://job:9090");
+  });
+
+  it("emits native gallery post-processors only when enabled (Phase 4)", () => {    const off = buildGalleryDlArgs(input, {
+      settings: DEFAULT_SETTINGS,
+      configPath: "c",
+      downloadDir: "d",
+      cookiesFile: null,
+    });
+    expect(off).not.toContain("--zip");
+    expect(off).not.toContain("--cbz");
+    expect(off).not.toContain("--ugoira");
+    const packed = buildGalleryDlArgs(input, {
+      settings: {
+        ...DEFAULT_SETTINGS,
+        postProcess: { ...DEFAULT_SETTINGS.postProcess, packageGallery: "cbz", ugoiraFormat: "mp4" },
+      },
+      configPath: "c",
+      downloadDir: "d",
+      cookiesFile: null,
+    });
+    expect(packed).toContain("--cbz");
+    expect(valueOf(packed, "--ugoira")).toBe("mp4");
+  });
+
+  it("emits --range for selected-items downloads, dropping junk (v1.8.5)", () => {
+    const deps = {
+      settings: DEFAULT_SETTINGS,
+      configPath: "c",
+      downloadDir: "d",
+      cookiesFile: null,
+    };
+    expect(valueOf(buildGalleryDlArgs({ ...input, range: "2-4,7" }, deps), "--range")).toBe(
+      "2-4,7",
+    );
+    expect(flagIndex(buildGalleryDlArgs(input, deps), "--range")).toBe(-1);
+    expect(
+      flagIndex(buildGalleryDlArgs({ ...input, range: "--config x" }, deps), "--range"),
+    ).toBe(-1);
+  });
+});
+
+describe("pack engine argv (Phase 5)", () => {
+  const titled = { ...input, title: 'Big: Buck/Bunny? [x]' };
+
+  it("builds a streamlink best-to-file command with a safe name", () => {
+    const { args, destination } = buildStreamlinkArgs(titled, "C:\\Vids");
+    expect(args.slice(0, 2)).toEqual([titled.url, "best"]);
+    expect(valueOf(args, "-o")).toBe(destination);
+    expect(args).toContain("--force");
+    expect(destination.endsWith(".ts")).toBe(true);
+    const base = destination.split("\\").pop() ?? "";
+    expect(base).not.toMatch(/[<>:"/\\|?*]/);
+    expect(base).toBe("Big_ Buck_Bunny_ [x].ts");
+  });
+
+  it("builds an N_m3u8DL-RE mp4 command with our ffmpeg", () => {
+    const { args, destination, tmpDir } = buildNm3u8dlArgs(
+      titled,
+      "C:\\Vids",
+      { ffmpegDir: "C:\\bins" },
+      "abc123",
+    );
+    expect(args[0]).toBe(titled.url);
+    expect(valueOf(args, "--save-dir")).toBe("C:\\Vids");
+    expect(valueOf(args, "--save-name")).toBe("Big_ Buck_Bunny_ [x]");
+    expect(args).toContain("format=mp4");
+    expect(args).toContain("--auto-select");
+    expect(args).toContain("--del-after-done");
+    expect(valueOf(args, "--ffmpeg-binary-path")).toBe("C:\\bins\\ffmpeg.exe");
+    expect(tmpDir).toContain(".n-m3u8dl-tmp-abc123");
+    expect(destination.endsWith(".mp4")).toBe(true);
+  });
+
+  it("omits the ffmpeg path when unavailable", () => {
+    const { args } = buildNm3u8dlArgs(input, "C:\\Vids", { ffmpegDir: null }, "z");
+    expect(args).not.toContain("--ffmpeg-binary-path");
   });
 });

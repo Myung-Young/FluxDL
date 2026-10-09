@@ -5,6 +5,7 @@ import { join } from "node:path";
 import {
   appendHistoryToDisk,
   clearHistoryOnDisk,
+  consumeRecoveryNotices,
   isDownloadJob,
   loadHistoryFromDisk,
   loadQueueFromDisk,
@@ -57,11 +58,24 @@ describe("persist", () => {
     expect(saveSettingsToDisk(d, { concurrency: 99 }).concurrency).toBe(5);
   });
 
-  it("falls back to defaults on corrupt settings files", () => {
-    const d = dir("corrupt");
+  it("quarantines corrupt stores and reports them for the UI notice", async () => {
+    consumeRecoveryNotices();
+    const d = dir("quarantine");
     mkdirSync(d, { recursive: true });
     writeFileSync(join(d, "grabber-settings.json"), "{not json");
+    writeFileSync(join(d, "queue.json"), "[{bad");
+    writeFileSync(join(d, "watchlist.json"), "{nope");
     expect(loadSettingsFromDisk(d).concurrency).toBe(2);
+    expect(await loadQueueFromDisk(d)).toEqual([]);
+    expect(await loadWatchlistFromDisk(d)).toEqual([]);
+    // Evidence preserved next to the reset files.
+    const leftovers = (await import("node:fs")).readdirSync(d);
+    expect(leftovers.filter((f) => f.includes(".corrupt-"))).toHaveLength(3);
+    const notices = consumeRecoveryNotices();
+    expect(notices.map((n) => n.kind).sort()).toEqual(["queue", "settings", "watchlist"]);
+    expect(notices.every((n) => typeof n.backup === "string")).toBe(true);
+    // Drained: second consume is empty.
+    expect(consumeRecoveryNotices()).toEqual([]);
   });
 
   it("round-trips the queue snapshot, even with spaces/unicode dirs", async () => {
@@ -274,11 +288,28 @@ describe("watchlist persistence (A6)", () => {
     const d = dir("watchlist");
     expect(await loadWatchlistFromDisk(d)).toEqual([]);
     await saveWatchlistToDisk(d, [
-      { url: "https://example.com/c1", title: "C1", lastVideoId: "v1", lastCheckedAt: 7 },
+      {
+        url: "https://example.com/c1",
+        title: "C1",
+        lastVideoId: "v1",
+        lastCheckedAt: 7,
+        mode: "notify",
+        folder: null,
+        preset: null,
+        engine: null,
+        intervalMin: 60,
+        paused: false,
+        failCount: 0,
+        autoDisabled: false,
+      },
     ]);
     const loaded = await loadWatchlistFromDisk(d);
     expect(loaded).toHaveLength(1);
     expect(loaded[0]).toMatchObject({ title: "C1", lastVideoId: "v1" });
+    // Legacy rows without subscription fields migrate with safe defaults.
+    writeFileSync(join(d, "watchlist.json"), `[{"url": "https://example.com/c2"}]`, "utf8");
+    const migrated = await loadWatchlistFromDisk(d);
+    expect(migrated[0]).toMatchObject({ mode: "notify", intervalMin: 60, paused: false });
     // Garbage on disk never throws and never survives.
     writeFileSync(join(d, "watchlist.json"), `[{"nope": true}]`, "utf8");
     expect(await loadWatchlistFromDisk(d)).toEqual([]);

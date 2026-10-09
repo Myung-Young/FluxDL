@@ -18,8 +18,7 @@ async function installMock(page: Page): Promise<void> {
       concurrency: 2,
       speedLimit: null,
       proxy: null,
-      cookiesFromBrowser: null,
-      cookiesFile: null,
+      cookiesFromBrowser: null,      cookiesFile: null,
       embedThumbnail: false,
       embedMetadata: false,
       subtitles: false,
@@ -27,6 +26,14 @@ async function installMock(page: Page): Promise<void> {
       embedSubs: false,
       includeAutoSubs: true,
       mergeContainer: "mp4",
+      customFormat: null,
+      // Phase 6B: notifiers (secrets stay out of settings) + LAN opt-in.
+      notifyDiscord: false,
+      notifyTelegram: false,
+      telegramChatId: null,
+      lanEnabled: false,
+      lanAllowlist: "",
+      lanAutoDisableHours: null,
       pacing: {
         sleepRequestsSec: null,
         minSleepIntervalSec: null,
@@ -51,7 +58,53 @@ async function installMock(page: Page): Promise<void> {
       historyLimit: 500,
       closeBehavior: "quit",
       minimizeToTray: false,
+      concurrencyGallery: 2,
+      downloadWindowStart: null,
+      downloadWindowEnd: null,
+      postProcess: {
+        convertImages: false,
+        imageFormat: "jpg",
+        imageQuality: 85,
+        imageMaxDim: 2048,
+        stripExif: true,
+        packageGallery: "off",
+        ugoiraFormat: "off",
+        autoTagAudio: false,
+        compressVideo: "off",
+        transcribeAudio: false,
+        whisperModel: "tiny",
+        rcloneRemote: null,
+        autoUpload: false,
+        keepOriginals: true,
+      },
+      dismissedPackHints: [],
+      ytdlpChannel: "stable",
+      autoUpdateTools: false,
+      useAria2c: false,
+      concurrentFragments: null,
+      downloadRetries: null,
+      socketTimeoutSec: null,
+      stalledTimeoutSec: 120,
+      sponsorBlockCategories: "all,-filler",
+      impersonateClient: null,
+      lastToolCheckAt: null,
+      routerMode: "auto",
+      domainRules: {},
+      images: {
+        downloadDir: "",
+        folderTemplate: "{site}/{gallery}",
+        filenameTemplate: "{filename}.{extension}",
+        sleepRequestsSec: null,
+        maxSleepIntervalSec: null,
+        retries: 3,
+        proxy: null,
+        archive: true,
+        metadataSidecar: false,
+        customConfig: null,
+      },
+      lastFolderByMedia: {},
       notifyFinished: true,
+      crashReports: false,
       followSystemTheme: false,
       launchAtLogin: false,
       autoSort: false,
@@ -62,6 +115,9 @@ async function installMock(page: Page): Promise<void> {
       theme: "obsidian",
       postDownloadAction: "none",
       autoCheckUpdate: false,
+      // Phase 6A: loopback Remote API (off by default).
+      apiEnabled: false,
+      apiPort: 48127,
     };
     const started: Array<unknown> = [];
     const historyFixture: unknown[] = [];
@@ -82,7 +138,25 @@ async function installMock(page: Page): Promise<void> {
         });
       }
     };
-    const versions = { ytdlp: "mock", ffmpeg: null, app: "0.0.0-e2e" };
+    const versions = {
+      ytdlp: "mock",
+      ffmpeg: null,
+      app: "0.0.0-e2e",
+      galleryDl: null,
+      jsRuntime: null,
+      aria2c: null,
+      toolPaths: {
+        ytDlp: "yt-dlp",
+        ffmpeg: null,
+        galleryDl: null,
+        deno: null,
+        aria2c: null,
+      },
+      os: "mock-os",
+      arch: "mock-arch",
+      electron: "mock",
+      node: "mock",
+    };
     let n = 0;
     const mock = {
       getInfo: (url: string): Promise<unknown> =>
@@ -156,6 +230,9 @@ async function installMock(page: Page): Promise<void> {
       },
       cancel: (): Promise<void> => Promise.resolve(),
       cancelAnalyze: (): Promise<void> => Promise.resolve(),
+      // Phase 1 v1.8.5: gallery probe (empty = no preview in smoke).
+      probeGallery: (): Promise<unknown> =>
+        Promise.resolve({ supported: false, items: [], errors: [] }),
       onProgress: (cb: (e: unknown) => void): (() => void) => {
         listeners.push(cb);
         return () => undefined;
@@ -164,6 +241,31 @@ async function installMock(page: Page): Promise<void> {
       updateEngine: (): Promise<unknown> => Promise.resolve({ ...versions }),
       repairEngine: (): Promise<unknown> =>
         Promise.resolve({ ok: true, repaired: ["yt-dlp.exe"], failed: [], versions }),
+      rollbackTool: (): Promise<boolean> => Promise.resolve(false),
+      reinstallTool: (): Promise<unknown> => Promise.resolve({ ...versions }),
+      runDoctor: (): Promise<unknown> =>
+        Promise.resolve({ ok: true, checkedAt: Date.now(), checks: [] }),
+      consumeRecoveryNotices: (): Promise<unknown[]> => Promise.resolve([]),
+      postProcess: (): Promise<unknown> =>
+        Promise.resolve({ kind: "report", report: { ok: true, results: [], candidates: [] } }),
+      packs: (): Promise<unknown> => Promise.resolve({ kind: "status", rows: [] }),
+      // Phase 6B: notifier secrets (flags only, never values).
+      notifiers: (): Promise<unknown> =>
+        Promise.resolve({ kind: "status", discord: false, telegram: false }),
+      // Phase 6A: loopback Remote API control (drain returns nothing here).
+      remoteApi: (): Promise<unknown> =>
+        Promise.resolve({
+          kind: "status",
+          status: {
+            running: false,
+            port: null,
+            error: null,
+            queueActive: 0,
+            queueQueued: 0,
+            queueErrors: 0,
+            engineActive: 0,
+          },
+        }),
       pickFolder: (): Promise<null> => Promise.resolve(null),
       pickFile: (): Promise<null> => Promise.resolve(null),
       openPath: (): Promise<void> => Promise.resolve(),
@@ -745,6 +847,30 @@ test("settings: search filters rows and clears", async () => {
   await expect(page.locator(".grabber-view")).toContainText("No settings match.");
   await page.locator('[data-testid="settings-search"]').fill("");
   await expect(page.locator("#set-theme-label")).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
+
+test("settings: tools section lists engines with actions", async () => {
+  if (app === null) throw new Error("electron did not launch");
+  const page = await app.firstWindow();
+  await installMock(page);
+  await page.reload();
+
+  const pageErrors: string[] = [];
+  page.on("pageerror", (err) => {
+    pageErrors.push(String(err));
+  });
+  page.on("console", (msg) => {
+    if (msg.type() === "error") pageErrors.push(msg.text());
+  });
+
+  await expect(page.locator('[data-testid="grabber-shell"]')).toBeVisible({ timeout: 30000 });
+  await page.locator(".grabber-nav-btn").filter({ hasText: "Settings" }).click();
+  await expect(page.locator('[data-testid="settings-search"]')).toBeVisible({ timeout: 15000 });
+  await page.locator('[data-testid="settings-search"]').fill("tools");
+  await expect(page.locator(".grabber-view")).toContainText("Tools & Engines");
+  await expect(page.locator(".grabber-view")).toContainText("yt-dlp");
+  await expect(page.locator(".grabber-view")).toContainText("gallery-dl");
   expect(pageErrors).toEqual([]);
 });
 
