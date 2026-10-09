@@ -18,6 +18,16 @@ export interface ChangelogEntry {
 
 export const CHANGELOG_ENTRIES: readonly ChangelogEntry[] = [
   {
+    version: "1.8.1",
+    date: "2026-10-09",
+    summaryEn: "Fixes gallery re-downloads: the archive engages now.",
+    summaryMs: "Membetulkan muat turun semula galeri: arkib berfungsi kini.",
+    full: [
+      "Fixed",
+      "- Re-running a gallery re-downloaded everything: the config wrote a placeholder path nothing substituted. Second runs now skip finished files (verified live).",
+    ].join("\n"),
+  },
+  {
     version: "1.8.0",
     date: "2026-10-09",
     summaryEn:

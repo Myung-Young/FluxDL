@@ -3,7 +3,16 @@
 All notable changes to FluxDL are documented here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [1.8.0] — 2026-10-09
+## [1.8.1] — 2026-10-09
+
+Fast follow: the release smoke caught a dead gallery archive.
+
+### Fixed
+
+- Re-running a gallery re-downloaded everything: the config generator
+  emitted a literal `"<download-root>"` placeholder nothing substituted,
+  so the archive never engaged. It now writes the absolute path — a second
+  run skips all finished files. Verified by a live double-run.
 
 "Everything, one release": multi-engine downloads, managed tools, a live-in
 queue with subscriptions and library, post-processing, optional tool packs,
