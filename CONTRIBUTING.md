@@ -3,7 +3,7 @@
 Thanks for helping with FluxDL. Read this first — the project is strict
 about a few things because regressions are expensive with real users.
 
-## Ground rules (`AGENTS.md` / `CLAUDE.md` are binding)
+## Ground rules (`AGENTS.md` is binding)
 
 - TypeScript strict, no `any`. `pnpm typecheck && pnpm lint && pnpm test && pnpm build`
   must all be green (lint allows zero warnings).

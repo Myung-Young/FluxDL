@@ -30,13 +30,28 @@ function withBridge(bridge: Bridge | undefined, fn: () => Promise<void>): Promis
 }
 
 const domCalls: string[] = [];
-const originalClipboard = Object.getOwnPropertyDescriptor(
-  globalThis.navigator,
-  "clipboard",
+const originalNavigatorDesc = Object.getOwnPropertyDescriptor(
+  globalThis,
+  "navigator",
 );
+const globalScope = globalThis as unknown as Record<string, unknown>;
+const hadNavigator = globalScope["navigator"] !== undefined;
+const initialNav = globalScope["navigator"];
+const originalClipboard =
+  hadNavigator && typeof initialNav === "object" && initialNav !== null
+    ? Object.getOwnPropertyDescriptor(initialNav, "clipboard")
+    : undefined;
 
 function stubDomClipboard(writeResult: boolean, readResult: string | null): void {
-  Object.defineProperty(globalThis.navigator, "clipboard", {
+  if (globalScope["navigator"] === undefined) {
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      writable: true,
+      value: {},
+    });
+  }
+  const currentNav = globalScope["navigator"] as object;
+  Object.defineProperty(currentNav, "clipboard", {
     configurable: true,
     value: {
       writeText: (v: string) => {
@@ -50,11 +65,22 @@ function stubDomClipboard(writeResult: boolean, readResult: string | null): void
 }
 
 function clearDomClipboard(): void {
-  if (originalClipboard === undefined) {
-    delete (globalThis.navigator as unknown as Record<string, unknown>)["clipboard"];
+  if (!hadNavigator) {
+    if (originalNavigatorDesc) {
+      Object.defineProperty(globalThis, "navigator", originalNavigatorDesc);
+    } else {
+      delete globalScope["navigator"];
+    }
     return;
   }
-  Object.defineProperty(globalThis.navigator, "clipboard", originalClipboard);
+  const currentNav = globalScope["navigator"];
+  if (typeof currentNav === "object" && currentNav !== null) {
+    if (originalClipboard === undefined) {
+      delete (currentNav as Record<string, unknown>)["clipboard"];
+      return;
+    }
+    Object.defineProperty(currentNav, "clipboard", originalClipboard);
+  }
 }
 
 afterEach(() => {
