@@ -1,18 +1,18 @@
 {
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "Fast, private desktop downloader for video, audio and image galleries (Windows).",
   "homepage": "https://github.com/Myung-Young/FluxDL",
   "license": "MIT",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/Myung-Young/FluxDL/releases/download/v1.8.0/FluxDL-Portable-1.8.0.exe",
-      "hash": "608B515A85A45C53DBAD796D5826E3D25C9C3692586ED51E4F620C13770B6107"
+      "url": "https://github.com/Myung-Young/FluxDL/releases/download/v1.8.1/FluxDL-Portable-1.8.1.exe",
+      "hash": "C496F9D2507667EDD826F804BF04B16D85F814EEE65AF3DE89C341CFEF09C0E2"
     }
   },
-  "bin": "FluxDL-Portable-1.8.0.exe",
+  "bin": "FluxDL-Portable-1.8.1.exe",
   "shortcuts": [
     [
-      "FluxDL-Portable-1.8.0.exe",
+      "FluxDL-Portable-1.8.1.exe",
       "FluxDL"
     ]
   ],
