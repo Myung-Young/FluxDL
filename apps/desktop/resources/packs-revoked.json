@@ -1,0 +1,4 @@
+{
+  "$comment": "Revoked Tool Pack versions (Phase 5). Updated with app releases; no remote fetch, no kill-switch call. Format: pack id -> blocked versions.",
+  "packs": {}
+}
