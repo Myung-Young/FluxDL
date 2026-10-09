@@ -49,7 +49,12 @@ export function buildGalleryDlConfig(input: GalleryConfigInput): GalleryConfig {
       filename: cleanTemplate(images.filenameTemplate, "{filename}.{extension}"),
     },
     metadata: images.metadataSidecar,
-    archive: images.archive ? "<download-root>/gallery-dl-archive.sqlite3" : null,
+    // Absolute path (forward slashes are fine for gallery-dl on Windows):
+    // a previous revision emitted a literal "<download-root>" placeholder
+    // that nothing ever substituted, so the archive silently never engaged
+    // and re-runs re-downloaded everything (caught by the v1.8.0 packaged
+    // smoke — the 6th duplicate only skipped by content hash, not archive).
+    archive: images.archive ? `${input.downloadRoot}/gallery-dl-archive.sqlite3` : null,
     // FluxDL-managed marker; the engine ignores unknown top-level keys.
     fluxdl: { managed: true, downloadRoot: input.downloadRoot },
   };

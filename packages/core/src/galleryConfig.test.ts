@@ -45,8 +45,24 @@ describe("galleryConfig", () => {
     expect(validateGalleryConfigJson("[]").ok).toBe(false);
   });
 
-  it("prefers a valid raw override, falls back when invalid (v1.8.5)", () => {
-    const base = { images: DEFAULT_SETTINGS.images, cookiesFile: null, downloadRoot: "C:\\dl" };
+  it("points the archive at a real absolute path (v1.8.0)", () => {
+    // A literal "<download-root>" placeholder shipped once and nothing ever
+    // substituted it, so the archive silently never engaged.
+    const out = buildGalleryDlConfig({
+      images: DEFAULT_SETTINGS.images,
+      cookiesFile: null,
+      downloadRoot: "C:\\dl",
+    });
+    expect(out.config["archive"]).toBe("C:\\dl/gallery-dl-archive.sqlite3");
+    const off = buildGalleryDlConfig({
+      images: { ...DEFAULT_SETTINGS.images, archive: false },
+      cookiesFile: null,
+      downloadRoot: "C:\\dl",
+    });
+    expect(off.config["archive"]).toBeNull();
+  });
+
+  it("prefers a valid raw override, falls back when invalid (v1.8.5)", () => {    const base = { images: DEFAULT_SETTINGS.images, cookiesFile: null, downloadRoot: "C:\\dl" };
     expect(
       resolveGalleryConfigText({ ...base, images: { ...base.images, customConfig: null } }),
     ).toBe(buildGalleryDlConfig(base).text);
