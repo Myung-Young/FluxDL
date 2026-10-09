@@ -1,5 +1,8 @@
 import { _electron as electron } from "@playwright/test";
 import { expect, test, type ElectronApplication } from "@playwright/test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 /**
  * Docs screenshots (Phase 7): deterministic mock-driven captures for the
@@ -8,14 +11,17 @@ import { expect, test, type ElectronApplication } from "@playwright/test";
  */
 
 let app: ElectronApplication | null = null;
+let userData = "";
 
 test.beforeAll(async () => {
-  app = await electron.launch({ args: ["."] });
+  userData = mkdtempSync(join(tmpdir(), "fluxdl-screenshots-e2e-"));
+  app = await electron.launch({ args: [".", `--user-data-dir=${userData}`] });
 });
 
 test.afterAll(async () => {
-  await app?.close();
+  await app?.close().catch(() => undefined);
   app = null;
+  rmSync(userData, { recursive: true, force: true });
 });
 
 test("screenshots: home, downloads, settings", async () => {

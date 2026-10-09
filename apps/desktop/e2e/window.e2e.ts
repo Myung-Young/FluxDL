@@ -57,6 +57,10 @@ async function moveTo(x: number, y: number): Promise<void> {
 test.describe("window geometry (real BrowserWindow)", () => {
   test.beforeAll(async () => {
     userData = mkdtempSync(join(tmpdir(), "fluxdl-window-e2e-"));
+    writeFileSync(
+      join(userData, "grabber-settings.json"),
+      JSON.stringify({ onboardingDone: true }),
+    );
     app = await electron.launch({
       args: [".", `--user-data-dir=${userData}`],
       cwd: APP_DIR,

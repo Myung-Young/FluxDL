@@ -1,5 +1,8 @@
 import { _electron as electron } from "@playwright/test";
 import { expect, test, type ElectronApplication, type Page } from "@playwright/test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 /**
  * M6 smoke: launch -> analyze a MOCKED engine response -> queue item.
@@ -371,14 +374,17 @@ async function installMock(page: Page): Promise<void> {
 }
 
 let app: ElectronApplication | null = null;
+let userData = "";
 
 test.beforeAll(async () => {
-  app = await electron.launch({ args: ["."] });
+  userData = mkdtempSync(join(tmpdir(), "fluxdl-smoke-e2e-"));
+  app = await electron.launch({ args: [".", `--user-data-dir=${userData}`] });
 });
 
 test.afterAll(async () => {
-  await app?.close();
+  await app?.close().catch(() => undefined);
   app = null;
+  rmSync(userData, { recursive: true, force: true });
 });
 
 test("launch -> analyze mocked response -> queue item", async () => {
