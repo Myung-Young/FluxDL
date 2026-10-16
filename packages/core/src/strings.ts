@@ -52,7 +52,7 @@ const EN = {
   },
   home: {
     title: "Home",
-    urlLabel: "Video URL",
+    urlLabel: "URL",
     urlPlaceholder: "Paste a link…",
     paste: "Paste",
     analyze: "Analyze",
@@ -830,7 +830,7 @@ const MS: Parity<Strings> = {
   },
   home: {
     title: "Utama",
-    urlLabel: "URL Video",
+    urlLabel: "URL",
     urlPlaceholder: "Tampal pautan…",
     paste: "Tampal",
     analyze: "Analisis",

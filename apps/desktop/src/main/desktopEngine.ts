@@ -139,11 +139,10 @@ import {
 import {
   cleanDiscordWebhook,
   cleanTelegramToken,
-  postDiscordWebhook,
-  postTelegramMessage,
   readNotifierSecrets,
   writeNotifierSecrets,
 } from "./secrets.js";
+import { postDiscordWebhook, postTelegramMessage } from "./notifiers.js";
 import { outputBytes } from "./outputSize.js";
 import { contentRange, parseByteRange } from "./mediaRange.js";
 import { buildGalleryDlArgs, buildNm3u8dlArgs, buildStartArgs, buildStreamlinkArgs } from "./jobArgs.js";
