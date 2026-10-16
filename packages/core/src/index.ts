@@ -359,7 +359,7 @@ export {
 export type { DownloadArgsInput } from "./args.js";
 export { parseProgressLine, PROGRESS_TEMPLATE, parseSpeedBps } from "./progress.js";
 export type { ParsedProgress } from "./progress.js";
-export { resolveEngine, domainOf, engineLabel, BUILTIN_ENGINE_RULES } from "./engines.js";
+export { resolveEngine, domainOf, engineLabel, BUILTIN_ENGINE_RULES, isImageUrl } from "./engines.js";
 export type { DomainRule, ResolveInput, ResolveOutput, ResolveReason, ProbeResult } from "./engines.js";
 export { buildGalleryDlConfig, resolveGalleryConfigText, validateGalleryConfigJson } from "./galleryConfig.js";
 export type { GalleryConfig, GalleryConfigInput } from "./galleryConfig.js";

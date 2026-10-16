@@ -398,7 +398,28 @@ export function Home({
           }
           // A builtin-gallery host nothing handles: fall through to yt-dlp.
         }
-        const media = await engine.getInfo(value, { requestId });
+        let media: MediaInfo;
+        try {
+          media = await engine.getInfo(value, { requestId });
+        } catch (mediaErr) {
+          if (!wantGallery && (engineOverride === "auto" || routerMode === "auto")) {
+            try {
+              const probe = await engine.probeGallery(value, { requestId });
+              if (analyzeReq.current !== requestId) return;
+              if (probe.supported) {
+                if (host !== null) {
+                  probeCache.current.set(host, "gallery-dl");
+                }
+                galleryUrlRef.current = key;
+                setGallery(probe);
+                return;
+              }
+            } catch {
+              // gallery probe failed or unsupported; rethrow original error
+            }
+          }
+          throw mediaErr;
+        }
         if (analyzeReq.current !== requestId) return;
         analyzeCache.current.set(key, media);
         setInfo(media);

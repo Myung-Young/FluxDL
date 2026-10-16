@@ -47,6 +47,7 @@ const GALLERY_HOSTS: readonly string[] = [
   "commons.wikimedia.org",
   "flickr.com",
   "imgur.com",
+  "i.imgur.com",
   "pixiv.net",
   "deviantart.com",
   "artstation.com",
@@ -54,12 +55,40 @@ const GALLERY_HOSTS: readonly string[] = [
   "gelbooru.com",
   "pinterest.com",
   "wallhaven.cc",
+  "i.redd.it",
+  "preview.redd.it",
+  "pbs.twimg.com",
+  "cdn.discordapp.com",
+  "media.discordapp.net",
+  "images.unsplash.com",
+  "pinimg.com",
+  "safebooru.org",
+  "konachan.com",
+  "yande.re",
+  "e-shuushuu.net",
+  "zerochan.net",
+  "wikiart.org",
 ];
 
 export const BUILTIN_ENGINE_RULES: readonly DomainRule[] = GALLERY_HOSTS.map((domain) => ({
   domain,
   engine: "gallery-dl",
 }));
+
+const IMAGE_EXT_RE = /\.(?:jpe?g|png|webp|gif|bmp|avif|svg|ico|tiff?)(?:$|[?#])/i;
+
+/** Returns true when the URL pathname ends with a common image extension. */
+export function isImageUrl(rawUrl: string): boolean {
+  const trimmed = rawUrl.trim();
+  if (trimmed.length === 0 || trimmed.length > 2048) return false;
+  try {
+    const withScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed) ? trimmed : `https://${trimmed}`;
+    const parsed = new URL(withScheme);
+    return IMAGE_EXT_RE.test(parsed.pathname);
+  } catch {
+    return IMAGE_EXT_RE.test(trimmed);
+  }
+}
 
 export function domainOf(rawUrl: string): string | null {
   const trimmed = rawUrl.trim();
@@ -103,6 +132,9 @@ export function resolveEngine(input: ResolveInput): ResolveOutput {
   if (host === null) return { engine: null, reason: "unsupported", host };
   const userHit = matchSuffix(host, input.userRules ?? {});
   if (userHit !== null) return { engine: userHit, reason: "user-rule", host };
+  if (isImageUrl(input.url)) {
+    return { engine: "gallery-dl", reason: "builtin-rule", host };
+  }
   const builtinHit = builtinMatch(host);
   if (builtinHit !== null) return { engine: builtinHit, reason: "builtin-rule", host };
   const cache = input.probeCache ?? {};

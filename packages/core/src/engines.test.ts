@@ -1,10 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { BUILTIN_ENGINE_RULES, domainOf, engineLabel, resolveEngine } from "./engines.js";
+import { BUILTIN_ENGINE_RULES, domainOf, engineLabel, isImageUrl, resolveEngine } from "./engines.js";
 
 describe("engines router", () => {
   it("pins per mode", () => {
     expect(resolveEngine({ url: "https://x.com/a", mode: "video" }).engine).toBe("yt-dlp");
     expect(resolveEngine({ url: "https://x.com/a", mode: "images" }).engine).toBe("gallery-dl");
+  });
+
+  it("detects image URLs by extension", () => {
+    expect(isImageUrl("https://example.com/photo.jpg")).toBe(true);
+    expect(isImageUrl("https://example.com/image.PNG?size=large")).toBe(true);
+    expect(isImageUrl("https://example.com/pic.webp#anchor")).toBe(true);
+    expect(isImageUrl("https://example.com/vector.svg")).toBe(true);
+    expect(isImageUrl("https://example.com/video.mp4")).toBe(false);
+    expect(isImageUrl("https://example.com/watch?v=123")).toBe(false);
+    expect(isImageUrl("")).toBe(false);
+  });
+
+  it("routes direct image URLs to gallery-dl", () => {
+    const r = resolveEngine({ url: "https://unknownsite.com/photo.jpg", mode: "auto" });
+    expect(r.engine).toBe("gallery-dl");
+    expect(r.reason).toBe("builtin-rule");
   });
 
   it("parses hosts safely", () => {
@@ -17,6 +33,8 @@ describe("engines router", () => {
     const r = resolveEngine({ url: "https://www.flickr.com/photos/x", mode: "auto" });
     expect(r.engine).toBe("gallery-dl");
     expect(r.reason).toBe("builtin-rule");
+    const r2 = resolveEngine({ url: "https://pbs.twimg.com/media/xyz", mode: "auto" });
+    expect(r2.engine).toBe("gallery-dl");
   });
 
   it("keeps mixed sites on yt-dlp by default", () => {

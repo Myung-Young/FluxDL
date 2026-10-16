@@ -58,19 +58,21 @@ export function writeNotifierSecrets(
   renameSync(tmp, join(userDataDir, SECRETS_FILE));
 }
 
-/** Discord webhook URLs are long bearer tokens — https + path only. */
-export function cleanDiscordWebhook(value: unknown): string | null {
+/** Webhook URLs are bearer tokens — https only, valid URL structure. */
+export function cleanWebhookUrl(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const t = value.trim();
-  if (t.length === 0 || t.length > 512) return null;
-  if (
-    t.startsWith("https://discord.com/api/webhooks/") ||
-    t.startsWith("https://discordapp.com/api/webhooks/")
-  ) {
-    return t;
+  if (t.length === 0 || t.length > 2048) return null;
+  try {
+    const parsed = new URL(t);
+    if (parsed.protocol !== "https:") return null;
+    return parsed.toString();
+  } catch {
+    return null;
   }
-  return null;
 }
+
+export const cleanDiscordWebhook = cleanWebhookUrl;
 
 export function cleanTelegramToken(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -79,55 +81,3 @@ export function cleanTelegramToken(value: unknown): string | null {
   return t;
 }
 
-/**
- * Best-effort webhook POST (10 s timeout, no secret in errors). Resolves
- * false on any failure — notifications must never fail a download.
- */
-export async function postDiscordWebhook(webhook: string, text: string): Promise<boolean> {
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => {
-      ctrl.abort();
-    }, 10_000);
-    try {
-      const res = await fetch(webhook, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: text.slice(0, 1500) }),
-        signal: ctrl.signal,
-      });
-      return res.ok;
-    } finally {
-      clearTimeout(timer);
-    }
-  } catch {
-    return false;
-  }
-}
-
-/** Best-effort Telegram sendMessage (token rides the path, never logs). */
-export async function postTelegramMessage(
-  botToken: string,
-  chatId: string,
-  text: string,
-): Promise<boolean> {
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => {
-      ctrl.abort();
-    }, 10_000);
-    try {
-      const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, text: text.slice(0, 1500) }),
-        signal: ctrl.signal,
-      });
-      return res.ok;
-    } finally {
-      clearTimeout(timer);
-    }
-  } catch {
-    return false;
-  }
-}
